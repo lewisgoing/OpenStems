@@ -98,6 +98,13 @@ test('packaged app: first-run setup, then the first separation, with no terminal
     const before = await page.getByTestId('job-row').count()
     await page.getByTestId('file-input').setInputFiles([song ?? ''])
     await expect(page.getByTestId('job-row')).toHaveCount(before + 1)
+    // Songs wait for Start unless the profile has "Start songs automatically" on.
+    const added = page.getByTestId('job-row').last()
+    const status = added.getByTestId('job-status')
+    await expect(status).not.toHaveText('')
+    if ((await status.textContent()) === 'Ready to start') {
+      await page.getByRole('button', { name: /^Start \d+ songs?$/ }).click()
+    }
     const row = page.getByTestId('job-row').last()
     await expect(row).toHaveAttribute('data-state', 'done', { timeout: 10 * 60_000 })
     await row.click()
