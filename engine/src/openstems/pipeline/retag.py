@@ -8,6 +8,7 @@ The audio itself is never touched.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -117,25 +118,51 @@ def set_analysis(directory: Path, changes: dict[str, Any]) -> dict[str, Any]:
         if not (directory / name).is_file():
             raise DomainError(f"{name} is missing from the stem folder")
 
-    for was, now in moves.items():
-        os.replace(directory / was, directory / now)
-    for stem in manifest.get("stems", []):
-        for field in ("file", "midi"):
-            if stem.get(field) in moves:
-                stem[field] = moves[stem[field]]
-    manifest["analysis"] = new
-
+    # Every step is undone if a later one fails, so the folder is never left half changed:
+    # on Windows a stem that is open in another program (a DAW, the app's own player) can
+    # be neither renamed nor written to.
+    marked: list[Path] = []
+    moved: list[tuple[Path, Path]] = []
     options = manifest.get("options") or {}
-    if options.get("tempo_sync") and new.get("bpm") != old.get("bpm"):
-        files = [directory / str(stem["file"]) for stem in manifest.get("stems", [])]
-        mixes = directory / MIXES_DIR
-        if mixes.is_dir():
-            files += [p for p in mixes.iterdir() if p.is_file()]
-        for file in files:
-            if file.suffix.lower() == ".wav" and file.is_file():
+    try:
+        if options.get("tempo_sync") and new.get("bpm") != old.get("bpm"):
+            for file in _marked_files(manifest, directory):
                 set_tempo(file, new.get("bpm"))
+                marked.append(file)
+        for was, now in moves.items():
+            os.replace(directory / was, directory / now)
+            moved.append((directory / was, directory / now))
+        updated = json.loads(json.dumps(manifest))
+        for stem in updated.get("stems", []):
+            for field in ("file", "midi"):
+                if stem.get(field) in moves:
+                    stem[field] = moves[stem[field]]
+        updated["analysis"] = new
+        tmp = directory / (MANIFEST_NAME + ".tmp")
+        tmp.write_text(json.dumps(updated, indent=2, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, directory / MANIFEST_NAME)
+    except OSError as exc:
+        for was, now in reversed(moved):
+            with contextlib.suppress(OSError):
+                os.replace(now, was)
+        # The renames are undone first, so each file is at its old path again.
+        for file in reversed(marked):
+            with contextlib.suppress(OSError):
+                set_tempo(file, old.get("bpm"))
+        with contextlib.suppress(OSError):
+            (directory / (MANIFEST_NAME + ".tmp")).unlink(missing_ok=True)
+        which = Path(str(exc.filename)).name if exc.filename else str(exc)
+        raise DomainError(
+            "a stem is open in another program, so nothing was changed. Close it there "
+            f"and try again ({which})."
+        ) from exc
+    return updated
 
-    tmp = directory / (MANIFEST_NAME + ".tmp")
-    tmp.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, directory / MANIFEST_NAME)
-    return manifest
+
+def _marked_files(manifest: dict[str, Any], directory: Path) -> list[Path]:
+    """The WAV files whose tempo mark follows the song's: its stems and its mixes."""
+    files = [directory / str(stem["file"]) for stem in manifest.get("stems", [])]
+    mixes = directory / MIXES_DIR
+    if mixes.is_dir():
+        files += sorted(p for p in mixes.iterdir() if p.is_file())
+    return [f for f in files if f.suffix.lower() == ".wav" and f.is_file()]

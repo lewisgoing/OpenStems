@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -270,3 +271,37 @@ def test_finished_stems_are_retagged_through_the_job_and_the_history(
 
     outside = client.post("/v1/stemsets/analysis", json={"directory": str(songs[0].parent)})
     assert outside.status_code == 400
+
+
+def test_a_stem_that_is_open_elsewhere_leaves_the_folder_as_it_was(
+    pipeline, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = separated(
+        pipeline, tmp_path, naming_template="{track} {bpm} - {stem}", tempo_sync=True
+    )
+    folder = Path(result.directory)
+    render_mix(folder, [s.file for s in result.stems[:2]])
+    before = {
+        p.relative_to(folder).as_posix(): p.read_bytes() for p in folder.rglob("*") if p.is_file()
+    }
+
+    import openstems.pipeline.retag as retag
+
+    real = os.replace
+    calls = {"n": 0}
+
+    def busy(src: Any, dst: Any) -> None:
+        calls["n"] += 1
+        if calls["n"] == 2:  # the second stem is open in a DAW
+            raise PermissionError(13, "The process cannot access the file", str(src))
+        real(src, dst)
+
+    monkeypatch.setattr(retag.os, "replace", busy)
+    with pytest.raises(DomainError, match="open in another program"):
+        set_analysis(folder, {"bpm": 99})
+    monkeypatch.setattr(retag.os, "replace", real)
+
+    after = {
+        p.relative_to(folder).as_posix(): p.read_bytes() for p in folder.rglob("*") if p.is_file()
+    }
+    assert after == before  # every name, every tempo mark and the manifest, byte for byte
