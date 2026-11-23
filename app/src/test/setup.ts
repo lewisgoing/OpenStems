@@ -1,7 +1,10 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, configure } from '@testing-library/react'
 import { afterEach, vi } from 'vitest'
 import type { OpenStemsBridge, SetupStatus, ShellStatus, TorchVariant, TrayActivity, UpdateStatus } from '../../electron/bridge'
+
+// A slow or busy machine (CI) gets more than the default second to show what a click leads to.
+configure({ asyncUtilTimeout: 4000 })
 
 afterEach(() => {
   cleanup()

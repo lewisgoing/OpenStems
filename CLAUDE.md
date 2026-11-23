@@ -25,6 +25,8 @@ Engine (run from `engine/`):
 - `uv run python ../scripts/accept_recipes.py SONG`: run every recipe with alignment checks
 - `python ../scripts/compare_builds.py run --out DIR MODEL...` in each environment, then
   `compare DIR DIR`: the same stems from two PyTorch builds (on the CPU)
+- `uv run pytest tests/test_links_mixes.py`: links and mixes, with a stand-in for the fetch
+  (no test touches the network)
 - `uv run openstems serve`: start the local API (prints a JSON line with port and token)
 - `uv run openstems openapi --out openapi.json`: export the schema after any API change, then
   `pnpm gen:api` in `app/` (a test fails if `engine/openapi.json` is stale)
@@ -42,6 +44,8 @@ App (run from `app/`):
 - `--tray` on the app's command line starts it in the tray with no window (the end-to-end
   suite passes it through Playwright's `args`)
 - `REAL_SONG=<file> REAL_MODELS=<folder> pnpm e2e -g "real engine"`: the app on the real GPU
+- `REAL_LINK=<address> REAL_MODELS=<folder> pnpm e2e -g "pasted link is fetched from the web"`:
+  a real link fetched from the web, separated on the GPU and mixed
 - `pnpm gen:api`: regenerate `src/api/schema.d.ts` from `engine/openapi.json`
 - `node scripts/make-icons.mjs`: redraw the icons in `resources/`
 - `pnpm run pack`: build the unpacked app into `release/win-unpacked` (run `pnpm package:prepare`
@@ -114,6 +118,21 @@ Manual start: a queued job can be held (`held` on a job; `JobManager.release` le
 `auto_start` setting, off by default; the watch folder always starts its files.
 `OPENSTEMS_AUTO_START=1|0` overrides the setting, and the test suites set it to 1 except the
 ones about manual start (`engine/tests/test_manual_start.py`, `app/e2e/manual-start.spec.ts`).
+
+Links: a web address becomes a job in two steps. `api/links.py` (`LinkManager`) fetches it on
+a thread with progress as `link.updated` events, then `Service._queue_fetched` queues an
+ordinary job for the file, kept under `<output>/_links/`. `openstems/links.py` is the fetcher:
+yt-dlp, pinned in `pyproject.toml` with its `deno` extra (the JavaScript runtime YouTube
+needs; its path is passed to yt-dlp, since `Scripts` is not on `PATH` in the packaged app).
+When a site stops working, bump that pin and release. With `OPENSTEMS_ENGINE=fake` a stand-in
+fetches: no test touches the network, and `slow`, `fail` or `playlist` in the address make it
+slow, fail or refuse. In the app both windows share `components/LinkRow.tsx`, and pasting and
+dropping links live in `state/dropflow.tsx` beside files.
+
+Mixes: `POST /v1/mixes` (`pipeline/mix.py`) sums stem files into `<stem folder>/Mixes/`. The
+app asks for the file before a drag can start (`state/mix.ts`, `useMixFile`). The mix's name
+is decided in `mix_label` (Python, the file) and `mixLabel` (TypeScript, the screen): change
+both together. `docs/adr/0013-links-and-mixes.md`.
 
 Dependencies point inward: `domain` imports nothing from the other packages and never imports
 torch. `cli` and `api` are the only entry points.

@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- **Paste a link.** A song can be queued from its web address: copy the link, then press
+  Ctrl+V in either window, use Paste link, or drag the link in from a browser. OpenStems
+  fetches the audio (YouTube, SoundCloud, Bandcamp and many other sites) and queues it like a
+  dropped file, with the recipe and quality that are selected. The fetch shows in the queue
+  with its progress and can be cancelled; one that fails says why and can be tried again.
+  Playlists and live streams are refused. Fetch only what you have the right to use.
+- **Mix stems and drag the mix out.** In the quick-drop window, Mix turns the stems into a
+  mix: click a stem to leave it out, play what is left together, and drag it out as one file
+  (`Song - no vocals.wav`). In the full window, what solo and mute leave audible has a "Drag
+  mix" handle beside "Drag all". Mixes are written to a `Mixes` folder beside the stems.
+- In the full window, a stem muted or soloed before pressing Play stays that way.
+- An app that updates to this version installs the fetcher into its environment by itself
+  (about 45 MB, once).
+- `docs/adr/0013-links-and-mixes.md` records the decisions.
+
 ## 0.2.4 (2026-11-22)
 
 - **Listen before you drag.** In the quick-drop window, click a stem to hear it and click

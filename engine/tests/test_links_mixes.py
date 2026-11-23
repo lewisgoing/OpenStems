@@ -18,6 +18,7 @@ from openstems.links import (
     clean_error,
     folder_for,
     host_of,
+    retrying,
     tidy_title,
 )
 from openstems.pipeline.mix import mix_label
@@ -64,8 +65,57 @@ def test_fetch_errors_read_as_sentences() -> None:
     assert clean_error(raw) == "Video unavailable. This video is private"
     assert "cannot fetch" in clean_error("ERROR: Unsupported URL: https://example.com/")
     assert clean_error("") == "The link could not be fetched."
+    gone = (
+        "ERROR: [soundcloud] artist/song: Unable to download JSON metadata: "
+        "HTTP Error 404: Not Found (caused by <HTTPError 404: Not Found>)"
+    )
+    assert clean_error(gone) == "There is no song at this link."
+    blocked = "ERROR: [vimeo] a/b: Sign in to watch (caused by <HTTPError 403: Forbidden>)"
+    assert clean_error(blocked) == "Sign in to watch"
     offline = "ERROR: [generic] Unable to download webpage: Failed to resolve 'example.com'"
     assert "could not be reached" in clean_error(offline)
+
+
+def test_a_refused_download_is_tried_again_and_other_failures_are_not() -> None:
+    refused = "ERROR: [youtube] abc: unable to download video data: HTTP Error 403: Forbidden"
+    assert "refused the download" in clean_error(refused)
+
+    calls: list[int] = []
+
+    def flaky() -> str:
+        calls.append(1)
+        if len(calls) < 3:
+            raise LinkError("refused", refused=True)
+        return "fetched"
+
+    assert retrying(flaky, lambda: False, pause=0) == "fetched"
+    assert len(calls) == 3
+
+    calls.clear()
+
+    def always_refused() -> str:
+        calls.append(1)
+        raise LinkError("refused", refused=True)
+
+    with pytest.raises(LinkError):
+        retrying(always_refused, lambda: False, pause=0)
+    assert len(calls) == 3
+
+    calls.clear()
+
+    def missing() -> str:
+        calls.append(1)
+        raise LinkError("There is no song at this link.")
+
+    with pytest.raises(LinkError):
+        retrying(missing, lambda: False, pause=0)
+    assert len(calls) == 1
+
+    # A fetch that was cancelled meanwhile is not started over.
+    calls.clear()
+    with pytest.raises(LinkError):
+        retrying(always_refused, lambda: True, pause=0)
+    assert len(calls) == 1
 
 
 def test_a_title_becomes_a_file_name_that_reads_well() -> None:

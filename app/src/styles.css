@@ -709,15 +709,18 @@
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--color-faint);
 }
+/* Not a stem: it sits at the far end of the stems, under the other handles of the row, and
+   stays neutral when on. The accent belongs to the play button. */
 .mix-toggle {
   gap: 5px;
+  margin-left: auto;
   padding: 0 10px;
   color: var(--color-muted);
   cursor: pointer;
 }
 .mix-toggle[aria-pressed='true'] {
-  border-color: var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));
+  border-color: var(--color-faint);
+  background: var(--color-raised);
   color: var(--color-text);
 }
 /* The line under the stems. It arrives once, when mixing is turned on: a small step down

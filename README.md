@@ -136,11 +136,16 @@ pnpm dev          # starts Electron and the engine (uv run openstems serve)
 - Drop files or folders anywhere in the window, or use Add files. They run with the recipe and
   quality shown in the toolbar. If a recipe needs a model that is not installed, the app offers
   to download it and queues your files when it is ready.
+- Paste a link to a song (Ctrl+V, or Paste link), or drag one in from a browser. OpenStems
+  fetches the audio from YouTube, SoundCloud, Bandcamp and many other sites and queues it like
+  a file. Fetch only what you have the right to use.
 - The queue shows per-job progress. Cancel, retry, remove, and drag queued jobs to reorder.
 - Click a finished job for its stems: a waveform per stem, solo (Ctrl+click adds), mute, and
   playback that starts every stem together. Space plays and pauses.
 - Drag one stem, or "Drag all", straight into your DAW or a folder. Reveal in Explorer opens the
   folder.
+- Mute or solo stems and a "Drag mix" handle appears: what you hear leaves as one file, such as
+  the song without its vocals.
 - History lists past separations: search, drag the stems again, or run the same track through
   another recipe. Models shows what is installed, sizes and licenses, with download and delete.
   Settings holds the output and models folders, the output format and the naming template.
@@ -162,6 +167,9 @@ OpenStems keeps an icon in the notification area, by the clock.
   same recipe, quality and queue as the full window, and stays open while you work in other
   windows. Click the icon again, press Escape or use its close button to put it away.
 - **Click a stem to hear it** before you drag it; click again to stop.
+- **Paste a link** with Ctrl+V or the link button, and the song is fetched and queued.
+- **Mix** turns the stems into a mix: click a stem to leave it out, play the rest together,
+  and drag the result out as one file.
 - **A notification** tells you when songs finished while you were looking elsewhere.
 - **The icon tells you what is going on**: a ring while a song is being separated, a dot when
   stems finished while you were looking elsewhere. Hover for the track name and progress.
@@ -190,6 +198,10 @@ How a release is published: [`docs/adr/0010-self-update.md`](docs/adr/0010-self-
   {stem}`.
 - **Output options.** WAV 32-bit float (default), WAV 24-bit, FLAC or MP3, and "match the source
   sample rate" to get 48 kHz stems from a 48 kHz file (`--format`, `--match-source-rate`).
+- **Songs from links.** yt-dlp fetches the audio behind a pasted link. Sites change, so a
+  fetch that stops working usually needs a newer OpenStems
+  ([`docs/adr/0013-links-and-mixes.md`](docs/adr/0013-links-and-mixes.md)).
+- **Mixes.** Any choice of a song's stems as one file, in a `Mixes` folder beside the stems.
 - **History.** Search past tracks, drag their stems again, or run a track through another
   recipe.
 - **Watch folder.** New files that appear in a folder are queued with the default recipe and
@@ -210,6 +222,7 @@ prints one JSON line with both. Everything the CLI does is there, with live prog
 | --- | --- |
 | Jobs | `POST /v1/jobs`, `POST /v1/jobs/batch`, `GET /v1/jobs`, `POST /v1/jobs/{id}/cancel`, `.../retry`, `POST /v1/jobs/reorder`, `DELETE /v1/jobs/{id}`, `POST /v1/jobs/clear-finished` |
 | Tracks and recipes | `POST /v1/tracks` (register paths, probe metadata), `GET /v1/recipes` |
+| Links and mixes | `POST /v1/links` (fetch a song from a web address, then queue it), `GET /v1/links`, `POST /v1/links/{id}/retry`, `DELETE /v1/links/{id}`, `POST /v1/mixes` (some stems as one file) |
 | Models | `GET /v1/models`, `POST /v1/models/{id}/pull`, `.../cancel`, `.../verify`, `DELETE /v1/models/{id}`, `POST /v1/models/import` |
 | Settings and system | `GET` and `PATCH /v1/settings`, `GET /v1/system`, `GET /v1/health`, `POST /v1/diagnostics` |
 | Files and history | `GET /v1/files?path=` (range requests), `GET /v1/peaks?path=`, `GET /v1/stemsets?q=`, `POST /v1/stemsets/rebuild` |

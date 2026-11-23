@@ -27,7 +27,12 @@ from openstems.domain.naming import safe_component
 # memory.
 MAX_SECONDS = 3 * 60 * 60
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
-_PREFIX = re.compile(r"^(ERROR:\s*)?(\[[^\]]+\]\s*)?([\w-]+:\s+)?")
+_PREFIX = re.compile(r"^(ERROR:\s*)?(\[[^\]]+\]\s*)?([^\s:]+:\s+)?")
+_CAUSE = re.compile(r"\s*\(caused by .*$")
+# Sites sign the addresses of their media for a short time, and now and then turn one away.
+# Asking the site again gives a fresh address, which usually works.
+_REFUSED = "HTTP Error 403"
+ATTEMPTS = 3
 
 
 _OFFLINE = ("Failed to resolve", "getaddrinfo", "timed out", "Connection refused", "Network is")
@@ -41,7 +46,12 @@ def tidy_title(title: str) -> str:
 
 
 class LinkError(DomainError):
-    pass
+    """A link that cannot be fetched, in a sentence. ``refused`` marks the one failure worth
+    trying again without being asked: the site turned the download itself away."""
+
+    def __init__(self, message: str, refused: bool = False) -> None:
+        super().__init__(message)
+        self.refused = refused
 
 
 @dataclass(frozen=True)
@@ -78,7 +88,14 @@ def folder_for(root: Path, url: str) -> Path:
 def clean_error(message: str) -> str:
     """yt-dlp's message without colour codes and without its ``ERROR: [site] id:`` prefix."""
     text = _ANSI.sub("", message).strip().splitlines()[0] if message.strip() else ""
-    text = _PREFIX.sub("", text, count=1).strip()
+    text = _CAUSE.sub("", _PREFIX.sub("", text, count=1)).strip()
+    if "HTTP Error 404" in text:
+        return "There is no song at this link."
+    if _REFUSED in text:
+        return (
+            "The site refused the download. Try again in a moment; if it keeps happening, "
+            "OpenStems needs an update."
+        )
     if "Unsupported URL" in text:
         return "OpenStems cannot fetch a song from this page."
     if any(sign in text for sign in _OFFLINE):
@@ -101,7 +118,24 @@ def fetch(
     folder.mkdir(parents=True, exist_ok=True)
     if fake_mode():
         return _fake_fetch(url, folder, on_title, on_progress, cancelled)
-    return _ytdlp_fetch(url, folder, root, on_title, on_progress, cancelled)
+    return retrying(
+        lambda: _ytdlp_fetch(url, folder, root, on_title, on_progress, cancelled), cancelled
+    )
+
+
+def retrying[T](
+    run: Callable[[], T], cancelled: CancelledFn, attempts: int = ATTEMPTS, pause: float = 1.5
+) -> T:
+    """Run a fetch, and run it again when the site refused the download. Every other
+    failure is final at once: a missing page stays missing."""
+    for attempt in range(1, attempts + 1):
+        try:
+            return run()
+        except LinkError as exc:
+            if not exc.refused or attempt == attempts or cancelled():
+                raise
+            time.sleep(pause)
+    raise AssertionError("unreachable")
 
 
 # -- yt-dlp ---------------------------------------------------------------------------
@@ -206,7 +240,7 @@ def _ytdlp_fetch(
     except Stop:
         raise Cancelled() from None
     except DownloadError as exc:
-        raise LinkError(clean_error(str(exc))) from exc
+        raise LinkError(clean_error(str(exc)), refused=_REFUSED in str(exc)) from exc
     except OSError as exc:
         raise LinkError(f"The song could not be saved: {exc}") from exc
 
