@@ -102,6 +102,18 @@ download still gets the SmartScreen prompt. `electron-updater` verifies the sha5
   running it asks first.
 - **Against the real release**: see "Checked against GitHub" below.
 
+## Checked against GitHub
+
+On 2026-11-22, after 0.2.0 was published, a packaged build with its version set to 0.1.9 was
+started on a clean profile (`e2e/real-update.spec.ts`). It found 0.2.0 in the latest release,
+showed "Update to 0.2.0", downloaded `OpenStems-Setup-0.2.0.exe` (137 MB, about ten seconds)
+into the updater's cache, verified it against `latest.yml` and showed "Restart to update".
+There was no blockmap for 0.1.9, so it fell back to the full download, as it should. The
+test stops there.
+
+The packaged 0.2.0 itself ran first-run setup and a separation on a clean profile with the
+NVIDIA build, and first-run setup with the AMD build forced.
+
 ## What automation cannot check
 
 The last step, the installer replacing the running app and starting the new version, needs
