@@ -47,9 +47,26 @@ export function fakeManualBackend(version: string, onOpen: (url: string) => void
   return { check: async () => version, url, open: async (page) => onOpen(page) }
 }
 
-/** What `codesign -dv --verbose=2` prints for an app signed with a Developer ID certificate. */
-export function isDeveloperIdSigned(codesignOutput: string): boolean {
-  return /^Authority=Developer ID Application:/m.test(codesignOutput)
+/**
+ * Whether this app, from what `codesign -dv --verbose=2` prints about it, can install the
+ * next version itself. Squirrel.Mac installs an update only when the new app satisfies the
+ * running one's designated requirement. A certificate signature pins the certificate there,
+ * so the next version signed with it passes: a Developer ID or the project's own
+ * self-signed certificate alike (an `Authority=` line). An ad hoc signature pins only that
+ * one build, so no update can pass.
+ */
+export function canUpdateItself(codesignOutput: string): boolean {
+  return /^Authority=/m.test(codesignOutput) && !/^Signature=adhoc/m.test(codesignOutput)
+}
+
+/**
+ * A feed to read updates from in place of the GitHub releases, for testing an update on a
+ * Mac with two builds served from a folder (`python3 -m http.server`). Only from the
+ * environment, and only an http(s) address.
+ */
+export function testFeedUrl(env: Record<string, string | undefined>): string | null {
+  const url = env.OPENSTEMS_UPDATE_FEED?.trim()
+  return url && /^https?:\/\/\S+$/i.test(url) ? url : null
 }
 
 /**

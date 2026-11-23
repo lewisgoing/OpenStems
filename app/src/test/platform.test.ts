@@ -139,6 +139,18 @@ describe('the Mac build configuration', () => {
     expect(config.mac.entitlements).toBe('build/entitlements.mac.plist')
   })
 
+  it("signs again with the project's own certificate when one is imported", async () => {
+    const macBuild = await load()
+    type WithHook = Build & { afterSign?: string }
+    const config = macBuild({ OPENSTEMS_SIGN_IDENTITY: 'A'.repeat(40) }) as WithHook
+    expect(config.mac.identity).toBe('-')
+    expect(config.mac.hardenedRuntime).toBe(false)
+    expect(config.afterSign).toBe('build/resign-mac.cjs')
+    expect((macBuild({}) as WithHook).afterSign).toBeUndefined()
+    // A Developer ID build is left to electron-builder, with no second signature.
+    expect((macBuild({ CSC_LINK: 'x', OPENSTEMS_SIGN_IDENTITY: 'A'.repeat(40) }) as WithHook).afterSign).toBeUndefined()
+  })
+
   it('never changes the configuration the Windows build reads', async () => {
     const macBuild = await load()
     const before = JSON.stringify(macBuild({ CSC_LINK: 'x' }))
@@ -174,5 +186,46 @@ describe('a setup failure in plain words', () => {
 
   it('still reads well when the error names no path', () => {
     expect(explainSetupError({ code: 'EACCES', message: 'x' }, 'darwin')).not.toContain('chown')
+  })
+})
+
+describe("signing again with the project's own certificate", () => {
+  type Run = (command: string, args: string[]) => void
+  type Hook = (context: object, env: object, run: Run) => Promise<void>
+
+  async function hook(): Promise<Hook> {
+    const file: string = '../../build/resign-mac.cjs'
+    const loaded = (await import(/* @vite-ignore */ file)) as { afterSign?: Hook; default?: { afterSign?: Hook } }
+    return (loaded.afterSign ?? loaded.default?.afterSign) as Hook
+  }
+
+  const context = (platform: string) => ({
+    electronPlatformName: platform,
+    appOutDir: '/tmp/out/mac-arm64',
+    packager: { appInfo: { productFilename: 'OpenStems' } },
+  })
+
+  it('signs the app with the identity, then verifies the whole bundle', async () => {
+    const afterSign = await hook()
+    const calls: [string, string[]][] = []
+    const env = { OPENSTEMS_SIGN_IDENTITY: 'ABC', OPENSTEMS_SIGN_KEYCHAIN: '/tmp/k.keychain-db' }
+    await afterSign(context('darwin'), env, (command, args) => calls.push([command, args]))
+    expect(calls).toHaveLength(2)
+    const [sign, verify] = calls as [[string, string[]], [string, string[]]]
+    expect(sign[0]).toBe('/usr/bin/codesign')
+    expect(sign[1]).toEqual(expect.arrayContaining(['--force', '--deep', '--sign', 'ABC', '--keychain', '/tmp/k.keychain-db']))
+    // The requirement is made anew from the certificate, never kept from the ad hoc signature.
+    expect(sign[1].join(' ')).not.toMatch(/requirements/)
+    expect(sign[1].at(-1)).toMatch(/mac-arm64[\\/]OpenStems\.app$/)
+    expect(verify[0]).toBe('/usr/bin/codesign')
+    expect(verify[1]).toEqual(expect.arrayContaining(['--verify', '--deep', '--strict']))
+  })
+
+  it('does nothing without an identity, or for another platform', async () => {
+    const afterSign = await hook()
+    const run = vi.fn()
+    await afterSign(context('darwin'), {}, run)
+    await afterSign(context('win32'), { OPENSTEMS_SIGN_IDENTITY: 'ABC' }, run)
+    expect(run).not.toHaveBeenCalled()
   })
 })

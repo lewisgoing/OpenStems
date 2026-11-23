@@ -8,8 +8,9 @@ import {
   type ManualUpdateBackend,
   RELEASES_URL,
   type UpdateBackend,
-  isDeveloperIdSigned,
+  canUpdateItself,
   isMissingUpdateFile,
+  testFeedUrl,
 } from './updatelogic'
 
 /** electron-updater, set up so that nothing happens behind the user's back. */
@@ -23,6 +24,12 @@ function updater() {
     warn: (message: unknown) => log(`updater warning: ${String(message)}`),
     error: (message: unknown) => log(`updater error: ${String(message)}`),
     debug: () => undefined,
+  }
+  // Testing only: two builds served from a folder stand in for the GitHub releases.
+  const feed = testFeedUrl(process.env)
+  if (feed) {
+    autoUpdater.setFeedURL({ provider: 'generic', url: feed })
+    log(`updates: reading ${feed} (OPENSTEMS_UPDATE_FEED), not the GitHub releases`)
   }
   return autoUpdater
 }
@@ -82,10 +89,10 @@ export function checkOnlyBackend(): ManualUpdateBackend {
 }
 
 /**
- * Whether this Mac app carries a Developer ID signature. macOS installs an update only
- * into an app signed that way; a build made without a certificate is not signed at all, or
- * signed ad hoc, and names no authority. Asked once, at start: `codesign` answers in a few
- * hundredths of a second.
+ * Whether this Mac app is signed with a certificate (a Developer ID, or the project's own),
+ * so that it can install the next version itself. A build signed ad hoc names no
+ * authority and cannot. Asked once, at start: `codesign` answers in a few hundredths of a
+ * second.
  */
 function macAppIsSigned(): boolean {
   try {
@@ -93,7 +100,7 @@ function macAppIsSigned(): boolean {
     // codesign prints what it finds on stderr.
     const result = spawnSync('/usr/bin/codesign', ['-dv', '--verbose=2', bundle], { encoding: 'utf8', timeout: 5000 })
     if (result.error) throw result.error
-    return isDeveloperIdSigned([result.stdout, result.stderr].join('\n'))
+    return canUpdateItself([result.stdout, result.stderr].join('\n'))
   } catch (error) {
     log(`could not read the app's signature: ${String(error)}`)
     return false
@@ -101,12 +108,12 @@ function macAppIsSigned(): boolean {
 }
 
 /**
- * The backend for an installed app. Windows, and a Mac app signed with a Developer ID,
- * update themselves. An unsigned Mac app only looks, and sends the user to the release page.
+ * The backend for an installed app. Windows, and a Mac app signed with a certificate,
+ * update themselves. A Mac app signed ad hoc only looks, and sends the user to the release page.
  */
 export function updateBackend(): AnyUpdateBackend {
   if (process.platform !== 'darwin') return githubBackend()
   const signed = macAppIsSigned()
-  log(`updates: ${signed ? 'signed with a Developer ID, the app updates itself' : 'not signed, a new version opens the release page'}`)
+  log(`updates: ${signed ? 'signed with a certificate, the app updates itself' : 'signed ad hoc, a new version opens the release page'}`)
   return signed ? githubBackend() : checkOnlyBackend()
 }

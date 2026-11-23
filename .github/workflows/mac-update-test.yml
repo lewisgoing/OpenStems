@@ -1,0 +1,120 @@
+name: mac-update-test
+
+# Two Mac builds signed with the project's own certificate, to prove that one installs the
+# other before any release depends on it. Versions 0.3.98 and 0.3.99 are never published:
+# the builds are an artifact of this run only.
+#
+# On the runner it makes the check Squirrel.Mac makes before it installs an update: the new
+# app must satisfy the running app's designated requirement. Then, on a Mac, the owner
+# installs the first build, serves the second with `python3 -m http.server` and starts the
+# first with OPENSTEMS_UPDATE_FEED pointing at it (docs/adr/0014-macos.md, "Signing").
+#
+# The signing secrets go only to the packaging step, as in release-mac.yml.
+on:
+  workflow_dispatch:
+  push:
+    branches: [mac-self-signed]
+    paths:
+      - .github/workflows/mac-update-test.yml
+      - app/build/resign-mac.cjs
+      - app/build/import-mac-cert.sh
+      - app/mac-build.cjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-update-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: "0.13.6"
+          enable-cache: true
+          cache-dependency-glob: engine/uv.lock
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          package_json_file: app/package.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - name: Install
+        working-directory: app
+        run: pnpm install --frozen-lockfile
+      - name: Build the app and what ships with it
+        working-directory: app
+        run: |
+          pnpm exec electron-vite build
+          pnpm package:prepare
+      - name: Package two versions, signed with the project's certificate
+        working-directory: app
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          if [ -z "$CSC_LINK" ] || [ -z "$CSC_KEY_PASSWORD" ]; then
+            echo "::error::CSC_LINK and CSC_KEY_PASSWORD must both be set"
+            exit 1
+          fi
+          source build/import-mac-cert.sh
+          unset CSC_LINK CSC_KEY_PASSWORD
+          export CSC_IDENTITY_AUTO_DISCOVERY=false
+          for version in 0.3.98 0.3.99; do
+            npm pkg set version="$version"
+            rm -rf release
+            pnpm exec electron-builder --mac --config mac-build.cjs --publish never
+            mv release "release-$version"
+          done
+          git checkout -- package.json
+      - name: The second version passes the first one's check
+        working-directory: app
+        run: |
+          a=release-0.3.98/mac-arm64/OpenStems.app
+          b=release-0.3.99/mac-arm64/OpenStems.app
+          for app in "$a" "$b"; do
+            echo "== $app"
+            codesign --display --verbose=2 "$app" 2>&1 | grep -E '^(Identifier|Authority|Signature|TeamIdentifier)='
+            codesign --display -r- "$app" 2>&1 | grep '^designated'
+            codesign --verify --deep --strict "$app"
+          done
+          requirement=$(codesign --display -r- "$a" 2>&1 | sed -n 's/^designated => //p')
+          if [ -z "$requirement" ]; then echo "::error::the first build has no designated requirement"; exit 1; fi
+          case "$requirement" in *"certificate leaf"*|*"anchor"*) ;; *) echo "::error::the requirement pins no certificate: $requirement"; exit 1;; esac
+          # What Squirrel.Mac asks before it installs: does the new app satisfy the old one's requirement?
+          codesign --verify --deep --strict -R="=$requirement" "$b"
+          echo "the second build satisfies the first build's requirement"
+          # The same for the copy inside the zip, which is what the updater downloads.
+          mkdir unzipped
+          ditto -x -k release-0.3.99/OpenStems-0.3.99-arm64.zip unzipped
+          codesign --verify --deep --strict -R="=$requirement" unzipped/OpenStems.app
+          echo "the zipped second build satisfies it too"
+          # And an ad hoc build must not: that is why ad hoc builds cannot update.
+          cp -R "$b" adhoc.app
+          codesign --force --deep --sign - adhoc.app
+          if codesign --verify -R="=$requirement" adhoc.app 2>/dev/null; then
+            echo "::error::an ad hoc build passed the requirement"; exit 1
+          fi
+          echo "an ad hoc build fails it, as it should"
+      - name: Collect the files for the test on a Mac
+        working-directory: app
+        run: |
+          mkdir -p test/first test/feed
+          cp release-0.3.98/OpenStems-0.3.98-arm64.dmg test/first/
+          cp release-0.3.99/OpenStems-0.3.99-arm64.zip release-0.3.99/OpenStems-0.3.99-arm64.zip.blockmap release-0.3.99/latest-mac.yml test/feed/
+          ls -lR test
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mac-update-test
+          path: app/test
+          if-no-files-found: error
+          retention-days: 7

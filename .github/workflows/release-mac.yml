@@ -7,11 +7,17 @@ name: release-mac
 # It runs when a release is published (the Windows files are uploaded by hand with
 # `gh release create`, which publishes it), and by hand for a tag that already has a release.
 #
-# Signing is optional. With the repository secrets CSC_LINK and CSC_KEY_PASSWORD (a Developer
-# ID Application certificate as base64 .p12, and its password) the app is signed; with
-# APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID as well it is notarized. Without
-# them the app is signed ad hoc (app/mac-build.cjs): macOS asks the user to allow it, and
-# the app offers updates as a link to the release page.
+# Signing follows the repository secrets, in three ways:
+#   - CSC_LINK and CSC_KEY_PASSWORD (a certificate as base64 .p12, and its password) with
+#     APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID: a Developer ID. electron-builder
+#     signs with the hardened runtime and notarizes.
+#   - CSC_LINK and CSC_KEY_PASSWORD only: the project's own certificate (self-signed today).
+#     electron-builder cannot use a certificate the runner does not trust, so it signs ad hoc
+#     and app/build/resign-mac.cjs signs again with the certificate. macOS still asks the user
+#     to allow the app the first time, but each version installs the next by itself.
+#   - none: signed ad hoc. macOS asks the user to allow it, and the app offers updates as a
+#     link to the release page.
+# app/mac-build.cjs holds the configuration for each; docs/adr/0014-macos.md says why.
 #
 # Who sees what. The build job can only read the repository. The signing secrets go to the
 # one step that runs electron-builder, after everything that fetches and runs other people's
@@ -108,19 +114,25 @@ jobs:
             unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
             export CSC_IDENTITY_AUTO_DISCOVERY=false
             echo "::notice::No signing certificate: the Mac build is signed ad hoc."
-          elif [ -z "${APPLE_ID:-}" ] || [ -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] || [ -z "${APPLE_TEAM_ID:-}" ]; then
-            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
-            echo "::notice::Signed, but not notarized: the notarization secrets are not all set."
+          elif [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+            echo "::notice::Developer ID: signed and notarized."
           else
-            echo "::notice::Signed and notarized."
+            # The project's own certificate. electron-builder signs ad hoc, then the afterSign
+            # hook signs again with this identity (app/build/resign-mac.cjs).
+            source build/import-mac-cert.sh
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            echo "::notice::Signed with the project's own certificate, not notarized: the app updates itself."
           fi
           pnpm exec electron-builder --mac --config mac-build.cjs --publish never
       - name: What was built
         working-directory: app/release
         run: |
           ls -l
-          # The authority for a Developer ID signature, "Signature=adhoc" without one.
+          # The authority for a certificate signature, "Signature=adhoc" without one.
           codesign --display --verbose=2 mac-arm64/OpenStems.app 2>&1 | grep -E '^(Authority|TeamIdentifier|Signature)=' || echo "not signed"
+          # What the next version must satisfy to install itself over this one.
+          codesign --display -r- mac-arm64/OpenStems.app 2>&1 | grep '^designated' || true
           # Whether the signature holds for the whole bundle. Reported, not required.
           if codesign --verify --deep --strict mac-arm64/OpenStems.app; then
             echo "the signature is valid"

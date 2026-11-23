@@ -10,8 +10,9 @@ import {
   Updater,
   fakeBackend,
   fakeManualBackend,
-  isDeveloperIdSigned,
+  canUpdateItself,
   isMissingUpdateFile,
+  testFeedUrl,
 } from '../../electron/updatelogic'
 import { ToastProvider } from '@/components/toast'
 import { TooltipProvider } from '@/components/ui'
@@ -233,22 +234,45 @@ describe('a release without a Mac build', () => {
 })
 
 describe('the signature of a Mac app', () => {
-  it('counts only a Developer ID as able to update itself', () => {
-    const signed = [
-      'Executable=/Applications/OpenStems.app/Contents/MacOS/OpenStems',
-      'Identifier=ing.lewisgo.openstems',
+  const head = ['Executable=/Applications/OpenStems.app/Contents/MacOS/OpenStems', 'Identifier=ing.lewisgo.openstems']
+
+  it('lets a Developer ID signed app update itself', () => {
+    const developerId = [
+      ...head,
       'Authority=Developer ID Application: Someone (ABCDE12345)',
       'Authority=Developer ID Certification Authority',
       'Authority=Apple Root CA',
       'TeamIdentifier=ABCDE12345',
     ].join('\n')
-    expect(isDeveloperIdSigned(signed)).toBe(true)
-    // What an unsigned build on Apple Silicon carries: an ad hoc signature, with no authority.
-    const adhoc = ['Executable=/Applications/OpenStems.app/Contents/MacOS/OpenStems', 'Signature=adhoc', 'TeamIdentifier=not set'].join('\n')
-    expect(isDeveloperIdSigned(adhoc)).toBe(false)
-    expect(isDeveloperIdSigned('Authority=Apple Development: Someone (ABCDE12345)')).toBe(false)
-    expect(isDeveloperIdSigned('/Applications/OpenStems.app: code object is not signed at all')).toBe(false)
-    expect(isDeveloperIdSigned('')).toBe(false)
+    expect(canUpdateItself(developerId)).toBe(true)
+  })
+
+  it("lets an app signed with the project's own certificate update itself", () => {
+    // What codesign printed on the Mac runner for a copy signed with the self-signed certificate.
+    const ownCertificate = [...head, 'Authority=OpenStems', 'TeamIdentifier=not set'].join('\n')
+    expect(canUpdateItself(ownCertificate)).toBe(true)
+  })
+
+  it('never lets an ad hoc signed or unsigned app try', () => {
+    const adhoc = [...head, 'Signature=adhoc', 'TeamIdentifier=not set'].join('\n')
+    expect(canUpdateItself(adhoc)).toBe(false)
+    // Even if both lines were ever printed, ad hoc wins.
+    expect(canUpdateItself([...head, 'Signature=adhoc', 'Authority=OpenStems'].join('\n'))).toBe(false)
+    expect(canUpdateItself('/Applications/OpenStems.app: code object is not signed at all')).toBe(false)
+    expect(canUpdateItself('')).toBe(false)
+    // "Authority" inside another line is not an authority.
+    expect(canUpdateItself('Identifier=Authority=OpenStems')).toBe(false)
+  })
+})
+
+describe('the test feed', () => {
+  it('reads an http(s) address from OPENSTEMS_UPDATE_FEED and nothing else', () => {
+    expect(testFeedUrl({ OPENSTEMS_UPDATE_FEED: 'http://localhost:8000/' })).toBe('http://localhost:8000/')
+    expect(testFeedUrl({ OPENSTEMS_UPDATE_FEED: ' https://example.com/feed ' })).toBe('https://example.com/feed')
+    expect(testFeedUrl({})).toBeNull()
+    expect(testFeedUrl({ OPENSTEMS_UPDATE_FEED: '' })).toBeNull()
+    expect(testFeedUrl({ OPENSTEMS_UPDATE_FEED: 'file:///tmp/feed' })).toBeNull()
+    expect(testFeedUrl({ OPENSTEMS_UPDATE_FEED: 'localhost:8000' })).toBeNull()
   })
 })
 

@@ -7,9 +7,14 @@
  * runtime, notarized when the Apple variables are set too. Without one the app is signed
  * ad hoc. electron-builder would otherwise leave it with no valid signature at all (it
  * edits the bundle Electron signed), and macOS delivers notifications only for an app that
- * has one. An ad hoc signature names nobody: macOS still asks before the first open, and
- * the app still cannot install an update. The hardened runtime is off there, because with
- * an ad hoc signature it would refuse to load the app's own libraries.
+ * has one. The hardened runtime is off there, because without a Developer ID (and its Team
+ * ID) it would refuse to load the app's own libraries.
+ *
+ * With OPENSTEMS_SIGN_IDENTITY as well (the project's own, self-signed certificate,
+ * imported by `build/import-mac-cert.sh`), `build/resign-mac.cjs` signs the app again with
+ * it before the dmg and zip are made. macOS still asks before the first open, since it does
+ * not know the certificate, but each version can install the next: the signature names the
+ * same signer every time. An ad hoc signature names nobody, so it cannot.
  */
 const { build } = require('./package.json')
 
@@ -17,7 +22,10 @@ const { build } = require('./package.json')
 function macBuild(env) {
   // A copy: electron-builder changes the configuration it is given.
   const config = structuredClone(build)
-  if (!env.CSC_LINK) config.mac = { ...config.mac, identity: '-', hardenedRuntime: false }
+  if (!env.CSC_LINK) {
+    config.mac = { ...config.mac, identity: '-', hardenedRuntime: false }
+    if (env.OPENSTEMS_SIGN_IDENTITY) config.afterSign = 'build/resign-mac.cjs'
+  }
   return config
 }
 
