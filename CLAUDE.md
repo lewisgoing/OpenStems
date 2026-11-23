@@ -1,6 +1,8 @@
 # OpenStems
 
 Local Windows app for stem separation. `PLAN.md` is the spec; follow it phase by phase.
+There is also a build for Apple Silicon Macs, written on Windows and not yet run on a Mac by
+us: `docs/adr/0014-macos.md`.
 
 ## Commands
 
@@ -9,13 +11,17 @@ Engine (run from `engine/`):
 - `uv sync`: install (Python 3.12, PyTorch from the cu130 index: the `cuda` group)
 - `UV_PROJECT_ENVIRONMENT=<folder> uv sync --no-default-groups --group rocm --group dev`: the AMD
   (ROCm) build in a separate environment; `<folder>/Scripts/python -m pytest` runs the tests on it
-- `uv run openstems doctor`: Python, PyTorch, GPU backend (CUDA or ROCm), GPU, FFmpeg check;
-  non-zero without a working GPU
+- On a Mac: `uv sync --no-default-groups --group mps --group dev` (PyTorch from PyPI, the
+  Apple GPU), then `uv run --no-sync ...` for every command below. A plain `uv sync` or
+  `uv run` asks for the `cuda` group, which has no macOS wheel
+- `uv run openstems doctor`: Python, PyTorch, GPU backend (CUDA, ROCm or MPS), GPU, FFmpeg
+  check; non-zero without a working GPU. On a Mac the "VRAM" line reads "Memory (shared)"
 - `uv run openstems selftest [--ops-only] [-m MODEL]`: GPU against CPU, per operation and per
   model; non-zero on a mismatch
 - `uv run ruff check` and `uv run ruff format --check`: lint and format check
 - `uv run pyright`: type-check
-- `uv run pytest`: unit tests (CPU; `gpu`-marked tests are deselected by default)
+- `uv run pytest`: unit tests (CPU; `gpu`-marked tests are deselected by default).
+  `tests/test_macos.py` covers the Mac branches on Windows by patching the platform
 - `uv run pytest -m gpu`: GPU tests, need downloaded models
 - `uv run openstems separate SONG --recipe full-song`: run a recipe on the GPU
 - `uv run openstems models list | pull | verify | check`: catalog and downloads
@@ -52,19 +58,39 @@ App (run from `app/`):
   first; plain `pnpm pack` is pnpm's own command and makes a tarball instead)
 - `pnpm dist`: build the installer, `release/OpenStems-Setup-<version>.exe`, with its
   `.blockmap` and `latest.yml` (the three files a GitHub release needs for self-update)
+- `pnpm dist:mac` (on a Mac only, with uv and git on `PATH`): build
+  `release/OpenStems-<version>-arm64.dmg` and `.zip`, their blockmaps and `latest-mac.yml`.
+  `pnpm pack:mac` builds the unpacked app into `release/mac-arm64` (run `pnpm package:prepare`
+  first). Never run by us: there is no Mac here
+- `PACKAGE_PLATFORM=darwin node scripts/prepare-package.mjs`: the Mac packaging steps on
+  Windows (uv for `aarch64-apple-darwin`, `requirements-mps.txt`). It leaves `app/package` in
+  its Mac state: run `pnpm package:prepare` afterwards to put the Windows one back
+- Signing the Mac build: ad hoc (`app/mac-build.cjs`, the configuration the Mac commands
+  read) unless `CSC_LINK` and `CSC_KEY_PASSWORD` are set where `pnpm dist:mac` runs; notarized when `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and
+  `APPLE_TEAM_ID` are set as well. Never commit any of them
 - Releasing: set the version in `app/package.json`, `engine/pyproject.toml` and
   `engine/src/openstems/__init__.py`, `uv lock`, changelog heading, merge, tag `v<version>` on
   `main`, `pnpm dist`, then `gh release create v<version>` with those three files. Never a
-  draft or pre-release: installed apps would not see it
+  draft or pre-release: installed apps would not see it. Publishing the release starts
+  `.github/workflows/release-mac.yml`, which builds on a Mac runner and adds the dmg, the zip,
+  their blockmaps and `latest-mac.yml` (it can also be started by hand with the tag; the tag
+  must be `v<version>`). Until it has finished Mac apps are offered nothing. Never run by us
+- CI (`.github/workflows/ci.yml`) runs the engine and app jobs on `windows-latest` and on
+  `macos-15` (Apple Silicon). The Mac side syncs the `mps` group, sets `UV_NO_SYNC=1`, and
+  ends with `pnpm run pack:mac` and no certificate
 - `OPENSTEMS_E2E_UPDATE=<version>` (end-to-end tests only): self-update with a stand-in that
-  offers that version and never touches the network
+  offers that version and never touches the network. With `OPENSTEMS_E2E_UPDATE_MANUAL=1` as
+  well, the stand-in is the manual kind (what an unsigned Mac app has) and records the page it
+  would open in `__openstemsE2E.updateOpened`
 - After an app update the environment is refreshed, not rebuilt (`EngineSetup.refresh` in
   `electron/setup.ts`): running the packaged test on a profile set up by an older version
   exercises it
 - `PACKAGED_PROFILE=<empty folder> REAL_SONG=<file> REAL_MODELS=<folder> pnpm e2e -g packaged`:
   first-run setup and a separation in the packaged app, on a clean profile. Add
   `PACKAGED_VARIANT=rocm` or `cu126` to force another build; `PACKAGED_SWITCH=cuda|rocm ... -g "switch the
-  engine build"` switches the build from Settings on a profile that is already set up
+  engine build"` switches the build from Settings on a profile that is already set up. On a
+  Mac (after `pnpm package:prepare && pnpm run pack:mac`) the profile folder is used as `HOME`;
+  the variant, switch and real-update tests are Windows only
 
 ## Layout
 
@@ -87,16 +113,50 @@ object), `api/jobs.py` (the queue and job states), `worker/supervisor.py` and `w
 (the GPU worker process), `api/db.py` (SQLite index). API tests use a real worker process with
 the FakeEngine; the API process itself never imports torch.
 
-GPU builds: PyTorch comes from one of three conflicting dependency groups: `cuda` (default,
+GPU builds: PyTorch comes from one of four conflicting dependency groups: `cuda` (default,
 CUDA 13.0), `cu126` (the same PyTorch for CUDA 12.6, for GTX 900 and 10 series cards; never
-run on one: `docs/adr/0012-older-nvidia.md`) and `rocm` (AMD). Both answer through `torch.cuda`, so engine code never branches on the vendor;
-`doctor.torch_backend` is the one place that tells them apart. `app/electron/variant.ts`
-decides which build first-run setup installs. A user reported AMD support working on a
-Radeon on 2026-11-22; it has not been run on one by us: `docs/adr/0007-amd-rocm.md`.
+run on one: `docs/adr/0012-older-nvidia.md`), `rocm` (AMD) and `mps` (Apple Silicon, the same
+PyTorch from PyPI). The first three answer through `torch.cuda`; a Mac answers through
+`torch.mps` with the device "mps", always at full precision. Engine code never branches on
+the vendor: `engines/device.py` holds what differs (which device, memory, out-of-memory
+errors) and `doctor.torch_backend` tells the builds apart. `app/electron/variant.ts`
+decides which build first-run setup installs: one of the first three on Windows, and only
+`mps` on a Mac, where nothing is detected (`variantsFor`). A user reported AMD support working
+on a Radeon on 2026-11-22; it has not been run on one by us: `docs/adr/0007-amd-rocm.md`.
+
+Mac: Apple Silicon and macOS 14 or later only. Nothing has been run on a Mac by us, so every
+Mac branch must be right by reading, and every Mac decision must be a plain function covered
+by a unit test that runs on Windows with the platform passed in or patched. The Electron glue
+that only carries those decisions is read, not tested: ADR 0014 names it ("Read, not
+tested"). Say "not run on a Mac by us" wherever Mac support is described
+(`docs/adr/0014-macos.md`). On "mps" the engine checks the STFT against the CPU once per
+process and, if it fails, runs `torch.stft` and `torch.istft` on the CPU from then on
+(`engines/stft_fallback.py`); the doctor reports that as a note, not a problem.
+`PYTORCH_ENABLE_MPS_FALLBACK=1` is set in `openstems/__init__.py` on a Mac. Warm models are
+capped at half the machine's memory there (`Settings.vram_budget_bytes`). The pinned loaders
+refuse `device="mps"` in their own inference code (removed upstream on 2026-09-14); the engine
+uses only their model classes, so do not route anything through their `demix_track`.
+
+Folders on a Mac: settings, user recipes, models and `engine-env` in
+`~/Library/Application Support/OpenStems`, the cache in `~/Library/Caches/OpenStems`, logs in
+`~/Library/Logs/OpenStems`, outputs in `~/Music/OpenStems`. The environment has `bin/python`
+and `bin/openstems` where Windows has `Scripts` and `.exe`. The engine decides them in
+`settings.py` and the app in `electron/platform.ts` (pure functions with the platform passed
+in, no Node or Electron imports): change both together. Windows folders are unchanged. A Mac
+has no uninstaller, so `engine-env` stays until the user deletes it.
+
+Words and keys in the UI: `src/platform.ts` holds what the renderer says and listens for
+differently on a Mac (Finder, menu bar, "Open at login", Cmd for Ctrl through `shortcut` and
+`modKey`). Use it instead of writing "Ctrl", "tray" or "Explorer" into a component.
+`main.tsx` sets `data-platform` on the root element for the stylesheet (fonts, scrollbars).
+`src/test/mac.test.tsx` holds the Mac component tests, with the platform stubbed.
 
 Tray: `electron/tray.ts` owns the icon and the quick-drop window; `electron/traylogic.ts` is
-the part with no Electron in it (window placement, icon state, the `shell.json` preferences)
-and is what the unit tests cover. Both windows load one bundle; `?window=tray` picks
+the part with no Electron in it (window placement, icon state, the `shell.json` preferences,
+and what differs between Windows and a Mac: window frame, menus, when the app quits, the
+template icons, `menuBarPlacement`) and is what the unit tests cover. On a Mac the icon is a
+menu bar item, the quick-drop window is a panel under the menu bar, closing the window never
+quits and the Dock icon stays. Both windows load one bundle; `?window=tray` picks
 `src/tray/TrayApp.tsx`. What both windows do with dropped files lives in
 `src/state/dropflow.tsx`. The quick-drop window does not hide on blur, on purpose:
 `docs/adr/0008-tray.md`. In tests the tray is driven through `__openstemsE2E` (`e2e/helpers.ts`),
@@ -105,7 +165,10 @@ and the login item is a stand-in that never touches the registry.
 Self-update: `electron/updatelogic.ts` is the state machine with no Electron in it (tested in
 `src/test/update.test.tsx`); `electron/updater.ts` is the thin part on `electron-updater`.
 Both steps, download and restart, wait for the user. The repository is public because
-installed apps read its releases: `docs/adr/0010-self-update.md`.
+installed apps read its releases: `docs/adr/0010-self-update.md`. A Mac app updates itself
+only when it is signed with a Developer ID (`updater.updateBackend` asks `codesign` once at
+start). An unsigned one takes the manual path: the offer is marked `manual`, "download" opens
+the release page, and the state stays `available`.
 
 Names: `OpenStems` where people read it and for folders, `openstems` for the command, the
 Python package and keys, `OPENSTEMS_*` for environment variables. The app was lew-stems before

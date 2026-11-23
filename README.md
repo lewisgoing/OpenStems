@@ -1,7 +1,8 @@
 # OpenStems
 
 Local Windows app for stem separation: drop audio files in, pick a recipe or model, and drag
-DAW-ready stems out. Everything runs on the local GPU; there is no cloud step.
+DAW-ready stems out. Everything runs on the local GPU; there is no cloud step. A build for
+Apple Silicon Macs exists as a preview that has not yet been run on a Mac: see [macOS](#macos).
 
 Three layers: a Python engine (domain model, model catalog, GPU worker), a local HTTP API, and an
 Electron + React desktop shell. See [`PLAN.md`](PLAN.md) for the full spec and build phases.
@@ -24,6 +25,8 @@ Electron + React desktop shell. See [`PLAN.md`](PLAN.md) for the full spec and b
 - Or, as an untested preview, an AMD Radeon that AMD's PyTorch for Windows supports: RX 9070,
   RX 9070 XT, RX 9060 XT, RX 7900 XTX, RX 7700, PRO W7900 or AI PRO R9700, with AMD driver
   26.2.2 or newer. See [AMD Radeon](#amd-radeon).
+- Or, as a preview that has not been run on a Mac by us, a Mac with Apple Silicon (M1 or
+  later) and macOS 14 or later. Intel Macs are not supported. See [macOS](#macos).
 - [uv](https://docs.astral.sh/uv/)
 - Node 22 and pnpm for the app
 
@@ -47,6 +50,96 @@ diagnostics button.
 OpenStems and start it: your settings, models, outputs and recipes are picked up where they
 are. Then uninstall lew-stems from Windows Settings, which also removes its old Python
 environment (several GB). Details: [`docs/adr/0009-rename-openstems.md`](docs/adr/0009-rename-openstems.md).
+
+## macOS
+
+Mac support is a preview. It was written and unit-tested on Windows, and **nobody on the
+project has run it on a Mac yet**: not a separation, not the installer, not the menu bar item.
+[`docs/adr/0014-macos.md`](docs/adr/0014-macos.md) lists what was checked and what is unproven.
+Reports from a Mac are welcome.
+
+**What it needs.** A Mac with Apple Silicon (M1 or later) and macOS 14 or later. The models
+run on the Apple GPU through PyTorch's MPS backend. PyTorch has no build for Intel Macs, so
+the app refuses to set up on one.
+
+**Getting it.** A release that includes a Mac build carries `OpenStems-<version>-arm64.dmg`
+on the [releases page](https://github.com/lewisgoing/OpenStems/releases/latest). Or build it
+on a Mac, with uv, git, Node 22 and pnpm installed: `cd app && pnpm install && pnpm dist:mac`
+writes the dmg to `app/release/`. Open the dmg and drag OpenStems to Applications.
+
+**Opening it the first time.** The app is not signed with an Apple Developer ID and not
+notarized (its signature is ad hoc, which names nobody), so macOS will not open it on a
+double click.
+
+1. Double-click OpenStems. macOS says it could not verify the app. Click Done.
+2. Open the Apple menu > System Settings, and click Privacy & Security in the sidebar.
+3. Scroll down to Security. OpenStems is named there as blocked: click Open Anyway. The
+   button is there for about an hour after step 1.
+4. Confirm in the warning that follows, and enter your login password if macOS asks.
+
+macOS remembers this, and the app opens normally from then on. These are Apple's steps for
+[an app from an unknown developer](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac).
+
+If macOS says instead that OpenStems "is damaged and can't be opened", the app is not broken:
+that is how macOS can report an app with no Developer ID that came through a browser. Move it to
+Applications, then remove the download mark in Terminal and open it again:
+
+```
+xattr -dr com.apple.quarantine /Applications/OpenStems.app
+```
+
+Which of the two a download meets has not been tried. Only do either for a copy you got from
+this repository's releases or built yourself.
+
+**First launch.** As on Windows, the app sets up its Python environment (about 350 MB, since
+PyTorch for the Mac is much smaller), checks the GPU, and offers the recommended models.
+There is one engine build on a Mac and nothing to choose.
+
+**What is different on a Mac**
+
+- OpenStems sits in the menu bar, not in a tray. Click the item for the quick-drop window,
+  which opens under the menu bar. Right-click or Control-click it for the menu.
+- Closing the window never quits: the app stays in the Dock and the menu bar. Quit with Cmd+Q.
+  Settings is also in the OpenStems menu (Cmd+comma).
+- Shortcuts use Cmd where this page says Ctrl: Cmd+V pastes a link, Cmd+1 to Cmd+4 switch
+  views, Cmd+Enter starts the queue.
+- Settings has "Menu bar" where Windows has "Tray", with "Open at login" in place of "Start
+  with Windows" and no "Keep running in the tray" switch.
+- Every model runs at full precision. On NVIDIA cards most run at half precision, so expect a
+  Mac to be slower and to use more memory than the figures in `docs/benchmarks.md`. No Mac
+  figures exist yet.
+- The GPU shares the Mac's memory with everything else. The engine keeps at most half of it
+  for loaded models.
+- **Notifications** are the system's. macOS shows them only for an app with a valid
+  signature, which is one reason the build is signed ad hoc. Not yet seen on a Mac.
+- **Updates are manual while the app has no Developer ID.** The app says when a new version is out,
+  and its button ("Get 0.3.0") opens the release page; download the new dmg and replace the
+  app.
+- Folders: settings, models and the Python environment are in
+  `~/Library/Application Support/OpenStems`, logs in `~/Library/Logs/OpenStems`, and stems in
+  `~/Music/OpenStems`. The window's own small preferences are in
+  `~/Library/Application Support/openstems-app`.
+- **Removing it.** Drag the app to the Trash. That leaves the Python environment behind:
+  delete `~/Library/Application Support/OpenStems/engine-env` to remove it. The same folder
+  holds your settings and downloaded models, should you want those gone too, and
+  `~/Library/Application Support/openstems-app` holds the window's preferences.
+
+**Checking a Mac.** `doctor` says whether the Apple GPU is usable, `selftest --ops-only`
+compares each kind of operation on the GPU and the CPU in a few seconds, and `selftest -m`
+separates a short test signal with one model on both and says how far apart they are:
+
+```
+ENGINE="$HOME/Library/Application Support/OpenStems/engine-env/bin/openstems"
+"$ENGINE" doctor
+"$ENGINE" selftest --ops-only
+"$ENGINE" selftest -m bs-roformer-sw
+```
+
+In the app the same is Settings > System > GPU self-test > Run, and Export diagnostics
+includes the result. If the GPU gives trouble, turn off "Use the GPU" there to run on the CPU.
+
+To develop on a Mac: `uv sync --no-default-groups --group mps --group dev` in `engine/`, then
+`uv run --no-sync ...` (a plain `uv run` would try to install the NVIDIA build).
 
 ## AMD Radeon
 
@@ -79,8 +172,9 @@ uv sync
 uv run openstems doctor
 ```
 
-`doctor` prints the Python and PyTorch versions, the GPU backend (CUDA or ROCm), the GPU name and
-VRAM, and whether FFmpeg decoding works. It exits non-zero without a working GPU.
+`doctor` prints the Python and PyTorch versions, the GPU backend (CUDA, ROCm, or MPS on a Mac),
+the GPU name and VRAM, and whether FFmpeg decoding works. It exits non-zero without a working
+GPU.
 
 ## Separating from the terminal
 
@@ -157,7 +251,8 @@ openapi.json` in `engine/` and `pnpm gen:api` here.
 
 ## In the tray
 
-OpenStems keeps an icon in the notification area, by the clock.
+OpenStems keeps an icon in the notification area, by the clock. On a Mac it is an item in the
+menu bar, and a few things below differ: see [macOS](#macos).
 
 - **Pick the format** (WAV, FLAC or MP3) next to the quality, in either window.
 - **Songs wait for Start.** What you drop is queued; press Start (or Ctrl+Enter) to run it.
@@ -188,6 +283,9 @@ second click restarts into it. Nothing is downloaded until you click, and a rest
 while jobs are running. Settings > Updates can check on request and can turn the automatic
 check off. After an update the app brings its Python environment up to date by itself, in a
 few seconds.
+
+On a Mac this needs an app signed with an Apple Developer ID. The Mac build has none yet,
+so there the button opens the release page and you install the new version yourself.
 
 How a release is published: [`docs/adr/0010-self-update.md`](docs/adr/0010-self-update.md).
 

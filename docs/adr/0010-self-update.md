@@ -131,3 +131,38 @@ AMD's PyTorch.
 The last step, the installer replacing the running app and starting the new version, needs
 two published versions and an installed app. It is `electron-updater`'s standard path for a
 per-user NSIS installer; the first real update (0.2.0 to the next) is its first run here.
+
+## On a Mac: a manual update for an unsigned build (added 2026-11-23)
+
+ADR 0014 adds a Mac build, unsigned by default. macOS installs an update only into an app
+signed with a Developer ID, so an unsigned Mac app cannot replace itself. It does the part it
+can. **Neither path below has been run on a Mac by us.**
+
+- **Which path.** At start, on a Mac, the app runs `codesign -dv --verbose=2` on its own
+  bundle once (`updater.macAppIsSigned`). With an `Authority=Developer ID Application:` line
+  it uses `electron-updater` exactly as on Windows, with the zip and `latest-mac.yml` in place
+  of the installer and `latest.yml`. Anything else gets the manual path.
+- **The manual path.** The app checks as before: it reads `latest-mac.yml` from the latest
+  release and compares versions. A newer version is offered with `manual: true` and the
+  address of the release page (`https://github.com/lewisgoing/OpenStems/releases/latest`).
+  "Download" opens that page in the browser. Only an https address is ever opened. The state
+  stays at `available`, since the app cannot know whether the user went on to install
+  anything, and it never reaches `ready`. The user downloads the dmg and replaces the app.
+- **This is the alternative rejected above**, "a notice that opens the download page". It is
+  used here only because the real thing is not possible without a signature.
+- **In the code.** `ManualUpdateBackend` in `electron/updatelogic.ts` is a backend that only
+  looks; the state machine is the same one. `updater.updateBackend()` picks the backend.
+- **A release needs its Mac files.** `latest-mac.yml` is what both paths read. A release
+  without it offers nothing to Mac users, signed or not: on a Mac the missing file counts as
+  "no update" (`isMissingUpdateFile`), so a check from Settings in the minutes before the
+  Mac files arrive does not report a broken connection. Windows keeps its error. `.github/workflows/release-mac.yml`
+  builds the Mac files and adds them when a release is published.
+- **Testing.** `src/test/update.test.tsx` covers the manual offer, the page being opened and
+  the state not moving, https only, a page that fails to open, and the Developer ID check
+  against sample `codesign` output. In the end-to-end suite,
+  `OPENSTEMS_E2E_UPDATE_MANUAL=1` beside `OPENSTEMS_E2E_UPDATE=<version>` makes the stand-in
+  a manual one and records the page in `__openstemsE2E.updateOpened` instead of opening a
+  browser.
+
+After a manual update the new version refreshes its Python environment by itself, as after
+any update.
