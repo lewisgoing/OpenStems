@@ -206,7 +206,7 @@ def create_app(token: str, service: Service | None = None) -> FastAPI:
     @app.post("/v1/jobs", response_model=s.JobInfo, dependencies=secured, responses=errors)
     def create_job(body: s.CreateJob, service: Svc) -> dict[str, Any]:
         return service.create_job(
-            body.path, body.recipe, body.model, body.quality, body.options.model_dump()
+            body.path, body.recipe, body.model, body.quality, body.options.model_dump(), body.start
         )
 
     @app.post("/v1/jobs/batch", response_model=s.JobList, dependencies=secured, responses=errors)
@@ -220,10 +220,15 @@ def create_app(token: str, service: Service | None = None) -> FastAPI:
         # Validate the recipe once before queuing anything.
         service.resolve_recipe(body.recipe, body.model)
         jobs = [
-            service.create_job(str(p), body.recipe, body.model, body.quality, options)
+            service.create_job(str(p), body.recipe, body.model, body.quality, options, body.start)
             for p in paths
         ]
         return {"jobs": jobs}
+
+    @app.post("/v1/jobs/start", response_model=s.JobList, dependencies=secured, responses=errors)
+    def start_jobs(service: Svc) -> dict[str, Any]:
+        """Start every job that is waiting for the user's Start."""
+        return {"jobs": service.jobs.release()}
 
     @app.post("/v1/jobs/reorder", response_model=s.JobList, dependencies=secured, responses=errors)
     def reorder_jobs(body: s.Reorder, service: Svc) -> dict[str, Any]:
@@ -237,6 +242,14 @@ def create_app(token: str, service: Service | None = None) -> FastAPI:
 
     @app.get("/v1/jobs/{job_id}", response_model=s.JobInfo, dependencies=secured, responses=errors)
     def get_job(job_id: str, service: Svc) -> dict[str, Any]:
+        return service.jobs.get(job_id)
+
+    @app.post(
+        "/v1/jobs/{job_id}/start", response_model=s.JobInfo, dependencies=secured, responses=errors
+    )
+    def start_job(job_id: str, service: Svc) -> dict[str, Any]:
+        """Start one job that is waiting for the user's Start."""
+        service.jobs.release(job_id)
         return service.jobs.get(job_id)
 
     @app.post(

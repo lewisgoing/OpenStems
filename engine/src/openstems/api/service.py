@@ -86,7 +86,10 @@ class Service:
         """A new file in the watch folder: queue it with the default recipe and quality."""
         settings = self.runtime.settings
         try:
-            self.create_job(str(path), settings.default_recipe, None, settings.default_quality, {})
+            # Nobody is there to press Start for a watched file: it always runs.
+            self.create_job(
+                str(path), settings.default_recipe, None, settings.default_quality, {}, start=True
+            )
         except DomainError as exc:
             self.bus.publish("notice", level="error", message=f"Watch folder: {path.name}: {exc}")
 
@@ -244,15 +247,25 @@ class Service:
         model_id: str | None,
         quality: str | None,
         options: dict[str, Any],
+        start: bool | None = None,
     ) -> dict[str, Any]:
+        """Queue one file. ``start`` says whether it runs as soon as the GPU is free or
+        waits for the user's Start; left out, the ``auto_start`` setting decides."""
         recipe = self.resolve_recipe(recipe_id, model_id)
         if not os.path.isfile(path):
             raise DomainError(f"no such file: {path}")
         opts = {k: v for k, v in options.items() if v is not None}
         # Validate now so a bad request fails here, not later in the queue.
         self.runtime.pipeline.plan(recipe, self.runtime.options(quality=quality, **opts))
+        if start is None:
+            start = self.runtime.settings.auto_start
         return self.jobs.create(
-            path, recipe.id, recipe.name, quality or self.runtime.settings.default_quality, opts
+            path,
+            recipe.id,
+            recipe.name,
+            quality or self.runtime.settings.default_quality,
+            opts,
+            hold=not start,
         )
 
     # -- GPU self-test --------------------------------------------------------

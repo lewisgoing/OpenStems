@@ -51,6 +51,18 @@
               }
             ],
             "title": "Recipe"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Start as soon as the GPU is free, or wait for Start. Default: the auto_start setting.",
+            "title": "Start"
           }
         },
         "required": [
@@ -108,6 +120,18 @@
             ],
             "description": "Recipe id.",
             "title": "Recipe"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Start as soon as the GPU is free, or wait for Start. Default: the auto_start setting.",
+            "title": "Start"
           }
         },
         "required": [
@@ -313,6 +337,12 @@
               }
             ],
             "title": "Finished At"
+          },
+          "held": {
+            "default": false,
+            "description": "Queued, and waiting for the user's Start.",
+            "title": "Held",
+            "type": "boolean"
           },
           "id": {
             "title": "Id",
@@ -1112,6 +1142,10 @@
       },
       "SettingsModel": {
         "properties": {
+          "auto_start": {
+            "title": "Auto Start",
+            "type": "boolean"
+          },
           "cache_dir": {
             "title": "Cache Dir",
             "type": "string"
@@ -1209,13 +1243,25 @@
           "watch_folder",
           "watch_enabled",
           "vram_budget_gb",
-          "use_gpu"
+          "use_gpu",
+          "auto_start"
         ],
         "title": "SettingsModel",
         "type": "object"
       },
       "SettingsPatch": {
         "properties": {
+          "auto_start": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Start"
+          },
           "cache_dir": {
             "anyOf": [
               {
@@ -2450,6 +2496,70 @@
         "summary": "Reorder Jobs"
       }
     },
+    "/v1/jobs/start": {
+      "post": {
+        "description": "Start every job that is waiting for the user's Start.",
+        "operationId": "start_jobs",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Start Jobs"
+      }
+    },
     "/v1/jobs/{job_id}": {
       "delete": {
         "operationId": "remove_job",
@@ -2742,6 +2852,81 @@
           }
         ],
         "summary": "Retry Job"
+      }
+    },
+    "/v1/jobs/{job_id}/start": {
+      "post": {
+        "description": "Start one job that is waiting for the user's Start.",
+        "operationId": "start_job",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Start Job"
       }
     },
     "/v1/models": {

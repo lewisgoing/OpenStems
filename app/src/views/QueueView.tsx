@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Check, GripVertical, Layers, RotateCcw, Trash2, X, Zap } from 'lucide-react'
+import { AlertTriangle, Check, GripVertical, Layers, Play, RotateCcw, Trash2, X, Zap } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { Job, Model, Recipe } from '@/api/client'
 import { keys, useJobActions, useJobs } from '@/api/queries'
@@ -36,6 +36,7 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles }
   }, [])
 
   const finished = jobs.filter((j) => j.state === 'done' || j.state === 'failed' || j.state === 'cancelled').length
+  const held = jobs.filter((j) => j.held).length
 
   const drop = (targetId: string) => {
     if (!dragged || dragged === targetId) return
@@ -55,7 +56,7 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles }
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col">
-      <RecipeBar recipes={recipes} models={models} onAddFiles={onAddFiles} />
+      <RecipeBar recipes={recipes} models={models} onAddFiles={onAddFiles} quietAdd={held > 0} />
 
       {jobs.length === 0 ? (
         <EmptyQueue />
@@ -65,17 +66,20 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles }
             <span className="text-[12px] font-semibold tracking-wide uppercase">
               Queue <span className="tabular ml-1 font-normal text-faint">{jobs.length}</span>
             </span>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={finished === 0}
-              onClick={() => {
-                onSelect(null)
-                actions.clearFinished.mutate(undefined, { onError: toast.error })
-              }}
-            >
-              Clear finished
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <StartButton held={held} onStart={() => actions.startAll.mutate(undefined, { onError: toast.error })} />
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={finished === 0}
+                onClick={() => {
+                  onSelect(null)
+                  actions.clearFinished.mutate(undefined, { onError: toast.error })
+                }}
+              >
+                Clear finished
+              </Button>
+            </div>
           </div>
           <ul className="m-0 flex-1 list-none overflow-y-auto px-3 pt-1 pb-4" aria-label="Jobs">
             {jobs.map((job, index) => (
@@ -86,6 +90,7 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles }
                 selected={job.id === selectedJob}
                 dropTarget={over === job.id && dragged !== job.id}
                 onSelect={() => onSelect(job.state === 'done' ? job : null)}
+                onStart={() => actions.start.mutate(job.id, { onError: toast.error })}
                 onCancel={() => actions.cancel.mutate(job.id, { onError: toast.error })}
                 onRetry={() => actions.retry.mutate(job.id, { onError: toast.error })}
                 onRemove={() => {
@@ -109,6 +114,30 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles }
         </>
       )}
     </div>
+  )
+}
+
+/**
+ * The one button of manual start: there while songs wait for it, gone when none do. It says
+ * how many it starts. Ctrl+Enter does the same from the keyboard.
+ */
+export function StartButton({ held, onStart }: { held: number; onStart: () => void }) {
+  useEffect(() => {
+    if (held === 0) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Enter' || !event.ctrlKey || event.altKey || event.shiftKey) return
+      event.preventDefault()
+      onStart()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [held, onStart])
+  if (held === 0) return null
+  return (
+    <Button size="sm" variant="primary" title="Start the songs that are waiting (Ctrl+Enter)" onClick={onStart}>
+      <Play size={11} fill="currentColor" />
+      Start {held === 1 ? '1 song' : `${held} songs`}
+    </Button>
   )
 }
 
@@ -143,6 +172,7 @@ interface JobRowProps {
   selected: boolean
   dropTarget: boolean
   onSelect: () => void
+  onStart: () => void
   onCancel: () => void
   onRetry: () => void
   onRemove: () => void
@@ -152,7 +182,7 @@ interface JobRowProps {
   onDrop: () => void
 }
 
-function JobRow({ job, index, selected, dropTarget, onSelect, onCancel, onRetry, onRemove, onDragStart, onDragEnd, onDragOver, onDrop }: JobRowProps) {
+function JobRow({ job, index, selected, dropTarget, onSelect, onStart, onCancel, onRetry, onRemove, onDragStart, onDragEnd, onDragOver, onDrop }: JobRowProps) {
   const active = ACTIVE.has(job.state)
   const done = job.state === 'done'
   const queued = job.state === 'queued'
@@ -245,6 +275,11 @@ function JobRow({ job, index, selected, dropTarget, onSelect, onCancel, onRetry,
               <X size={14} />
             </IconButton>
           )}
+          {job.held && (
+            <IconButton label="Start this one" onClick={onStart}>
+              <Play size={13} />
+            </IconButton>
+          )}
           {(job.state === 'failed' || job.state === 'cancelled') && (
             <IconButton label="Retry" onClick={onRetry}>
               <RotateCcw size={14} />
@@ -283,6 +318,7 @@ export function StateIcon({ job }: { job: Job }) {
 export function statusText(job: Job): string {
   switch (job.state) {
     case 'queued':
+      if (job.held) return 'Ready to start'
       return job.queue_position ? `Queued, ${job.queue_position} ahead` : 'Queued, up next'
     case 'preparing':
     case 'running':

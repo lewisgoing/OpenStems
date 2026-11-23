@@ -108,6 +108,12 @@ Python package and keys, `OPENSTEMS_*` for environment variables. The app was le
 survives only there, in the changelog and in `docs/adr/0009-rename-openstems.md`. The folder
 `D:\lew-stems` on the development machine is a real folder and keeps its name.
 
+Manual start: a queued job can be held (`held` on a job; `JobManager.release` lets it go,
+`POST /v1/jobs/start` and `/v1/jobs/{id}/start`). Whether a new job is held follows the
+`auto_start` setting, off by default; the watch folder always starts its files.
+`OPENSTEMS_AUTO_START=1|0` overrides the setting, and the test suites set it to 1 except the
+ones about manual start (`engine/tests/test_manual_start.py`, `app/e2e/manual-start.spec.ts`).
+
 Dependencies point inward: `domain` imports nothing from the other packages and never imports
 torch. `cli` and `api` are the only entry points.
 

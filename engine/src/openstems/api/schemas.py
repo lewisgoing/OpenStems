@@ -159,6 +159,11 @@ class CreateJob(BaseModel):
     model: str | None = Field(default=None, description="Run a single model instead.")
     quality: Quality | None = None
     options: JobOptions = JobOptions()
+    start: bool | None = Field(
+        default=None,
+        description="Start as soon as the GPU is free, or wait for Start. "
+        "Default: the auto_start setting.",
+    )
 
 
 class CreateBatch(BaseModel):
@@ -167,6 +172,11 @@ class CreateBatch(BaseModel):
     model: str | None = None
     quality: Quality | None = None
     options: JobOptions = JobOptions()
+    start: bool | None = Field(
+        default=None,
+        description="Start as soon as the GPU is free, or wait for Start. "
+        "Default: the auto_start setting.",
+    )
 
 
 class StemFile(BaseModel):
@@ -196,6 +206,7 @@ class JobInfo(BaseModel):
     stems: list[StemFile] = []
     analysis: dict[str, Any] = {}
     queue_position: int | None = None
+    held: bool = Field(default=False, description="Queued, and waiting for the user's Start.")
     created_at: float
     started_at: float | None = None
     finished_at: float | None = None
@@ -231,6 +242,7 @@ class SettingsModel(BaseModel):
     watch_enabled: bool
     vram_budget_gb: float
     use_gpu: bool
+    auto_start: bool
 
 
 class SettingsPatch(BaseModel):
@@ -251,6 +263,7 @@ class SettingsPatch(BaseModel):
     watch_enabled: bool | None = None
     vram_budget_gb: float | None = None
     use_gpu: bool | None = None
+    auto_start: bool | None = None
 
 
 class StemSetInfo(BaseModel):

@@ -153,6 +153,8 @@ openapi.json` in `engine/` and `pnpm gen:api` here.
 OpenStems keeps an icon in the notification area, by the clock.
 
 - **Pick the format** (WAV, FLAC or MP3) next to the quality, in either window.
+- **Songs wait for Start.** What you drop is queued; press Start (or Ctrl+Enter) to run it.
+  Settings > Queue can make songs start by themselves instead.
 - **Click the icon** for the quick-drop window: a small window against the taskbar. Drop a
   song on it, and its stems come back as pills you drag straight into your DAW. It uses the
   same recipe, quality and queue as the full window, and stays open while you work in other

@@ -68,6 +68,9 @@ export async function launch(
       OPENSTEMS_E2E: '1',
       OPENSTEMS_ENGINE: 'fake',
       OPENSTEMS_FAKE_DELAY: '0.02',
+      // Most tests are about something else: songs start as they are added. The tests of
+      // manual start pass an empty value, which leaves the setting (off) in charge.
+      OPENSTEMS_AUTO_START: '1',
       OPENSTEMS_CONFIG_DIR: join(root, 'config'),
       OPENSTEMS_MODELS_DIR: join(root, 'models'),
       OPENSTEMS_OUTPUT_DIR: outputDir,

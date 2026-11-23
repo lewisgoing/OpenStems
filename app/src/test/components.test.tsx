@@ -12,6 +12,8 @@ import { QueueView } from '@/views/QueueView'
 import { bridge } from './setup'
 
 const actions = {
+  startAll: { mutate: vi.fn() },
+  start: { mutate: vi.fn() },
   cancel: { mutate: vi.fn() },
   retry: { mutate: vi.fn() },
   remove: { mutate: vi.fn() },
@@ -61,6 +63,7 @@ const job = (patch: Partial<Job>): Job => ({
   stems: [],
   analysis: {},
   queue_position: 0,
+  held: false,
   created_at: 0,
   started_at: null,
   finished_at: null,
@@ -128,6 +131,19 @@ describe('QueueView', () => {
     expect(bridge.startDrag).toHaveBeenCalledWith(stems.map((s) => s.path))
     await userEvent.click(screen.getByTestId('job-row'))
     expect(onSelect).toHaveBeenCalledWith(done)
+  })
+
+  it('shows a song that waits for Start, and starts all of them or one', () => {
+    jobs = [job({ id: 'a', held: true }), job({ id: 'b', held: true }), job({ id: 'c' })]
+    view()
+    const rows = screen.getAllByTestId('job-row')
+    expect(within(rows[0]!).getByTestId('job-status')).toHaveTextContent('Ready to start')
+    expect(within(rows[2]!).getByTestId('job-status')).toHaveTextContent('Queued, up next')
+    fireEvent.click(screen.getByRole('button', { name: 'Start 2 songs' }))
+    expect(actions.startAll.mutate).toHaveBeenCalled()
+    fireEvent.click(within(rows[1]!).getByRole('button', { name: 'Start this one' }))
+    expect(actions.start.mutate).toHaveBeenCalledWith('b', expect.anything())
+    expect(within(rows[2]!).queryByRole('button', { name: 'Start this one' })).not.toBeInTheDocument()
   })
 
   it('says when a result came from the cache and where a job is in the queue', () => {

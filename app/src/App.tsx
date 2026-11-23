@@ -203,6 +203,7 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
   const showQueue = useCallback(() => setView((v) => (v.id === 'queue' ? v : { id: 'queue', animate: true })), [])
   const flow = useDropFlow(recipes, models, showQueue)
   const { submit, addFiles } = flow
+  const { data: settings } = useSettings()
 
   // Ctrl+1..4 switch views. Keyboard-initiated, so the view appears at once.
   useEffect(() => {
@@ -307,7 +308,7 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
         )}
       </main>
 
-      <DropOverlay onDrop={addFiles} label={flow.label} />
+      <DropOverlay onDrop={addFiles} label={flow.label} manual={settings ? !settings.auto_start : false} />
       <SeedOffer models={models} onStarted={() => setView({ id: 'models', animate: true })} />
       <PendingDownload flow={flow} models={models} />
     </div>

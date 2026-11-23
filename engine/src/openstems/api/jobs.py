@@ -1,4 +1,7 @@
-"""The job queue: one job on the GPU at a time, in order, with cancel, retry and reorder."""
+"""The job queue: one job on the GPU at a time, in order, with cancel, retry and reorder.
+
+A queued job may be held: it keeps its place but is not sent to the GPU until the user
+starts it. That is how files added without auto-start wait for the Start button."""
 
 from __future__ import annotations
 
@@ -81,6 +84,8 @@ class JobManager:
                 "recipe_name": data.get("recipe_name", job.recipe_id),
                 "stems": data.get("stems", []),
                 "analysis": data.get("analysis", {}),
+                # A job that was waiting for Start still waits after a restart.
+                "held": bool(data.get("held")) and job.state is JobState.QUEUED,
             }
             self._order.append(job.id)
 
@@ -88,7 +93,9 @@ class JobManager:
 
     def to_dict(self, job: Job) -> dict[str, Any]:
         extra = self._extra.get(job.id, {})
-        queued = [j for j in self._order if self._jobs[j].state is JobState.QUEUED]
+        held = bool(extra.get("held")) and job.state is JobState.QUEUED
+        # The position counts the jobs that will run before this one: held jobs are not in line.
+        queued = [j for j in self._order if self._runnable(j)]
         return {
             "id": job.id,
             "track_path": job.track_path,
@@ -106,6 +113,7 @@ class JobManager:
             "stems": extra.get("stems", []),
             "analysis": extra.get("analysis", {}),
             "queue_position": queued.index(job.id) if job.id in queued else None,
+            "held": held,
             "created_at": job.created_at,
             "started_at": job.started_at,
             "finished_at": job.finished_at,
@@ -118,6 +126,12 @@ class JobManager:
     def get(self, job_id: str) -> dict[str, Any]:
         with self._lock:
             return self.to_dict(self._job(job_id))
+
+    def _runnable(self, job_id: str) -> bool:
+        """Queued and free to go to the GPU: not waiting for the user's Start."""
+        return self._jobs[job_id].state is JobState.QUEUED and not self._extra.get(job_id, {}).get(
+            "held"
+        )
 
     def _job(self, job_id: str) -> Job:
         try:
@@ -144,17 +158,42 @@ class JobManager:
         recipe_name: str,
         quality: str,
         options: dict[str, Any] | None = None,
+        hold: bool = False,
     ) -> dict[str, Any]:
+        """Add a job. With ``hold`` it waits in the queue until `release` lets it go."""
         job = Job(track_path=track_path, recipe_id=recipe_id, quality=quality)
         job.options = dict(options or {})
         with self._lock:
             self._jobs[job.id] = job
-            self._extra[job.id] = {"recipe_name": recipe_name, "stems": [], "analysis": {}}
+            self._extra[job.id] = {
+                "recipe_name": recipe_name,
+                "stems": [],
+                "analysis": {},
+                "held": hold,
+            }
             self._order.append(job.id)
             self._changed(job)
             self._trim_finished()
             self._dispatch()
             return self.to_dict(job)
+
+    def release(self, job_id: str | None = None) -> list[dict[str, Any]]:
+        """The user's Start: release one held job, or every held job, to the GPU. They run
+        in queue order, behind whatever is already in line."""
+        with self._lock:
+            if job_id is not None:
+                self._job(job_id)
+            for held_id in self._order:
+                if job_id not in (None, held_id) or not self._extra[held_id].get("held"):
+                    continue
+                self._extra[held_id]["held"] = False
+                self._changed(self._jobs[held_id])
+            # Positions in line changed for the jobs behind them.
+            for queued_id in self._order:
+                if self._runnable(queued_id):
+                    self.bus.publish("job.updated", job=self.to_dict(self._jobs[queued_id]))
+            self._dispatch()
+            return [self.to_dict(self._jobs[j]) for j in self._order]
 
     def cancel(self, job_id: str) -> dict[str, Any]:
         with self._lock:
@@ -179,6 +218,7 @@ class JobManager:
             job.message = ""
             job.output_dir = None
             self._extra[job.id]["stems"] = []
+            self._extra[job.id]["held"] = False  # asking again is asking for it to run
             # A retried job goes to the back of the queue.
             self._order.remove(job.id)
             self._order.append(job.id)
@@ -238,7 +278,7 @@ class JobManager:
             return
         for job_id in self._order:
             job = self._jobs[job_id]
-            if job.state is JobState.QUEUED:
+            if self._runnable(job_id):
                 self._seq += 1
                 self._current, self._current_seq = job.id, self._seq
                 job.advance(JobState.PREPARING)

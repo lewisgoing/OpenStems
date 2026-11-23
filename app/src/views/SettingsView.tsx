@@ -83,6 +83,15 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
             </Row>
           </Group>
 
+          <Group title="Queue">
+            <Row
+              label="Start songs automatically"
+              hint="Off: songs you add wait in the queue until you press Start, so you can line up several and set the order first. On: each song starts as soon as it is added. The watch folder always starts its files."
+            >
+              <Switch label="Start songs automatically" checked={settings.auto_start} onChange={(v) => save({ auto_start: v })} />
+            </Row>
+          </Group>
+
           <Group title="Defaults">
             <Row label="Recipe" hint="Used by the watch folder and by a fresh install.">
               <Select

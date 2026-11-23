@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { AppWindow, Download, FolderOpen, Layers, Plus, RotateCcw, X } from 'lucide-react'
+import { AppWindow, Download, FolderOpen, Layers, Play, Plus, RotateCcw, X } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import type { TrayActivity } from '../../electron/bridge'
 import type { Job, Model, Recipe } from '@/api/client'
@@ -16,7 +16,7 @@ import { Wordmark } from '@/components/Wordmark'
 import { cn, formatBytes, formatPercent, stemColor } from '@/lib/format'
 import { PendingDownload, useDropFlow } from '@/state/dropflow'
 import { SelectionProvider, useSelection } from '@/state/selection'
-import { ACTIVE, StateIcon, StemsMark, statusText } from '@/views/QueueView'
+import { ACTIVE, StartButton, StateIcon, StemsMark, statusText } from '@/views/QueueView'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 30_000 } },
@@ -149,7 +149,8 @@ function TrayShell() {
 
 /** The queue in the three facts the tray icon shows. */
 export function activityOf(jobs: Job[], finishedId: string | null): TrayActivity {
-  const open = jobs.filter((job) => !FINISHED.has(job.state))
+  // A song that waits for Start is not work in progress: the icon stays quiet about it.
+  const open = jobs.filter((job) => !FINISHED.has(job.state) && !job.held)
   const running = open.find((job) => ACTIVE.has(job.state))
   const finished = finishedId ? jobs.find((job) => job.id === finishedId && job.state === 'done') : undefined
   return {
@@ -210,6 +211,8 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
 
   const shown = [...jobs].reverse().slice(0, MAX_ROWS)
   const finished = jobs.filter((job) => FINISHED.has(job.state)).length
+  const held = jobs.filter((job) => job.held).length
+  const { data: settings } = useSettings()
   const chooseFiles = () => input.current?.click()
 
   return (
@@ -254,14 +257,17 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
             <span className="text-[11.5px] font-semibold tracking-wide uppercase">
               Recent <span className="tabular ml-1 font-normal text-faint">{jobs.length}</span>
             </span>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={finished === 0}
-              onClick={() => actions.clearFinished.mutate(undefined, { onError: toast.error })}
-            >
-              Clear finished
-            </Button>
+            <div className="flex items-center gap-1">
+              <StartButton held={held} onStart={() => actions.startAll.mutate(undefined, { onError: toast.error })} />
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={finished === 0}
+                onClick={() => actions.clearFinished.mutate(undefined, { onError: toast.error })}
+              >
+                Clear finished
+              </Button>
+            </div>
           </div>
           <ul className="m-0 min-h-0 flex-1 list-none overflow-y-auto px-2 pb-2" aria-label="Recent jobs">
             {shown.map((job) => (
@@ -271,6 +277,7 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
                 expanded={job.id === expanded}
                 fresh={picked === null && job.id === finishedId}
                 onPick={() => setPick({ id: job.id, since: finishedId })}
+                onStart={() => actions.start.mutate(job.id, { onError: toast.error })}
                 onCancel={() => actions.cancel.mutate(job.id, { onError: toast.error })}
                 onRetry={() => actions.retry.mutate(job.id, { onError: toast.error })}
               />
@@ -279,7 +286,7 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
         </>
       )}
 
-      <DropOverlay onDrop={flow.addFiles} label={flow.label} />
+      <DropOverlay onDrop={flow.addFiles} label={flow.label} manual={settings ? !settings.auto_start : false} />
       <PendingDownload flow={flow} models={models} />
     </div>
   )
@@ -326,6 +333,7 @@ interface QuickRowProps {
   /** The stems arrived just now, so they may make an entrance. */
   fresh: boolean
   onPick: () => void
+  onStart: () => void
   onCancel: () => void
   onRetry: () => void
 }
@@ -336,7 +344,7 @@ function startDrag(event: React.DragEvent, paths: string[]): void {
   window.openstems.startDrag(paths)
 }
 
-export function QuickRow({ job, expanded, fresh, onPick, onCancel, onRetry }: QuickRowProps) {
+export function QuickRow({ job, expanded, fresh, onPick, onStart, onCancel, onRetry }: QuickRowProps) {
   const active = ACTIVE.has(job.state)
   const queued = job.state === 'queued'
   const done = job.state === 'done'
@@ -366,6 +374,11 @@ export function QuickRow({ job, expanded, fresh, onPick, onCancel, onRetry }: Qu
         {/* One action per row, to the left of what stays put: the name keeps its room, and
             the percentage and the stems handle never move when the pointer arrives. */}
         <div className="reveal-on-hover flex flex-none items-center" onClick={(event) => event.stopPropagation()}>
+          {job.held && (
+            <IconButton label="Start this one" onClick={onStart}>
+              <Play size={13} />
+            </IconButton>
+          )}
           {(active || queued) && (
             <IconButton label="Cancel" onClick={onCancel}>
               <X size={14} />

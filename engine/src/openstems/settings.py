@@ -50,6 +50,10 @@ class Settings:
     # Off: run on the CPU even when a GPU is present (the way out when a card or
     # driver misbehaves). OPENSTEMS_DEVICE=cpu does the same for one process.
     use_gpu: bool = True
+    # Off (the default): files added to the queue wait there until the user presses Start.
+    # On: each one starts as soon as the GPU is free. The watch folder always starts its
+    # files, since nobody is there to press anything. OPENSTEMS_AUTO_START=1 or 0 overrides.
+    auto_start: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -177,6 +181,9 @@ def load_settings() -> Settings:
     for key, env in _ENV.items():
         if os.environ.get(env):
             setattr(settings, key, os.environ[env])
+    auto_start = os.environ.get("OPENSTEMS_AUTO_START", "").strip().lower()
+    if auto_start:
+        settings.auto_start = auto_start in ("1", "true", "yes", "on")
     return settings
 
 

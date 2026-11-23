@@ -18,6 +18,8 @@ interface RecipeBarProps {
   recipes: Recipe[]
   models: Model[]
   onAddFiles: (files: File[]) => void
+  /** Songs are waiting for Start: that is the main action now, so "Add files" steps back. */
+  quietAdd?: boolean
 }
 
 export function useCurrentRecipe(recipes: Recipe[], models: Model[]) {
@@ -67,7 +69,7 @@ export function useRecipeOptions(recipes: Recipe[], models: Model[]): SelectOpti
   }, [recipes, models])
 }
 
-export function RecipeBar({ recipes, models, onAddFiles }: RecipeBarProps) {
+export function RecipeBar({ recipes, models, onAddFiles, quietAdd }: RecipeBarProps) {
   const { selection, update } = useSelection()
   const { recipe, stems, missing } = useCurrentRecipe(recipes, models)
   const input = useRef<HTMLInputElement>(null)
@@ -131,7 +133,7 @@ export function RecipeBar({ recipes, models, onAddFiles }: RecipeBarProps) {
           if (files.length) onAddFiles(files)
         }}
       />
-      <Button variant="primary" className="flex-none" onClick={() => input.current?.click()}>
+      <Button variant={quietAdd ? 'default' : 'primary'} className="flex-none" onClick={() => input.current?.click()}>
         <Plus size={14} />
         Add files
       </Button>

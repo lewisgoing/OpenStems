@@ -80,6 +80,12 @@ export function useJobActions() {
   const queryClient = useQueryClient()
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.jobs })
   return {
+    /** Start every job that is waiting for the user's Start. */
+    startAll: useMutation({ mutationFn: () => unwrap(api.POST('/v1/jobs/start')) }),
+    /** Start one waiting job, ahead of pressing Start for the rest. */
+    start: useMutation({
+      mutationFn: (id: string) => unwrap(api.POST('/v1/jobs/{job_id}/start', { params: { path: { job_id: id } } })),
+    }),
     cancel: useMutation({
       mutationFn: (id: string) => unwrap(api.POST('/v1/jobs/{job_id}/cancel', { params: { path: { job_id: id } } })),
     }),

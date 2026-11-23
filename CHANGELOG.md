@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Songs wait for Start.** Files you drop or add now wait in the queue until you press
+  Start, so you can line up several and set their order first. Start runs every waiting song
+  (Ctrl+Enter does the same); a waiting song can also be started by itself. Both windows
+  have it. This is the new default.
+- Settings > Queue > "Start songs automatically" brings back the old behavior, where each
+  song starts as soon as it is added. The watch folder always starts its files.
+- The tray icon stays quiet while songs only wait.
+
 ## 0.2.2 (2026-11-22)
 
 - After an app update the Python environment is no longer rebuilt. The app installs what

@@ -119,3 +119,30 @@ test('screenshots of the update offer', async () => {
     await app.close()
   }
 })
+
+test('screenshots of manual start', async () => {
+  const out = process.env.SHOTS_DIR ?? join(import.meta.dirname, '..', 'test-results', 'shots')
+  mkdirSync(out, { recursive: true })
+  const { app, page, fixtures } = await launch({ OPENSTEMS_AUTO_START: '', OPENSTEMS_FAKE_DELAY: '0.3' })
+  const popup = await trayPage(app)
+  try {
+    await page.setViewportSize({ width: 1280, height: 820 })
+    await page.getByTestId('file-input').setInputFiles(
+      ['First Song.mp3', 'Second Song.flac', 'Video Clip.mp4'].map((n) => join(fixtures, n)),
+    )
+    await page.getByRole('button', { name: 'Start 3 songs' }).waitFor()
+    await page.getByTestId('job-row').nth(1).hover()
+    await page.waitForTimeout(400)
+    await page.screenshot({ path: join(out, 'manual-1-waiting.png') })
+    await clickTray(app)
+    await popup.getByRole('button', { name: 'Start 3 songs' }).waitFor()
+    await popup.waitForTimeout(300)
+    await popup.screenshot({ path: join(out, 'manual-2-quick-drop.png') })
+    await page.getByTestId('job-row').nth(1).getByRole('button', { name: 'Start this one' }).click()
+    await page.locator('[data-testid="job-row"][data-state="running"]').waitFor()
+    await page.waitForTimeout(300)
+    await page.screenshot({ path: join(out, 'manual-3-one-started.png') })
+  } finally {
+    await app.close()
+  }
+})

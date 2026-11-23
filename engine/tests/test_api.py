@@ -28,6 +28,7 @@ TERMINAL = {"done", "failed", "cancelled"}
 def fake_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENSTEMS_ENGINE", "fake")
     monkeypatch.setenv("OPENSTEMS_FAKE_DELAY", "0.01")
+    monkeypatch.setenv("OPENSTEMS_AUTO_START", "1")
 
 
 @pytest.fixture

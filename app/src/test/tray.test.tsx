@@ -22,6 +22,8 @@ import { bridge } from './setup'
 
 const createJobs = { mutate: vi.fn() }
 const actions = {
+  startAll: { mutate: vi.fn() },
+  start: { mutate: vi.fn() },
   cancel: { mutate: vi.fn() },
   retry: { mutate: vi.fn() },
   remove: { mutate: vi.fn() },
@@ -84,6 +86,7 @@ const job = (patch: Partial<Job>): Job => ({
   stems: [],
   analysis: {},
   queue_position: 0,
+  held: false,
   created_at: 0,
   started_at: null,
   finished_at: null,
@@ -251,6 +254,12 @@ describe('the tray icon', () => {
       current: { name: 'Now', progress: 0.41 },
       done: { id: 'a', name: 'Old', stems: 6 },
     })
+    // Songs that wait for Start are not work in progress.
+    expect(activityOf([job({ id: 'w', held: true }), job({ id: 'x', held: true })], null)).toEqual({
+      active: 0,
+      current: null,
+      done: null,
+    })
     // A job that left the list, or never finished, announces nothing.
     expect(activityOf(list, 'gone').done).toBeNull()
     expect(activityOf(list, 'd').done).toBeNull()
@@ -340,6 +349,29 @@ describe('the quick-drop window', () => {
     expect(actions.retry.mutate).toHaveBeenCalledWith('a', expect.anything())
     fireEvent.click(screen.getByRole('button', { name: 'Clear finished' }))
     expect(actions.clearFinished.mutate).toHaveBeenCalled()
+  })
+
+  it('offers Start while songs wait for it, for all of them or for one', () => {
+    jobs = [job({ id: 'a', track_name: 'One', held: true }), job({ id: 'b', track_name: 'Two', held: true })]
+    render(quickDrop())
+    expect(rows()[0]).toHaveTextContent('Ready to start')
+    fireEvent.click(screen.getByRole('button', { name: 'Start 2 songs' }))
+    expect(actions.startAll.mutate).toHaveBeenCalledTimes(1)
+    fireEvent.click(within(rows()[0]!).getByRole('button', { name: 'Start this one' }))
+    expect(actions.start.mutate).toHaveBeenCalledWith('b', expect.anything())
+    // From the keyboard: Ctrl+Enter.
+    fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true })
+    expect(actions.startAll.mutate).toHaveBeenCalledTimes(2)
+    fireEvent.keyDown(window, { key: 'Enter' })
+    expect(actions.startAll.mutate).toHaveBeenCalledTimes(2)
+  })
+
+  it('has no Start button when nothing waits', () => {
+    jobs = [job({ id: 'a', state: 'running', progress: 0.2 }), job({ id: 'b' })]
+    render(quickDrop())
+    expect(screen.queryByRole('button', { name: /^Start/ })).not.toBeInTheDocument()
+    fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true })
+    expect(actions.startAll.mutate).not.toHaveBeenCalled()
   })
 
   it('tells the tray what the queue is doing, and announces only what finishes while it watches', () => {

@@ -127,6 +127,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/jobs/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Jobs
+         * @description Start every job that is waiting for the user's Start.
+         */
+        post: operations["start_jobs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -173,6 +193,26 @@ export interface paths {
         put?: never;
         /** Retry Job */
         post: operations["retry_job"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/{job_id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Job
+         * @description Start one job that is waiting for the user's Start.
+         */
+        post: operations["start_job"];
         delete?: never;
         options?: never;
         head?: never;
@@ -440,6 +480,11 @@ export interface components {
             quality?: ("fast" | "balanced" | "best") | null;
             /** Recipe */
             recipe?: string | null;
+            /**
+             * Start
+             * @description Start as soon as the GPU is free, or wait for Start. Default: the auto_start setting.
+             */
+            start?: boolean | null;
         };
         /** CreateJob */
         CreateJob: {
@@ -459,6 +504,11 @@ export interface components {
              * @description Recipe id.
              */
             recipe?: string | null;
+            /**
+             * Start
+             * @description Start as soon as the GPU is free, or wait for Start. Default: the auto_start setting.
+             */
+            start?: boolean | null;
         };
         /** Diagnostics */
         Diagnostics: {
@@ -541,6 +591,12 @@ export interface components {
             error?: string | null;
             /** Finished At */
             finished_at?: number | null;
+            /**
+             * Held
+             * @description Queued, and waiting for the user's Start.
+             * @default false
+             */
+            held: boolean;
             /** Id */
             id: string;
             /** Message */
@@ -826,6 +882,8 @@ export interface components {
         };
         /** SettingsModel */
         SettingsModel: {
+            /** Auto Start */
+            auto_start: boolean;
             /** Cache Dir */
             cache_dir: string;
             /**
@@ -869,6 +927,8 @@ export interface components {
         };
         /** SettingsPatch */
         SettingsPatch: {
+            /** Auto Start */
+            auto_start?: boolean | null;
             /** Cache Dir */
             cache_dir?: string | null;
             /** Default Quality */
@@ -1569,6 +1629,62 @@ export interface operations {
             };
         };
     };
+    start_jobs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobList"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_job: {
         parameters: {
             query?: never;
@@ -1744,6 +1860,64 @@ export interface operations {
         };
     };
     retry_job: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobInfo"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_job: {
         parameters: {
             query?: never;
             header?: never;
