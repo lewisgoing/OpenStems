@@ -61,16 +61,23 @@ That step runs on every pull request, so a change that breaks it is caught.
 
 ## The certificate
 
-Made on 2026-11-23 with `scripts/make-mac-cert.sh` on the development PC: "OpenStems
-Self-Signed", valid until 2046-11-18, SHA-1 fingerprint
-`0B:19:66:C8:4A:D4:D3:82:18:AC:77:85:4F:EC:9C:5A:73:C9:FD:48`. The key, the `.p12` and its
-password are in `D:\keys\openstems-mac` on that PC and in the repository secrets
-`CSC_LINK` and `CSC_KEY_PASSWORD`. Never in the repository.
+Made by the owner on the M1 Max on 2026-11-23, in Keychain Access (Certificate Assistant >
+Create a Certificate: "Self Signed Root", "Code Signing"), named "OpenStems". SHA-1
+fingerprint `86:E0:37:2E:33:92:92:DD:C7:9E:60:18:DB:42:49:0B:7D:FC:27:59`. It is in that
+Mac's login keychain, in the owner's backup as a `.p12` with its password, and in the
+repository secrets `CSC_LINK` and `CSC_KEY_PASSWORD`. Never in the repository.
+`scripts/make-mac-cert.sh` makes an equivalent one where there is no Mac.
+
+On 2026-11-23 the release step above ran once on the Mac runner with these secrets, building
+only the app folder and publishing nothing: it took the certificate for self-signed, trusted
+it, and electron-builder signed the app with it (`Authority=OpenStems`, valid). The
+designated requirement was `identifier "ing.lewisgo.openstems" and certificate leaf =
+H"86e0372e339292ddc79e6018db42490b7dfc2759"`.
 
 ## Not seen yet
 
 - **A real release.** The first release signed this way has not been made. The secrets are
-  set, so the next release is the first, if this change is in it.
+  set and were tried (above), so the next release is the first, if this change is in it.
 - **On a Mac with a person at it.** The CI app was built there and never downloaded, so it
   carries no quarantine mark, and it ran from a folder, not from `/Applications`. An app
   from a dmg, allowed through System Settings, moved to Applications and then updated has
