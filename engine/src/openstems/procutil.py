@@ -46,10 +46,14 @@ def _windows_memory_bytes() -> int | None:
             ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
         ]
 
+    # Asked for by name: only Windows has `windll`, and the type checker on a Mac says so.
+    windll = getattr(ctypes, "windll", None)
+    if windll is None:
+        return None
     status = MemoryStatus()
     status.dwLength = ctypes.sizeof(MemoryStatus)
     try:
-        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+        if not windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
             return None
     except (AttributeError, OSError):
         return None
