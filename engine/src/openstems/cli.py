@@ -68,6 +68,8 @@ def doctor() -> None:
     console.print(table)
     for problem in report.problems:
         console.print(f"[red]problem:[/red] {problem}")
+    for note in report.notes:
+        console.print(f"[yellow]note:[/yellow] {note}")
     if not report.ok:
         raise typer.Exit(code=1)
     console.print("[green]ok[/green]")
@@ -133,6 +135,8 @@ def selftest(
         console.print(table)
     for problem in report.problems:
         console.print(f"[red]problem:[/red] {problem}")
+    for note in report.notes:
+        console.print(f"[yellow]note:[/yellow] {note}")
     if not report.ok:
         raise typer.Exit(code=1)
     console.print("[green]ok[/green]")

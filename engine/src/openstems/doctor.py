@@ -1,10 +1,14 @@
-"""Environment check: Python, PyTorch, the GPU backend (CUDA or ROCm), GPU and FFmpeg."""
+"""Environment check: Python, PyTorch, the GPU backend (CUDA, ROCm or MPS), GPU and FFmpeg."""
 
 from __future__ import annotations
 
 import io
 import platform
+import subprocess
+import sys
 from dataclasses import dataclass, field
+
+from openstems.procutil import physical_memory_bytes
 
 
 @dataclass(frozen=True)
@@ -18,11 +22,15 @@ class DoctorReport:
     ffmpeg: str | None
     ffmpeg_decode_ok: bool
     problems: list[str] = field(default_factory=list)
-    # "cuda" (NVIDIA) or "rocm" (AMD), by how this PyTorch was built; None for a CPU build.
-    # ROCm builds answer through torch.cuda too, so `cuda_available` means "a GPU works"
-    # for either vendor.
+    # "cuda" (NVIDIA), "rocm" (AMD) or "mps" (Apple Silicon), by how this PyTorch was built;
+    # None for a CPU build. The field names are older than the second and third backend and
+    # stay for the API's sake: `cuda_available` means "a GPU works" for any of them,
+    # `cuda_version` is set only on an NVIDIA build, and on a Mac `vram_gb` is the machine's
+    # unified memory, which the GPU shares with everything else.
     gpu_backend: str | None = None
     gpu_backend_version: str | None = None
+    # Things worth knowing that are not faults, such as the STFT running on the CPU on a Mac.
+    notes: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -43,13 +51,15 @@ class DoctorReport:
             ("GPU backend", self.backend_label),
             ("GPU available", "yes" if self.cuda_available else "NO"),
             ("GPU", self.gpu_name or "-"),
-            ("VRAM", vram),
+            ("Memory (shared)" if self.gpu_backend == "mps" else "VRAM", vram),
             ("FFmpeg (PyAV)", self.ffmpeg or "not installed"),
             ("FFmpeg decode", "ok" if self.ffmpeg_decode_ok else "FAILED"),
         ]
 
 
-BACKEND_NAMES = {"cuda": "CUDA", "rocm": "ROCm"}
+BACKEND_NAMES = {"cuda": "CUDA", "rocm": "ROCm", "mps": "MPS"}
+# The oldest macOS the Mac build supports (PyTorch's own wheel needs it too).
+MIN_MACOS = 14
 
 # AMD's PyTorch-on-Windows 7.2.1 support matrix.
 ROCM_CARDS = (
@@ -58,18 +68,90 @@ ROCM_CARDS = (
 ROCM_DRIVER = "26.2.2"
 
 
-def torch_backend(version_module: object) -> tuple[str | None, str | None]:
-    """Which GPU backend a PyTorch build targets, from ``torch.version``."""
+def torch_backend(version_module: object, mps_built: bool = False) -> tuple[str | None, str | None]:
+    """Which GPU backend a PyTorch build targets, from ``torch.version`` and, for a Mac
+    build, ``torch.backends.mps.is_built()``. MPS has no version of its own: it is part of
+    macOS, so the macOS version stands in."""
     hip = getattr(version_module, "hip", None)
     if hip:
         return "rocm", str(hip).split("-")[0]
     cuda = getattr(version_module, "cuda", None)
     if cuda:
         return "cuda", str(cuda)
+    if mps_built:
+        release = macos_release()
+        return "mps", f"macOS {release}" if release else None
     return None, None
 
 
+def mps_built(torch: object) -> bool:
+    """Whether this PyTorch was built with the Apple GPU backend."""
+    try:
+        return bool(torch.backends.mps.is_built())  # type: ignore[attr-defined]
+    except Exception:
+        return False
+
+
+def macos_release() -> str:
+    """The macOS version, such as "14.5"; empty when it cannot be read."""
+    try:
+        return platform.mac_ver()[0]
+    except Exception:
+        return ""
+
+
+def _sysctl(name: str) -> str:
+    try:
+        done = subprocess.run(
+            ["/usr/sbin/sysctl", "-n", name],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        return done.stdout.strip() if done.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def mac_gpu_name() -> str:
+    """The chip, which on Apple Silicon is also the GPU: "Apple M2 Pro". Falls back to
+    what Python knows, then to a plain name."""
+    name = _sysctl("machdep.cpu.brand_string") if sys.platform == "darwin" else ""
+    if not name:
+        try:
+            name = platform.processor() or ""
+        except Exception:
+            name = ""
+    name = name.strip()
+    if not name or name in ("arm", "arm64", "i386"):
+        return "Apple GPU"
+    return name
+
+
+def mac_problem(machine: str, release: str) -> str:
+    """Why the Apple GPU cannot be used on this Mac."""
+    cpu_note = "Separation runs on the CPU, which is much slower."
+    if machine and machine not in ("arm64", "aarch64"):
+        return (
+            "This Mac has an Intel processor. OpenStems needs a Mac with Apple Silicon "
+            f"(M1 or later): PyTorch has no GPU support for Intel Macs. {cpu_note}"
+        )
+    major = release.split(".")[0] if release else ""
+    if major.isdigit() and int(major) < MIN_MACOS:
+        return (
+            f"This Mac runs macOS {release}. The Apple GPU needs macOS {MIN_MACOS} or later: "
+            f"update macOS. {cpu_note}"
+        )
+    return (
+        "The Apple GPU (MPS) is not available to PyTorch on this Mac. "
+        f"It needs Apple Silicon and macOS {MIN_MACOS} or later. {cpu_note}"
+    )
+
+
 def no_gpu_problem(backend: str | None) -> str:
+    if backend == "mps" or (backend is None and sys.platform == "darwin"):
+        return mac_problem(platform.machine(), macos_release())
     if backend == "rocm":
         return (
             "This is the AMD build of PyTorch, but it found no supported Radeon GPU. "
@@ -98,28 +180,22 @@ def unsupported_card_problem(name: str, capability: tuple[int, int], cuda: str |
     )
 
 
-def check_gpu_ops(torch: object) -> None:
+def check_gpu_ops(torch: object, device: str = "cuda") -> None:
     """Run the kinds of op every model needs on the GPU and compare with the CPU.
 
     A build can report a GPU yet lack kernels for the card (a 50-series card on old CUDA
     wheels, a Radeon the ROCm build does not cover). Raises on a failure or a wrong result.
+    ``device`` is "cuda" for NVIDIA and AMD, "mps" for a Mac.
     """
     import torch as t
 
-    x = t.ones(8, device="cuda")
+    from openstems.engines.stft_fallback import check_stft
+
+    x = t.ones(8, device=device)
     if float((x * 2).sum().item()) != 16.0:
         raise RuntimeError("wrong result from a GPU op")
     # The separation models all start and end with an STFT on the GPU.
-    gen = t.Generator().manual_seed(0)
-    wave = t.randn(2, 16384, generator=gen)
-    window = t.hann_window(1024)
-    expected = t.stft(wave, 1024, 256, window=window, return_complex=True)
-    got = t.stft(wave.cuda(), 1024, 256, window=window.cuda(), return_complex=True)
-    if float((got.cpu() - expected).abs().max()) > 1e-2:
-        raise RuntimeError("the GPU STFT does not match the CPU STFT")
-    back = t.istft(got, 1024, 256, window=window.cuda(), length=wave.shape[-1])
-    if float((back.cpu() - wave).abs().max()) > 1e-3:
-        raise RuntimeError("the GPU inverse STFT does not rebuild the signal")
+    check_stft(device)
 
 
 def check_ffmpeg_decode() -> tuple[str | None, bool, str | None]:
@@ -174,17 +250,35 @@ def run_doctor() -> DoctorReport:
     vram_gb: float | None = None
     backend: str | None = None
     backend_version: str | None = None
+    notes: list[str] = []
 
     try:
         import torch
 
         torch_version = torch.__version__
         cuda_version = torch.version.cuda
-        backend, backend_version = torch_backend(torch.version)
+        backend, backend_version = torch_backend(torch.version, mps_built(torch))
         cuda_available = bool(torch.cuda.is_available())
+        from openstems.engines.device import mps_available
         from openstems.engines.torch_common import card_supported
 
-        if cuda_available and backend == "cuda" and not card_supported():
+        if backend == "mps":
+            cuda_available = mps_available()
+            if cuda_available:
+                gpu_name = mac_gpu_name()
+                memory = physical_memory_bytes()
+                vram_gb = memory / 1024**3 if memory else None
+                try:
+                    check_mps(torch, notes)
+                except Exception as exc:
+                    cuda_available = False
+                    problems.append(
+                        f"The Apple GPU is reported but a GPU op failed: {exc!r}. "
+                        "Turn off 'Use the GPU' in Settings to run on the CPU."
+                    )
+            else:
+                problems.append(no_gpu_problem(backend))
+        elif cuda_available and backend == "cuda" and not card_supported():
             gpu_name = torch.cuda.get_device_name(0)
             vram_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
             cuda_available = False
@@ -225,4 +319,17 @@ def run_doctor() -> DoctorReport:
         problems=problems,
         gpu_backend=backend,
         gpu_backend_version=backend_version,
+        notes=notes,
     )
+
+
+def check_mps(torch: object, notes: list[str]) -> None:
+    """The GPU check for a Mac. A broken STFT is not a fault there: the engine moves that
+    one step to the CPU (``engines/stft_fallback.py``) and the report says so. Anything
+    else that fails is raised, as on the other backends."""
+    from openstems.engines.stft_fallback import ensure_stft
+
+    note = ensure_stft("mps")
+    if note:
+        notes.append(note)
+    check_gpu_ops(torch, "mps")  # with the patch in, the STFT part passes on the CPU

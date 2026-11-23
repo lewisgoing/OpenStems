@@ -128,6 +128,7 @@ class Service:
                     "ffmpeg": None,
                     "ffmpeg_decode_ok": True,
                     "problems": [],
+                    "notes": [],
                 }
             else:
                 from openstems.doctor import run_doctor
@@ -145,6 +146,7 @@ class Service:
                     "ffmpeg": r.ffmpeg,
                     "ffmpeg_decode_ok": r.ffmpeg_decode_ok,
                     "problems": r.problems,
+                    "notes": r.notes,
                 }
         return {
             "version": __version__,

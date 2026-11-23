@@ -7,12 +7,15 @@ from pathlib import Path
 
 import pytest
 
+from openstems import settings as settings_module
 from openstems.settings import load_settings, settings_file
 
 
 @pytest.fixture
 def profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A Windows profile in a temp folder, with no folder chosen through the environment."""
+    """A Windows profile in a temp folder, with no folder chosen through the environment.
+    The rename only ever happened on Windows, so these run as Windows wherever they run."""
+    monkeypatch.setattr(settings_module, "_is_mac", lambda: False)
     for name in ("CONFIG", "MODELS", "OUTPUT", "CACHE"):
         monkeypatch.delenv(f"OPENSTEMS_{name}_DIR", raising=False)
     monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))

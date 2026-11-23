@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
@@ -25,15 +26,51 @@ def _roaming_appdata() -> Path:
     return Path(os.environ.get("APPDATA") or Path.home() / ".config")
 
 
+def _is_mac() -> bool:
+    return sys.platform == "darwin"
+
+
+def _mac_library() -> Path:
+    return Path.home() / "Library"
+
+
+def data_dir() -> Path:
+    """Where models live by default, beside the app's Python environment. On a Mac this is
+    also the config folder: ~/Library/Application Support/OpenStems holds everything that
+    is not a cache, a log or an output."""
+    if _is_mac():
+        return _mac_library() / "Application Support" / APP_NAME
+    return _local_appdata() / APP_NAME
+
+
+def default_config_dir() -> Path:
+    if _is_mac():
+        return data_dir()
+    return _roaming_appdata() / APP_NAME
+
+
+def default_cache_dir() -> Path:
+    if _is_mac():
+        return _mac_library() / "Caches" / APP_NAME
+    return _local_appdata() / APP_NAME / "cache"
+
+
+def logs_dir() -> Path:
+    """Where the engine log, the last self-test and exported diagnostics go."""
+    if _is_mac():
+        return _mac_library() / "Logs" / APP_NAME
+    return _local_appdata() / APP_NAME / "logs"
+
+
 def config_dir() -> Path:
-    return Path(os.environ.get("OPENSTEMS_CONFIG_DIR") or _roaming_appdata() / APP_NAME)
+    return Path(os.environ.get("OPENSTEMS_CONFIG_DIR") or default_config_dir())
 
 
 @dataclass
 class Settings:
-    models_dir: str = field(default_factory=lambda: str(_local_appdata() / APP_NAME / "models"))
+    models_dir: str = field(default_factory=lambda: str(data_dir() / "models"))
     output_dir: str = field(default_factory=lambda: str(Path.home() / "Music" / APP_NAME))
-    cache_dir: str = field(default_factory=lambda: str(_local_appdata() / APP_NAME / "cache"))
+    cache_dir: str = field(default_factory=lambda: str(default_cache_dir()))
     output_format: str = "wav32f"
     match_source_rate: bool = False
     naming_template: str = DEFAULT_TEMPLATE
@@ -46,6 +83,8 @@ class Settings:
     write_midi: bool = False
     watch_folder: str = ""
     watch_enabled: bool = False
+    # How much model weight may stay loaded at once. On a Mac the GPU shares the machine's
+    # memory, so the engine also caps this at half of it (`vram_budget_bytes`).
     vram_budget_gb: float = 12.0
     # Off: run on the CPU even when a GPU is present (the way out when a card or
     # driver misbehaves). OPENSTEMS_DEVICE=cpu does the same for one process.
@@ -76,7 +115,20 @@ class Settings:
 
     @property
     def logs_path(self) -> Path:
-        return _local_appdata() / APP_NAME / "logs"
+        return logs_dir()
+
+    @property
+    def vram_budget_bytes(self) -> int:
+        """The budget for warm models in bytes. A Mac has no graphics memory of its own:
+        weights sit in the memory everything else uses, so no more than half of it."""
+        budget = int(self.vram_budget_gb * 1024**3)
+        if _is_mac():
+            from openstems.procutil import physical_memory_bytes
+
+            memory = physical_memory_bytes()
+            if memory:
+                budget = min(budget, memory // 2)
+        return budget
 
 
 _ENV = {
@@ -137,6 +189,8 @@ def adopt_legacy_settings() -> dict[str, Any]:
     """
     if os.environ.get("OPENSTEMS_CONFIG_DIR"):
         return {}  # a config folder chosen by hand (tests, a portable setup) has no past
+    if _is_mac():
+        return {}  # the app never had the old name on a Mac
     legacy_config = _roaming_appdata() / LEGACY_NAME
     values: dict[str, Any] = {}
     try:

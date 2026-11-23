@@ -5,6 +5,7 @@ Usage (from engine/):
         [--batch 1,2,4] [--markdown]
 
 Prints one row per model and preset. Paste the --markdown output into docs/benchmarks.md.
+On a Mac the memory column is what the Metal driver holds after the run: MPS keeps no peak.
 """
 
 from __future__ import annotations
@@ -14,12 +15,29 @@ import contextlib
 import io
 import time
 
-import torch
-
 from openstems.audio.decode import decode
 from openstems.domain.quality import PRESET_NAMES, RunSettings, resolve_settings
+from openstems.engines.device import (
+    empty_cache,
+    gpu_device_name,
+    reset_peak_memory,
+    synchronize,
+    used_memory_bytes,
+)
 from openstems.engines.host import engine_for
 from openstems.runtime import build_runtime
+
+
+def gpu_name(device: str) -> str:
+    if device == "cuda":
+        import torch
+
+        return torch.cuda.get_device_name(0)
+    if device == "mps":
+        from openstems.doctor import mac_gpu_name
+
+        return mac_gpu_name()
+    return "none (CPU)"
 
 
 def main() -> None:
@@ -32,6 +50,7 @@ def main() -> None:
     args = parser.parse_args()
 
     rt = build_runtime()
+    device = gpu_device_name() or "cpu"
     ids = [m for m in args.models.split(",") if m] or [
         s.id for s in rt.catalog if rt.store.is_installed(s)
     ]
@@ -41,7 +60,7 @@ def main() -> None:
 
     for model_id in ids:
         spec = rt.catalog.get(model_id)
-        torch.cuda.empty_cache()
+        empty_cache(device)
         t0 = time.perf_counter()
         with contextlib.redirect_stdout(io.StringIO()):
             loaded = engine_for(spec).load(spec, rt.store)
@@ -53,12 +72,12 @@ def main() -> None:
                 settings = RunSettings(
                     base.chunk_size, base.num_overlap, batch, base.tta, base.precision
                 )
-                torch.cuda.reset_peak_memory_stats()
-                torch.cuda.synchronize()
+                reset_peak_memory(device)
+                synchronize(device)
                 t0 = time.perf_counter()
                 try:
                     loaded.separate(mix, settings)
-                    torch.cuda.synchronize()
+                    synchronize(device)
                     run_s = time.perf_counter() - t0
                     note = ""
                 except Exception as exc:
@@ -74,7 +93,7 @@ def main() -> None:
                         "load_s": load_s,
                         "run_s": run_s,
                         "x_realtime": seconds / run_s if run_s == run_s else 0.0,
-                        "peak_vram_gb": torch.cuda.max_memory_allocated() / 1024**3,
+                        "peak_vram_gb": used_memory_bytes(device) / 1024**3,
                         "note": note,
                     }
                 )
@@ -90,7 +109,7 @@ def main() -> None:
         del loaded
 
     if args.markdown:
-        print(f"Song length: {seconds:.0f} s. GPU: {torch.cuda.get_device_name(0)}.\n")
+        print(f"Song length: {seconds:.0f} s. GPU: {gpu_name(device)}.\n")
         print(
             "| Model | Preset | Overlap | TTA | Batch | Load (s) | Run (s) "
             "| x real time | Peak VRAM (GB) |"

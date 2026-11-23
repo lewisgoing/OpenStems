@@ -120,6 +120,7 @@ def test_selftest_without_a_gpu_reports_it(monkeypatch: pytest.MonkeyPatch) -> N
     import torch
 
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
     report = selftest.run_selftest()
     assert not report.ok
     assert not report.ops

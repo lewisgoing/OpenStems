@@ -19,7 +19,9 @@ from openstems.domain.errors import DomainError
 from openstems.domain.model import ModelSpec
 from openstems.domain.quality import RunSettings
 from openstems.engines.base import CancelToken, ProgressFn
+from openstems.engines.device import empty_cache, is_gpu, mps_available
 from openstems.engines.runner import ModelFn, run_model
+from openstems.engines.stft_fallback import ensure_stft
 from openstems.settings import load_settings
 
 # The loaders call torch.stft without a window on purpose and still use a deprecated
@@ -100,10 +102,14 @@ def card_supported() -> bool:
 
 def pick_device() -> torch.device:
     """The first GPU, for NVIDIA (CUDA) and AMD (ROCm) builds alike: both answer through
-    ``torch.cuda``. The CPU when there is none, when the GPU is switched off, or when this
-    PyTorch build has no kernels for the card."""
-    if gpu_allowed() and torch.cuda.is_available() and card_supported():
-        return torch.device("cuda:0")
+    ``torch.cuda``. On a Mac, the Apple GPU ("mps"). The CPU when there is none, when the GPU
+    is switched off, or when this PyTorch build has no kernels for the card."""
+    if not gpu_allowed():
+        return torch.device("cpu")
+    if torch.cuda.is_available():
+        return torch.device("cuda:0" if card_supported() else "cpu")
+    if mps_available():
+        return torch.device("mps")
     return torch.device("cpu")
 
 
@@ -165,7 +171,8 @@ class TorchLoadedModel:
         self.stems = stems or spec.stems
         self._fn: ModelFn = model_fn or (lambda x: module(x))
         self.vram_bytes = 0
-        if device.type == "cuda":
+        # On a Mac the weights sit in the memory the whole machine shares; they count the same.
+        if is_gpu(device):
             self.vram_bytes = sum(p.numel() * p.element_size() for p in module.parameters())
 
     def separate(
@@ -192,8 +199,7 @@ class TorchLoadedModel:
     def unload(self) -> None:
         self.module = None
         self._fn = lambda x: x
-        if self.device.type == "cuda":
-            torch.cuda.empty_cache()
+        empty_cache(self.device)
 
 
 def finish_load(
@@ -211,6 +217,8 @@ def finish_load(
         )
     module.load_state_dict(state, strict=True)
     device = pick_device()
+    # On the Apple GPU, check the STFT once before any model runs there (stft_fallback.py).
+    ensure_stft(device)
     module = module.to(device).eval()
     fn = model_fn_factory(module) if model_fn_factory else None
     return TorchLoadedModel(spec, module, device, fn, spec.stems)

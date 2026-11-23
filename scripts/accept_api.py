@@ -25,6 +25,16 @@ import httpx
 from websockets.sync.client import connect
 
 
+def kill(pid: int) -> None:
+    """Kill a process outright, the way a crash would."""
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True, check=False)
+    else:
+        import signal
+
+        os.kill(pid, signal.SIGKILL)
+
+
 def main() -> int:
     songs = sys.argv[1:]
     if len(set(songs)) < 5:
@@ -159,7 +169,7 @@ def main() -> int:
         victim = client.post("/v1/jobs", json=body).json()["id"]
         wait(lambda js: js[0]["state"] == "running" and js[0]["progress"] > 0.15)
         old_pid = client.get("/v1/system").json()["worker"]["pid"]
-        subprocess.run(["taskkill", "/F", "/PID", str(old_pid)], capture_output=True, check=False)
+        kill(old_pid)
         failed = wait(terminal)[0]
         check(
             "job is marked failed",
