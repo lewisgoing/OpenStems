@@ -437,6 +437,15 @@
             "title": "Message",
             "type": "string"
           },
+          "notes": {
+            "default": [],
+            "description": "What did not go as planned, such as a model that ran on the CPU.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
           "options": {
             "additionalProperties": true,
             "default": {},
@@ -803,6 +812,17 @@
             "title": "Experimental",
             "type": "boolean"
           },
+          "fit": {
+            "default": "fits",
+            "description": "Against the machine's memory budget. 'tight': it fits with less than 15 percent to spare. 'no' is advice: the model may still be run.",
+            "enum": [
+              "fits",
+              "tight",
+              "no"
+            ],
+            "title": "Fit",
+            "type": "string"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -815,6 +835,18 @@
             "title": "Loader",
             "type": "string"
           },
+          "memory_estimated": {
+            "default": false,
+            "description": "The figure was not measured the way this machine runs.",
+            "title": "Memory Estimated",
+            "type": "boolean"
+          },
+          "memory_gb": {
+            "default": 0.0,
+            "description": "What one run needs on this machine at batch 1, in GB.",
+            "title": "Memory Gb",
+            "type": "number"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -822,6 +854,12 @@
           "notes": {
             "title": "Notes",
             "type": "string"
+          },
+          "recommended": {
+            "default": false,
+            "description": "Part of the set offered for the first download here.",
+            "title": "Recommended",
+            "type": "boolean"
           },
           "seed": {
             "title": "Seed",
@@ -982,9 +1020,38 @@
             "title": "Experimental",
             "type": "boolean"
           },
+          "fit": {
+            "default": "fits",
+            "description": "Whether the recipe's largest model fits this machine. Models run one at a time, so a recipe is as large as its largest model.",
+            "enum": [
+              "fits",
+              "tight",
+              "no"
+            ],
+            "title": "Fit",
+            "type": "string"
+          },
+          "fit_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The model that decides the fit.",
+            "title": "Fit Model"
+          },
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "memory_gb": {
+            "default": 0.0,
+            "description": "What that model needs, in GB.",
+            "title": "Memory Gb",
+            "type": "number"
           },
           "missing_models": {
             "items": {
@@ -1003,6 +1070,14 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "output_groups": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "The group of each output stem that is a part of a larger one, such as kick in drums. The parts of a group add up to it; the group is not written.",
+            "title": "Output Groups",
+            "type": "object"
           },
           "outputs": {
             "items": {
@@ -1409,6 +1484,10 @@
             "title": "Sum To Mix",
             "type": "boolean"
           },
+          "tempo_sync": {
+            "title": "Tempo Sync",
+            "type": "boolean"
+          },
           "trim_silence": {
             "title": "Trim Silence",
             "type": "boolean"
@@ -1447,6 +1526,7 @@
           "trim_silence",
           "normalize",
           "detect_tempo_key",
+          "tempo_sync",
           "write_midi",
           "watch_folder",
           "watch_enabled",
@@ -1602,6 +1682,17 @@
             ],
             "title": "Sum To Mix"
           },
+          "tempo_sync": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tempo Sync"
+          },
           "trim_silence": {
             "anyOf": [
               {
@@ -1677,6 +1768,18 @@
           "file": {
             "title": "File",
             "type": "string"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The larger stem this one is a part of, if any.",
+            "title": "Group"
           },
           "midi": {
             "anyOf": [
@@ -1901,6 +2004,44 @@
           "logs_dir": {
             "title": "Logs Dir",
             "type": "string"
+          },
+          "memory_budget_gb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Budget Gb"
+          },
+          "memory_gb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Gb"
+          },
+          "memory_kind": {
+            "default": "cpu",
+            "enum": [
+              "cuda",
+              "mps",
+              "cpu"
+            ],
+            "title": "Memory Kind",
+            "type": "string"
+          },
+          "memory_overridden": {
+            "default": false,
+            "description": "OPENSTEMS_MEMORY_GB stands in for the detected memory.",
+            "title": "Memory Overridden",
+            "type": "boolean"
           },
           "notes": {
             "default": [],

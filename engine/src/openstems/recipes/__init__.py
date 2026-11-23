@@ -14,6 +14,7 @@ from openstems.domain.recipe import Recipe, check_against_models, recipe_from_di
 ORDER = (
     "full-song",
     "full-song-best-vocals",
+    "every-stem",
     "vocals-instrumental",
     "acapella-clean",
     "drum-kit",

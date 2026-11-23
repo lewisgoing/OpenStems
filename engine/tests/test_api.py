@@ -500,3 +500,25 @@ def test_selftest_process_output_is_parsed(monkeypatch: pytest.MonkeyPatch) -> N
     assert crashed["ok"] is False
     assert "crashed" in crashed["problems"][0]
     assert crashed["problems"][-1] == "boom"
+
+
+def test_only_the_development_server_may_call_from_another_origin(
+    fake_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from openstems.api.app import create_app
+
+    ask = {
+        "Origin": "http://localhost:5173",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "authorization",
+    }
+    monkeypatch.delenv("OPENSTEMS_DEV_ORIGIN", raising=False)
+    with TestClient(create_app("t")) as plain:
+        assert plain.options("/v1/settings", headers=ask).status_code == 405
+    monkeypatch.setenv("OPENSTEMS_DEV_ORIGIN", "http://localhost:5173")
+    with TestClient(create_app("t")) as dev:
+        allowed = dev.options("/v1/settings", headers=ask)
+        assert allowed.status_code == 200
+        assert allowed.headers["access-control-allow-origin"] == "http://localhost:5173"
+        other = dev.options("/v1/settings", headers={**ask, "Origin": "http://example.com"})
+        assert "access-control-allow-origin" not in other.headers

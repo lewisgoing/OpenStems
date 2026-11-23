@@ -6,13 +6,64 @@ import { useCreateMix } from '@/api/queries'
  * A mix in a few words: `no vocals`, `drums + bass`. The engine names the file by the same
  * rule (`mix_label` in `pipeline/mix.py`); keep the two alike.
  */
-export function mixLabel(chosen: string[], every: string[]): string {
-  const leftOut = every.filter((name) => !chosen.includes(name))
+export function mixLabel(chosen: string[], every: string[], groups: Record<string, string> = {}): string {
+  const count = chosen.length
+  let leftOut = every.filter((name) => !chosen.includes(name))
+  // A group that is all in, or all out, goes by its own name: the whole kit is "drums".
+  chosen = wholeGroups(chosen, every, groups)
+  leftOut = wholeGroups(leftOut, every, groups)
+  if (chosen.length === 1 && leftOut.length > 0) return chosen[0] ?? ''
   if (leftOut.length === 0) return 'mix'
   if (leftOut.length === 1) return `no ${leftOut[0]}`
   if (chosen.length <= 3) return chosen.join(' + ')
   if (leftOut.length <= 3) return `no ${leftOut.join(', ')}`
-  return `${chosen.length} stems`
+  return `${count} stems`
+}
+
+/** `names` with every group that is all there replaced by the group's name. */
+function wholeGroups(names: string[], every: string[], groups: Record<string, string>): string[] {
+  const out: string[] = []
+  for (const name of names) {
+    const group = groups[name]
+    if (group && every.every((other) => groups[other] !== group || names.includes(other))) {
+      if (!out.includes(group)) out.push(group)
+    } else {
+      out.push(name)
+    }
+  }
+  return out
+}
+
+/** The group of each stem that is a part of a larger one (kick in drums). */
+export function groupsOf(stems: { name: string; group?: string | null }[]): Record<string, string> {
+  const groups: Record<string, string> = {}
+  for (const stem of stems) if (stem.group) groups[stem.name] = stem.group
+  return groups
+}
+
+export interface StemSection<T> {
+  /** The larger stem these are the parts of, or null for a stem on its own. */
+  group: string | null
+  stems: T[]
+}
+
+/** Stems in their own order, with the parts of one group that follow each other together. */
+export function stemSections<T extends { group?: string | null }>(stems: T[]): StemSection<T>[] {
+  const sections: StemSection<T>[] = []
+  for (const stem of stems) {
+    const last = sections[sections.length - 1]
+    if (stem.group && last?.group === stem.group) last.stems.push(stem)
+    else sections.push({ group: stem.group || null, stems: [stem] })
+  }
+  return sections
+}
+
+/** A part's name inside its group: "lead vocals" under Vocals is "lead". */
+export function partName(name: string, group: string | null | undefined): string {
+  if (!group) return name
+  const lower = name.toLowerCase()
+  const tail = ` ${group.toLowerCase()}`
+  return lower.endsWith(tail) && name.length > tail.length ? name.slice(0, -tail.length) : name
 }
 
 export function capitalize(text: string): string {

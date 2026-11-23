@@ -53,13 +53,18 @@ def main() -> None:
 
 
 @app.command()
-def doctor() -> None:
+def doctor(
+    as_json: Annotated[bool, typer.Option("--json", help="Print JSON.")] = False,
+) -> None:
     """Print the Python, PyTorch, GPU backend, GPU and FFmpeg status.
 
     Exits non-zero without a working GPU."""
     from openstems.doctor import run_doctor
 
     report = run_doctor()
+    if as_json:
+        print(json.dumps(report.to_dict(), indent=2))
+        raise typer.Exit(code=0 if report.ok else 1)
     table = Table(show_header=False, box=None, pad_edge=False)
     table.add_column(style="bold")
     table.add_column()
@@ -162,6 +167,7 @@ def models_list(
             "stems": list(spec.stems),
             "license": spec.license,
             "seed": spec.seed,
+            "memory_gb": spec.memory_gb,
         }
         for spec in rt.catalog
     ]
@@ -188,10 +194,15 @@ def models_list(
 def _pick_models(rt, ids: list[str], model_set: str | None):
     if model_set == "seed":
         return rt.catalog.seed()
+    if model_set == "recommended":
+        from openstems.domain.memory import recommended_ids
+        from openstems.engines.host import memory_plan
+
+        return [rt.catalog.get(i) for i in recommended_ids(list(rt.catalog), memory_plan())]
     if model_set == "all":
         return list(rt.catalog)
     if model_set:
-        raise _fail(f"unknown set {model_set!r}; use 'seed' or 'all'")
+        raise _fail(f"unknown set {model_set!r}; use 'seed', 'recommended' or 'all'")
     if not ids:
         raise _fail("name at least one model, or pass --set seed")
     try:
@@ -204,7 +215,12 @@ def _pick_models(rt, ids: list[str], model_set: str | None):
 def models_pull(
     ids: Annotated[list[str] | None, typer.Argument(help="Model ids.")] = None,
     model_set: Annotated[
-        str | None, typer.Option("--set", help="'seed' (the default set) or 'all'.")
+        str | None,
+        typer.Option(
+            "--set",
+            help="'seed' (the default set), 'recommended' (the default set cut to what "
+            "this machine's memory can run) or 'all'.",
+        ),
     ] = None,
 ) -> None:
     """Download models with resume and sha256 verification."""

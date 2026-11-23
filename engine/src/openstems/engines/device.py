@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import torch
 
+from openstems.domain.memory import MemoryPlan, plan_memory
+from openstems.procutil import memory_override_bytes, physical_memory_bytes
+
 GPU_TYPES = ("cuda", "mps")
 
 
@@ -58,14 +61,15 @@ def is_oom(exc: BaseException, device: torch.device | str = "cpu") -> bool:
     CUDA raises ``torch.OutOfMemoryError``. MPS raises a plain ``RuntimeError``: "MPS backend
     out of memory (MPS allocated: ...)", or "Invalid buffer size: ..." when one buffer is
     larger than Metal allows (the wording in PyTorch's ``MPSAllocator.mm``). A smaller batch
-    is the answer to both.
+    is the answer to both. On the CPU it is Python's ``MemoryError`` or a ``RuntimeError``
+    from the allocator: "not enough memory: you tried to allocate ...".
     """
-    if isinstance(exc, torch.OutOfMemoryError):
+    if isinstance(exc, (torch.OutOfMemoryError, MemoryError)):
         return True
     if not isinstance(exc, RuntimeError):
         return False
     text = str(exc).lower()
-    if "out of memory" in text:
+    if "out of memory" in text or "not enough memory" in text:
         return True
     return torch.device(device).type == "mps" and "invalid buffer size" in text
 
@@ -88,3 +92,28 @@ def reset_peak_memory(device: torch.device | str) -> None:
         torch.cuda.reset_peak_memory_stats()
     elif kind == "mps":
         torch.mps.empty_cache()
+
+
+def detected_memory_bytes(device: torch.device | str) -> int | None:
+    """The memory a model on this device lives in: the card's own on CUDA and ROCm, the
+    machine's on a Mac (the GPU shares it) and on the CPU."""
+    if torch.device(device).type == "cuda":
+        try:
+            return int(torch.cuda.get_device_properties(device).total_memory)
+        except Exception:
+            return None
+    return physical_memory_bytes()
+
+
+def memory_plan(device: torch.device | str) -> MemoryPlan:
+    """What one model run may use on this device and at which precision it runs there.
+    ``OPENSTEMS_MEMORY_GB`` stands in for the detected memory."""
+    from openstems.engines.runner import use_half_precision
+
+    kind = torch.device(device).type
+    return plan_memory(
+        kind if kind in GPU_TYPES else "cpu",
+        detected_memory_bytes(device),
+        full_precision=not use_half_precision(device),
+        override_bytes=memory_override_bytes(),
+    )

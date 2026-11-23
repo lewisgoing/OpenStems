@@ -6,9 +6,11 @@ import io
 import platform
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, fields
+from typing import Any
 
-from openstems.procutil import physical_memory_bytes
+from openstems.domain.memory import GB, MemoryPlan, plan_memory
+from openstems.procutil import memory_override_bytes, physical_memory_bytes
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,31 @@ class DoctorReport:
     gpu_backend_version: str | None = None
     # Things worth knowing that are not faults, such as the STFT running on the CPU on a Mac.
     notes: list[str] = field(default_factory=list)
+    # The machine's own memory, and whether the GPU runs models at full precision (a Mac,
+    # a GTX 900 or 10 series card). Both feed the memory budget (`memory_plan`).
+    ram_gb: float | None = None
+    full_precision: bool = True
+
+    def memory_plan(self, use_gpu: bool = True) -> MemoryPlan:
+        """What one model run may use here: on the GPU when it works and is switched on,
+        otherwise on the CPU. ``OPENSTEMS_MEMORY_GB`` stands in for the detected memory."""
+        override = memory_override_bytes()
+        if use_gpu and self.cuda_available:
+            kind = "mps" if self.gpu_backend == "mps" else "cuda"
+            detected = int(self.vram_gb * GB) if self.vram_gb else None
+            return plan_memory(kind, detected, self.full_precision, override)
+        detected = int(self.ram_gb * GB) if self.ram_gb else None
+        return plan_memory("cpu", detected, True, override)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DoctorReport:
+        """A report read back from JSON. Unknown keys are dropped, so a file written by
+        another version still reads; a missing required one raises ``TypeError``."""
+        known = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in known})
 
     @property
     def ok(self) -> bool:
@@ -45,6 +72,12 @@ class DoctorReport:
 
     def lines(self) -> list[tuple[str, str]]:
         vram = f"{self.vram_gb:.1f} GB" if self.vram_gb is not None else "-"
+        plan = self.memory_plan()
+        budget = "-"
+        if plan.budget_bytes is not None:
+            budget = f"{plan.budget_bytes / GB:.1f} GB"
+            if plan.overridden:
+                budget += f" (OPENSTEMS_MEMORY_GB={(plan.memory_bytes or 0) / GB:g})"
         return [
             ("Python", self.python),
             ("PyTorch", self.torch or "not installed"),
@@ -52,6 +85,7 @@ class DoctorReport:
             ("GPU available", "yes" if self.cuda_available else "NO"),
             ("GPU", self.gpu_name or "-"),
             ("Memory (shared)" if self.gpu_backend == "mps" else "VRAM", vram),
+            ("Memory for one model", budget),
             ("FFmpeg (PyAV)", self.ffmpeg or "not installed"),
             ("FFmpeg decode", "ok" if self.ffmpeg_decode_ok else "FAILED"),
         ]
@@ -251,6 +285,8 @@ def run_doctor() -> DoctorReport:
     backend: str | None = None
     backend_version: str | None = None
     notes: list[str] = []
+    full_precision = True
+    ram = physical_memory_bytes()
 
     try:
         import torch
@@ -266,8 +302,7 @@ def run_doctor() -> DoctorReport:
             cuda_available = mps_available()
             if cuda_available:
                 gpu_name = mac_gpu_name()
-                memory = physical_memory_bytes()
-                vram_gb = memory / 1024**3 if memory else None
+                vram_gb = ram / 1024**3 if ram else None
                 try:
                     check_mps(torch, notes)
                 except Exception as exc:
@@ -290,6 +325,9 @@ def run_doctor() -> DoctorReport:
         elif cuda_available:
             gpu_name = torch.cuda.get_device_name(0)
             vram_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
+            from openstems.engines.runner import use_half_precision
+
+            full_precision = not use_half_precision("cuda")
             try:
                 check_gpu_ops(torch)
             except Exception as exc:
@@ -320,6 +358,8 @@ def run_doctor() -> DoctorReport:
         gpu_backend=backend,
         gpu_backend_version=backend_version,
         notes=notes,
+        ram_gb=ram / 1024**3 if ram else None,
+        full_precision=full_precision,
     )
 
 

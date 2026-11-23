@@ -8,6 +8,7 @@ import time
 import numpy as np
 
 from openstems.catalog.store import ModelStore
+from openstems.domain.errors import OutOfMemory
 from openstems.domain.model import ModelSpec
 from openstems.domain.quality import RunSettings
 from openstems.engines.base import CancelToken, ProgressFn
@@ -19,13 +20,44 @@ def fake_gains(count: int) -> list[float]:
     return [(i + 1) / total for i in range(count)]
 
 
+FAKE_GPU = "gpu"
+_once: set[str] = set()  # models whose one-off failure has happened in this process
+
+
+def fake_oom(model_id: str) -> str | None:
+    """How a model should run out of memory, from ``OPENSTEMS_FAKE_OOM``.
+
+    The value is a comma-separated list of ``<model id>`` or ``<model id>:<mode>``; ``all``
+    stands for every model. Modes:
+
+    - ``run`` (the default): every run on the pretend GPU fails; the CPU works.
+    - ``load``: loading on the pretend GPU fails; the CPU works.
+    - ``once``: the first run on the pretend GPU fails, later ones work.
+    - ``always``: every run fails, on the CPU too.
+    """
+    for item in os.environ.get("OPENSTEMS_FAKE_OOM", "").split(","):
+        name, _, mode = item.strip().partition(":")
+        if name and name in (model_id, "all"):
+            return mode or "run"
+    return None
+
+
 class FakeLoadedModel:
     vram_bytes = 0
 
-    def __init__(self, spec: ModelSpec, delay: float) -> None:
+    def __init__(self, spec: ModelSpec, delay: float, device: str = FAKE_GPU) -> None:
         self.spec = spec
         self.delay = delay
+        self.device = device  # "gpu" (pretend) or "cpu"
         self.runs = 0
+
+    def _maybe_run_out(self) -> None:
+        mode = fake_oom(self.spec.id)
+        if mode == "always" or (mode == "run" and self.device != "cpu"):
+            raise OutOfMemory(f"{self.spec.id}: out of memory (FakeEngine)")
+        if mode == "once" and self.device != "cpu" and self.spec.id not in _once:
+            _once.add(self.spec.id)
+            raise OutOfMemory(f"{self.spec.id}: out of memory (FakeEngine)")
 
     def separate(
         self,
@@ -36,6 +68,7 @@ class FakeLoadedModel:
         only: frozenset[str] | None = None,
     ) -> dict[str, np.ndarray]:
         self.runs += 1
+        self._maybe_run_out()
         samples = mix.shape[1]
         step = max(1, settings.chunk_size // max(1, settings.num_overlap))
         chunks = max(1, -(-samples // step))
@@ -61,6 +94,8 @@ class FakeEngine:
     """Splits the input into scaled copies. Honors progress and cancel like a real engine.
 
     ``OPENSTEMS_FAKE_DELAY`` (seconds per chunk) slows it down so queues can be observed.
+    ``OPENSTEMS_FAKE_OOM`` makes chosen models run out of memory (`fake_oom`), so the
+    low-memory path can be acted out without a GPU.
     """
 
     name = "fake"
@@ -69,6 +104,10 @@ class FakeEngine:
         self.delay = float(os.environ.get("OPENSTEMS_FAKE_DELAY", "0")) if delay is None else delay
         self.loads = 0
 
-    def load(self, spec: ModelSpec, store: ModelStore) -> FakeLoadedModel:
+    def load(
+        self, spec: ModelSpec, store: ModelStore, device: str | None = None
+    ) -> FakeLoadedModel:
         self.loads += 1
-        return FakeLoadedModel(spec, self.delay)
+        if fake_oom(spec.id) == "load" and device != "cpu":
+            raise OutOfMemory(f"{spec.id}: not enough memory to load the model (FakeEngine)")
+        return FakeLoadedModel(spec, self.delay, device or FAKE_GPU)

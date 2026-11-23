@@ -4,7 +4,10 @@ import type { Model } from '@/api/client'
 import { useModelActions, useModels } from '@/api/queries'
 import { useToast } from '@/components/toast'
 import { Button, Dialog, IconButton, ProgressBar, Select } from '@/components/ui'
+import { FitChip } from '@/components/Fit'
 import { cn, formatBytes, formatPercent } from '@/lib/format'
+import { type Machine, budgetSentence, modelFitNote, needsText, outcomeSentence, recommendedModels, recommendedReason } from '@/lib/memory'
+import { useMachine } from '@/state/machine'
 
 export function ModelsView() {
   const { data } = useModels()
@@ -15,7 +18,11 @@ export function ModelsView() {
   const models = data?.models ?? []
   const installed = models.filter((m) => m.status === 'installed')
   const available = models.filter((m) => m.status !== 'installed')
-  const seedMissing = available.filter((m) => m.seed && !isBusy(m))
+  const machine = useMachine()
+  // The set the engine recommends for this machine: the usual one where everything fits.
+  const recommended = recommendedModels(models)
+  const reason = recommendedReason(models, machine)
+  const seedMissing = available.filter((m) => recommended.includes(m) && !isBusy(m))
   const seedBytes = seedMissing.reduce((sum, m) => sum + m.bytes, 0)
 
   const pull = (id: string) => actions.pull.mutate(id, { onError: toast.error })
@@ -41,7 +48,7 @@ export function ModelsView() {
           Import
         </Button>
         {seedMissing.length > 0 && (
-          <Button variant="primary" onClick={() => seedMissing.forEach((m) => pull(m.id))}>
+          <Button variant="primary" title={reason ?? undefined} onClick={() => seedMissing.forEach((m) => pull(m.id))}>
             <Download size={14} />
             Download recommended ({formatBytes(seedBytes)})
           </Button>
@@ -49,12 +56,20 @@ export function ModelsView() {
       </header>
 
       <div className="flex-1 overflow-y-auto px-3 py-3">
+        {/* What this machine has for a model, said once, and only when some model is marked. */}
+        {models.some((m) => m.fit === 'tight' || m.fit === 'no') && machine.budget !== null && (
+          <p className="m-0 px-3 pb-3 text-[12px] text-muted" role="note" data-testid="budget-note">
+            {budgetSentence(machine)} Models run one at a time. A model that is marked can still be used.
+          </p>
+        )}
         <Section title="Installed" count={installed.length}>
           {installed.length === 0 && (
-            <p className="m-0 px-3 py-4 text-muted">Nothing installed yet. Download the recommended set to run every standard recipe.</p>
+            <p className="m-0 px-3 py-4 text-muted">
+              Nothing installed yet. {reason ?? 'Download the recommended set to run every standard recipe.'}
+            </p>
           )}
           {installed.map((model) => (
-            <ModelRow key={model.id} model={model}>
+            <ModelRow key={model.id} model={model} machine={machine} recommended={recommended.includes(model)}>
               <IconButton label="Verify files" onClick={() => actions.verify.mutate(model.id, {
                 onSuccess: (result) => toast.show(result.ok ? `${model.name}: files verified` : `${model.name}: ${result.problems.join('; ')}`, { kind: result.ok ? 'info' : 'error' }),
                 onError: toast.error,
@@ -70,7 +85,7 @@ export function ModelsView() {
 
         <Section title="Available" count={available.length}>
           {available.map((model) => (
-            <ModelRow key={model.id} model={model}>
+            <ModelRow key={model.id} model={model} machine={machine} recommended={recommended.includes(model)}>
               {isBusy(model) ? (
                 <IconButton label="Cancel download" onClick={() => actions.cancel.mutate(model.id, { onError: toast.error })}>
                   <X size={14} />
@@ -133,10 +148,12 @@ function Section({ title, count, children }: { title: string; count: number; chi
   )
 }
 
-function ModelRow({ model, children }: { model: Model; children: React.ReactNode }) {
+function ModelRow({ model, machine, recommended, children }: { model: Model; machine: Machine; recommended: boolean; children: React.ReactNode }) {
   const download = model.download
   const busy = isBusy(model)
   const fraction = download && download.total > 0 ? download.done / download.total : 0
+  const needs = needsText(model)
+  const fitNote = modelFitNote(model, machine)
   return (
     <li
       data-testid="model-row"
@@ -147,14 +164,24 @@ function ModelRow({ model, children }: { model: Model; children: React.ReactNode
           <div className="flex items-center gap-2">
             {model.status === 'installed' && <CheckCircle2 size={13} className="flex-none text-ok" />}
             <span className="truncate font-medium">{model.name}</span>
-            {model.seed && <span className="chip">recommended</span>}
+            {recommended && <span className="chip">recommended</span>}
             {model.experimental && <span className="chip !text-warn">experimental</span>}
             {model.custom && <span className="chip">imported</span>}
+            <FitChip fit={model.fit} />
           </div>
           <div className="mt-0.5 truncate text-[12px] text-muted">
             {model.stems.length > 8 ? `${model.stems.length} stems` : model.stems.join(', ')}
-            <span className="text-faint"> · {formatBytes(model.bytes)} · license: {model.license}</span>
+            <span className="text-faint">
+              {' '}· {formatBytes(model.bytes)}
+              {needs && ` · ${needs}`} · license: {model.license}
+            </span>
           </div>
+          {/* Only for a model that is tight or too large: what will happen when it runs. */}
+          {fitNote && model.fit && (
+            <div className="mt-0.5 truncate text-[12px] text-muted" title={fitNote} data-testid="fit-note">
+              {outcomeSentence(model.fit, machine)}
+            </div>
+          )}
           {download?.state === 'failed' && (
             <div className={cn('mt-0.5 truncate text-[12px] text-danger')} role="alert">
               {download.error}

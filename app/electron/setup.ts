@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { app } from 'electron'
 import type { SetupStatus } from './bridge'
 import { bundledUv, engineEnvDir, engineExecutable, engineInstalled, engineSourceDir, envExecutable } from './engine'
-import { installEnv, venvArgs } from './platform'
+import { explainSetupError, installEnv, venvArgs } from './platform'
 import {
   type GpuAdapter,
   type TorchVariant,
@@ -287,7 +287,10 @@ export class EngineSetup {
       writeFileSync(this.marker(), formatMarker(app.getVersion(), chosen), 'utf8')
       this.set({ state: 'ready', installed: chosen })
     } catch (error) {
-      this.set({ state: 'failed', error: error instanceof Error ? error.message : String(error) })
+      this.set({
+        state: 'failed',
+        error: error instanceof Error ? explainSetupError(error, process.platform) : String(error),
+      })
     }
   }
 }

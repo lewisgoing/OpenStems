@@ -4,8 +4,11 @@ import { Check, Download, Link2, Plus, SlidersHorizontal } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import type { Model, Recipe } from '@/api/client'
 import { formatBytes, stemColor } from '@/lib/format'
+import { type Fit, modelFitNote, recipeFitNote } from '@/lib/memory'
 import { shortcut } from '@/platform'
+import { useMachine } from '@/state/machine'
 import { MODEL_PREFIX, useSelection } from '@/state/selection'
+import { FitChip } from './Fit'
 import { FormatSelect } from './FormatSelect'
 import { Button, Segmented, Select, type SelectOption, Switch, Tooltip } from './ui'
 
@@ -38,38 +41,82 @@ export function useCurrentRecipe(recipes: Recipe[], models: Model[]) {
   }, [selection.target, recipes, models])
 }
 
+/**
+ * Whether what is selected fits this machine, with the sentence that says what will happen.
+ * A recipe is as large as its largest model, and the sentence names it.
+ */
+export function useCurrentFit(recipes: Recipe[], models: Model[]): { fit: Fit; note: string | null } {
+  const machine = useMachine()
+  const { recipe, model } = useCurrentRecipe(recipes, models)
+  return useMemo(() => {
+    if (model) return { fit: model.fit ?? 'fits', note: modelFitNote(model, machine) }
+    if (recipe) return { fit: recipe.fit ?? 'fits', note: recipeFitNote(recipe, models, machine, recipes) }
+    return { fit: 'fits' as const, note: null }
+  }, [recipe, model, models, recipes, machine])
+}
+
+/**
+ * What a recipe writes, in as few chips as say it: a stem on its own by its name, the
+ * parts of a larger stem as that stem with how many parts it has (drums 7).
+ */
+export function outputChips(outputs: string[], groups: Record<string, string> = {}): { name: string; parts: number }[] {
+  const chips: { name: string; parts: number }[] = []
+  for (const stem of outputs) {
+    const group = groups[stem]
+    const last = chips[chips.length - 1]
+    if (group && last?.name === group) last.parts += 1
+    else chips.push({ name: group ?? stem, parts: 1 })
+  }
+  return chips
+}
+
+/** The same in a line of words, for the recipe list. */
+function outputsLine(recipe: Recipe): string {
+  const groups = recipe.output_groups ?? {}
+  if (Object.keys(groups).length === 0) return recipe.outputs.join(', ')
+  const chips = outputChips(recipe.outputs, groups).map((chip) => (chip.parts > 1 ? `${chip.name} (${chip.parts})` : chip.name))
+  return `${recipe.outputs.length} stems: ${chips.join(', ')}`
+}
+
+/** What an option shows at its right end: a mark when it does not fit, and a download it needs. */
+function trailing(fit: Fit | undefined, note: string | null, download: number | null) {
+  if (download === null && (!fit || fit === 'fits')) return undefined
+  return (
+    <span className="flex flex-none items-center gap-1">
+      <FitChip fit={fit} note={note} short />
+      {download !== null && (
+        <span className="chip flex-none">
+          <Download size={10} />
+          {formatBytes(download)}
+        </span>
+      )}
+    </span>
+  )
+}
+
 /** Every recipe and every single model as options for the recipe select, grouped. */
 export function useRecipeOptions(recipes: Recipe[], models: Model[]): SelectOption[] {
+  const machine = useMachine()
   return useMemo<SelectOption[]>(() => {
     const recipeOptions = recipes.map((r) => ({
       value: r.id,
       label: r.name,
-      description: r.selectable_outputs ? r.description : r.outputs.join(', '),
+      description: r.selectable_outputs ? r.description : outputsLine(r),
       group: r.experimental ? 'Experimental' : r.use_case || 'Recipes',
-      trailing: r.missing_models.length > 0 ? (
-        <span className="chip flex-none">
-          <Download size={10} />
-          {formatBytes(r.download_bytes)}
-        </span>
-      ) : undefined,
+      trailing: trailing(r.fit, recipeFitNote(r, models, machine), r.missing_models.length > 0 ? r.download_bytes : null),
     }))
     const modelOptions = models.map((m) => ({
       value: MODEL_PREFIX + m.id,
       label: m.name,
       description: m.stems.length > 8 ? `${m.stems.length} stems` : m.stems.join(', '),
       group: 'Single model',
-      trailing: m.status !== 'installed' ? (
-        <span className="chip flex-none">
-          <Download size={10} />
-          {formatBytes(m.bytes)}
-        </span>
-      ) : undefined,
+      trailing: trailing(m.fit, modelFitNote(m, machine), m.status !== 'installed' ? m.bytes : null),
     }))
     // Keep groups together in the order recipes arrive, experimental ones last.
     const standard = recipeOptions.filter((o) => o.group !== 'Experimental')
     const experimental = recipeOptions.filter((o) => o.group === 'Experimental')
     return [...standard, ...experimental, ...modelOptions]
-  }, [recipes, models])
+  }, [recipes, models, machine])
 }
 
 export function RecipeBar({ recipes, models, onAddFiles, onPasteLink, quietAdd }: RecipeBarProps) {
@@ -77,8 +124,10 @@ export function RecipeBar({ recipes, models, onAddFiles, onPasteLink, quietAdd }
   const { recipe, stems, missing } = useCurrentRecipe(recipes, models)
   const input = useRef<HTMLInputElement>(null)
   const options = useRecipeOptions(recipes, models)
+  const { fit, note } = useCurrentFit(recipes, models)
 
   const shownStems = recipe?.selectable_outputs ? selection.outputs : stems
+  const shownChips = outputChips(shownStems, recipe?.output_groups)
 
   return (
     <div className="@container flex items-start gap-3 border-b border-line px-5 py-3">
@@ -108,14 +157,21 @@ export function RecipeBar({ recipes, models, onAddFiles, onPasteLink, quietAdd }
       )}
 
       <div className="hidden min-w-0 flex-1 items-center gap-1 overflow-hidden @[900px]:flex" aria-label="Stems this will write">
-        {shownStems.slice(0, 8).map((stem) => (
-          <span key={stem} className="chip">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: stemColor(stem) }} />
-            {stem}
+        {shownChips.slice(0, 8).map((chip) => (
+          <span key={chip.name} className="chip">
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: stemColor(chip.name) }} />
+            {chip.name}
+            {chip.parts > 1 && <span className="tabular text-faint">{chip.parts}</span>}
           </span>
         ))}
-        {shownStems.length > 8 && <span className="chip">+{shownStems.length - 8}</span>}
+        {shownChips.length > 8 && <span className="chip">+{shownChips.length - 8}</span>}
       </div>
+      {/* Tight or too large for this machine. It is advice: Add files works all the same. */}
+      {note && (
+        <Tooltip label={note}>
+          <FitChip fit={fit} data-testid="recipe-fit" />
+        </Tooltip>
+      )}
       {missing.length > 0 && (
         <span className="chip flex-none !border-warn/40 !text-warn">
           <Download size={10} />

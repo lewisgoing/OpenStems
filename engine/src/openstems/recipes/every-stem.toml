@@ -1,0 +1,106 @@
+id = "every-stem"
+name = "Every stem"
+version = 1
+use_case = "Full song"
+description = "The deepest split: lead and backing vocals from Leap Xe, the drum kit piece by piece, bass, guitar, piano and other."
+residual_into = "other"
+
+# Four models in a chain. The parts of a group add up to the stem they were split from,
+# so each sample of the song is in exactly one file and nothing is written twice.
+
+[[passes]]
+id = "vox"
+model = "bs-roformer-leap-xe-vocals"
+input = "mix"
+
+[[passes]]
+id = "split"
+model = "bs-roformer-karaoke-becruily"
+input = "vox.vocals"
+
+[[passes]]
+id = "sw"
+model = "bs-roformer-sw"
+input = "mix"
+
+[[passes]]
+id = "kit"
+model = "mdx23c-drumsep"
+input = "sw.drums"
+
+# Backing vocals are what the lead model leaves behind in the vocals.
+[[derived]]
+name = "backing"
+add = ["vox.vocals"]
+subtract = ["split.lead"]
+
+# DrumSep's six pieces do not add up to the drums: room, bleed and hand percussion are left
+# over (about -22 to -26 dB below the drums on the test songs). They get their own stem.
+[[derived]]
+name = "kit-rest"
+add = ["sw.drums"]
+subtract = ["kit.kick", "kit.snare", "kit.toms", "kit.hh", "kit.ride", "kit.crash"]
+
+[[outputs]]
+stem = "lead vocals"
+from = "split.lead"
+group = "vocals"
+
+[[outputs]]
+stem = "backing vocals"
+from = "backing"
+group = "vocals"
+
+[[outputs]]
+stem = "kick"
+from = "kit.kick"
+group = "drums"
+
+[[outputs]]
+stem = "snare"
+from = "kit.snare"
+group = "drums"
+
+[[outputs]]
+stem = "toms"
+from = "kit.toms"
+group = "drums"
+
+[[outputs]]
+stem = "hh"
+from = "kit.hh"
+group = "drums"
+
+[[outputs]]
+stem = "ride"
+from = "kit.ride"
+group = "drums"
+
+[[outputs]]
+stem = "crash"
+from = "kit.crash"
+group = "drums"
+
+[[outputs]]
+stem = "other drums"
+from = "kit-rest"
+group = "drums"
+
+[[outputs]]
+stem = "bass"
+from = "sw.bass"
+
+[[outputs]]
+stem = "guitar"
+from = "sw.guitar"
+group = "melody"
+
+[[outputs]]
+stem = "piano"
+from = "sw.piano"
+group = "melody"
+
+[[outputs]]
+stem = "other"
+from = "sw.other"
+group = "melody"

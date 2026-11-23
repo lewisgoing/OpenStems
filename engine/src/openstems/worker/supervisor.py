@@ -18,6 +18,8 @@ EventHandler = Callable[[tuple[Any, ...]], None]
 _ENV_KEYS = (
     "OPENSTEMS_ENGINE",
     "OPENSTEMS_FAKE_DELAY",
+    "OPENSTEMS_FAKE_OOM",
+    "OPENSTEMS_MEMORY_GB",
     "OPENSTEMS_CONFIG_DIR",
     "OPENSTEMS_MODELS_DIR",
     "OPENSTEMS_OUTPUT_DIR",

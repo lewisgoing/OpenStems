@@ -15,7 +15,7 @@ def test_report_fields_are_filled() -> None:
     assert report.python
     assert report.torch
     assert report.ffmpeg_decode_ok
-    assert len(report.lines()) == 8
+    assert len(report.lines()) == 9
 
 
 def test_ok_requires_a_gpu() -> None:

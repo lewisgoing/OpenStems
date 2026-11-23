@@ -83,14 +83,14 @@ describe('the words and keys per system', () => {
 })
 
 describe('the setup screen on a Mac', () => {
-  it('names the one build, its size and that it has not been run on a Mac, with nothing to choose', () => {
+  it('names the one build, its size and how far it has been tried, with nothing to choose', () => {
     render(<SetupScreen status={setup()} />)
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
     expect(screen.queryByRole('radio')).not.toBeInTheDocument()
     expect(screen.getByText('Apple Silicon · M1 and later')).toBeInTheDocument()
     expect(screen.getByText(/about 350 MB/)).toBeInTheDocument()
     expect(screen.getByText(/into your Library folder/)).toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('has not been run on a Mac by OpenStems')
+    expect(screen.getByRole('status')).toHaveTextContent('has been run on one Mac so far')
     expect(document.body).not.toHaveTextContent(/NVIDIA|AMD|graphics card|this PC|user profile/)
     fireEvent.click(screen.getByRole('button', { name: 'Set up' }))
     expect(bridge.runSetup).toHaveBeenLastCalledWith('mps')
@@ -132,7 +132,7 @@ describe('the System rows on a Mac', () => {
     expect(await screen.findByText('Engine build')).toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
     expect(screen.getByText('Apple Silicon')).toBeInTheDocument()
-    expect(screen.getByText(/PyTorch for Apple Silicon \(M1 and later\)\. .*has not been run on a Mac by OpenStems/)).toBeInTheDocument()
+    expect(screen.getByText(/PyTorch for Apple Silicon \(M1 and later\)\. .*has been run on one Mac so far/)).toBeInTheDocument()
   })
 
   it('reads the GPU line with Metal and no empty version', () => {

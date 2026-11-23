@@ -214,6 +214,28 @@ export class StemPlayer {
     this.set({ soloed })
   }
 
+  /**
+   * Solo a group of stems as one: the parts of the drum kit, say. All of them soloed
+   * already takes them out again; otherwise they become the solo, or join it with `additive`.
+   */
+  toggleSoloMany(names: string[], additive = false): void {
+    let soloed = new Set(this.state.soloed)
+    if (names.every((name) => soloed.has(name))) for (const name of names) soloed.delete(name)
+    else if (additive) for (const name of names) soloed.add(name)
+    else soloed = new Set(names)
+    this.applyGains(this.state.muted, soloed)
+    this.set({ soloed })
+  }
+
+  /** Mute a group of stems as one, or bring them all back when every one is muted. */
+  toggleMuteMany(names: string[]): void {
+    const muted = new Set(this.state.muted)
+    if (names.every((name) => muted.has(name))) for (const name of names) muted.delete(name)
+    else for (const name of names) muted.add(name)
+    this.applyGains(muted, this.state.soloed)
+    this.set({ muted })
+  }
+
   isAudible(name: string): boolean {
     const { muted, soloed } = this.state
     return soloed.size > 0 ? soloed.has(name) : !muted.has(name)

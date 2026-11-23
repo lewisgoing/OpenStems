@@ -6,6 +6,7 @@ import {
   joinPath,
   logsDir,
   macBundlePath,
+  explainSetupError,
   uvFileName,
   venvArgs,
   venvExecutable,
@@ -143,5 +144,35 @@ describe('the Mac build configuration', () => {
     const before = JSON.stringify(macBuild({ CSC_LINK: 'x' }))
     macBuild({}).mac.identity = 'changed'
     expect(JSON.stringify(macBuild({ CSC_LINK: 'x' }))).toBe(before)
+  })
+})
+
+describe('a setup failure in plain words', () => {
+  const refused = {
+    code: 'EACCES',
+    path: '/Users/ada/Library/Application Support/OpenStems',
+    message: "EACCES: permission denied, mkdir '/Users/ada/Library/Application Support/OpenStems'",
+  }
+
+  it('says what to run on a Mac whose Application Support folder belongs to root', () => {
+    const text = explainSetupError(refused, 'darwin')
+    expect(text).toContain('sudo chown "$(id -un)" "/Users/ada/Library/Application Support"')
+    expect(text).not.toContain('EACCES')
+  })
+
+  it('names the folder on Windows and gives no Mac command', () => {
+    const folder = 'C:\\Users\\ada\\AppData\\Local\\OpenStems'
+    const text = explainSetupError({ ...refused, code: 'EPERM', path: folder }, 'win32')
+    expect(text).toContain(folder)
+    expect(text).not.toContain('chown')
+  })
+
+  it('leaves every other error as it is', () => {
+    expect(explainSetupError({ message: 'exit code 2' }, 'darwin')).toBe('exit code 2')
+    expect(explainSetupError({ code: 'ENOSPC', message: 'no space left' }, 'win32')).toBe('no space left')
+  })
+
+  it('still reads well when the error names no path', () => {
+    expect(explainSetupError({ code: 'EACCES', message: 'x' }, 'darwin')).not.toContain('chown')
   })
 })

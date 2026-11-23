@@ -226,3 +226,41 @@ test('screenshots of links and mixes', async () => {
     await app.close()
   }
 })
+
+test('screenshots of a machine with little memory', async () => {
+  const out = process.env.SHOTS_DIR ?? join(import.meta.dirname, '..', 'test-results', 'shots')
+  mkdirSync(out, { recursive: true })
+  // The machine acts as 8 GB, and the largest model of the default recipe falls back to the CPU.
+  const { app, page, fixtures } = await launch({ OPENSTEMS_MEMORY_GB: '8', OPENSTEMS_FAKE_OOM: 'bs-roformer-sw', OPENSTEMS_FAKE_DELAY: '0.05' })
+  const popup = await trayPage(app)
+  try {
+    await page.getByTestId('file-input').setInputFiles(['First Song.mp3', 'Second Song.flac'].map((n) => join(fixtures, n)))
+    await page.locator('[data-testid="job-row"][data-state="done"]').nth(1).waitFor()
+    await page.waitForTimeout(500)
+    await page.screenshot({ path: join(out, 'memory-1-queue.png') })
+    await page.locator('[data-testid="job-row"][data-state="done"]').first().click()
+    await page.getByTestId('stem-row').nth(5).waitFor()
+    await page.waitForTimeout(600)
+    await page.screenshot({ path: join(out, 'memory-2-stems.png') })
+    await page.getByRole('combobox', { name: 'Recipe' }).click()
+    await page.waitForTimeout(400)
+    await page.screenshot({ path: join(out, 'memory-3-recipes.png') })
+    await page.getByRole('option', { name: /best vocals/i }).first().click()
+    await page.getByTestId('recipe-fit').hover()
+    await page.waitForTimeout(900)
+    await page.screenshot({ path: join(out, 'memory-4-too-large.png') })
+    await clickTray(app)
+    await popup.locator('[data-testid="quick-row"][data-state="done"]').nth(1).waitFor()
+    await popup.waitForTimeout(500)
+    await popup.screenshot({ path: join(out, 'memory-5-quick-drop.png') })
+    await page.getByRole('button', { name: 'Models' }).click()
+    await page.waitForTimeout(500)
+    await page.screenshot({ path: join(out, 'memory-6-models.png') })
+    await page.getByRole('button', { name: 'Settings' }).click()
+    await page.getByTestId('memory-budget').scrollIntoViewIfNeeded()
+    await page.waitForTimeout(400)
+    await page.screenshot({ path: join(out, 'memory-7-settings.png') })
+  } finally {
+    await app.close()
+  }
+})

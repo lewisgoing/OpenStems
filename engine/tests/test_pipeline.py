@@ -284,7 +284,7 @@ def test_out_of_memory_drops_other_warm_models_and_retries(catalog, store, song,
             return super().separate(*args, **kwargs)
 
     class FlakyEngine(FakeEngine):
-        def load(self, spec, store):
+        def load(self, spec, store, device=None):
             return Flaky(spec, 0.0)
 
     original = host.engine_for

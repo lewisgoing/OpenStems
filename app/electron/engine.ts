@@ -9,6 +9,13 @@ import { type Host, devGroupArgs, engineEnvDir as envDirFor, uvFileName, venvExe
 
 const HEALTH_TIMEOUT_MS = 90_000
 
+/** In `pnpm dev` the interface comes from a local web server, another origin than the engine's
+ *  API, so the engine has to be told to allow it. A built app loads files and sets nothing. */
+function devOrigin(): NodeJS.ProcessEnv {
+  const url = process.env.ELECTRON_RENDERER_URL
+  return url ? { OPENSTEMS_DEV_ORIGIN: new URL(url).origin } : {}
+}
+
 export interface EngineCommand {
   command: string
   args: string[]
@@ -104,7 +111,7 @@ export class EngineProcess {
     try {
       child = spawn(spec.command, spec.args, {
         cwd: spec.cwd,
-        env: { ...process.env, ...spec.env, PYTHONUTF8: '1', PYTHONUNBUFFERED: '1' },
+        env: { ...process.env, ...spec.env, ...devOrigin(), PYTHONUTF8: '1', PYTHONUNBUFFERED: '1' },
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
         // Off Windows the engine gets its own process group, so `stop` can end all of it.

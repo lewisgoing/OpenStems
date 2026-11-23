@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 JobStateName = Literal["queued", "preparing", "running", "writing", "done", "failed", "cancelled"]
 Quality = Literal["fast", "balanced", "best"]
 OutputFormat = Literal["wav32f", "wav24", "flac", "mp3"]
+Fit = Literal["fits", "tight", "no"]
 
 
 class Health(BaseModel):
@@ -38,6 +39,16 @@ class SystemInfo(BaseModel):
     gpu_backend_version: str | None = None
     gpu_name: str | None = None
     vram_gb: float | None = None
+    # What one model run may use on this machine, and the memory it is cut from: the card's
+    # on a PC, the machine's on a Mac or on the CPU. Null when the machine does not say.
+    memory_gb: float | None = None
+    memory_budget_gb: float | None = None
+    # Where models run as the settings stand, which decides the budget's rule: a graphics
+    # card ("cuda", NVIDIA or AMD), the Apple GPU ("mps") or the CPU.
+    memory_kind: Literal["cuda", "mps", "cpu"] = "cpu"
+    memory_overridden: bool = Field(
+        default=False, description="OPENSTEMS_MEMORY_GB stands in for the detected memory."
+    )
     ffmpeg: str | None = None
     ffmpeg_decode_ok: bool = False
     problems: list[str] = []
@@ -86,11 +97,23 @@ class RecipeInfo(BaseModel):
     selectable_outputs: bool
     single_model: bool = False
     outputs: list[str]
+    output_groups: dict[str, str] = Field(
+        default_factory=dict,
+        description="The group of each output stem that is a part of a larger one, such as "
+        "kick in drums. The parts of a group add up to it; the group is not written.",
+    )
     models: list[str]
     passes: list[RecipePass]
     missing_models: list[str]
     download_bytes: int = 0
     supports_sum_to_mix: bool
+    fit: Fit = Field(
+        default="fits",
+        description="Whether the recipe's largest model fits this machine. Models run one "
+        "at a time, so a recipe is as large as its largest model.",
+    )
+    fit_model: str | None = Field(default=None, description="The model that decides the fit.")
+    memory_gb: float = Field(default=0.0, description="What that model needs, in GB.")
 
 
 class RecipeList(BaseModel):
@@ -120,6 +143,20 @@ class ModelInfo(BaseModel):
     notes: str
     used_by: list[str] = []
     download: DownloadState | None = None
+    memory_gb: float = Field(
+        default=0.0, description="What one run needs on this machine at batch 1, in GB."
+    )
+    memory_estimated: bool = Field(
+        default=False, description="The figure was not measured the way this machine runs."
+    )
+    fit: Fit = Field(
+        default="fits",
+        description="Against the machine's memory budget. 'tight': it fits with less than "
+        "15 percent to spare. 'no' is advice: the model may still be run.",
+    )
+    recommended: bool = Field(
+        default=False, description="Part of the set offered for the first download here."
+    )
 
 
 class ModelList(BaseModel):
@@ -232,6 +269,9 @@ class StemFile(BaseModel):
     midi: str | None = None
     samples: int | None = None
     sample_rate: int | None = None
+    group: str | None = Field(
+        default=None, description="The larger stem this one is a part of, if any."
+    )
 
 
 class JobInfo(BaseModel):
@@ -250,6 +290,10 @@ class JobInfo(BaseModel):
     options: dict[str, Any] = {}
     stems: list[StemFile] = []
     analysis: dict[str, Any] = {}
+    notes: list[str] = Field(
+        default=[],
+        description="What did not go as planned, such as a model that ran on the CPU.",
+    )
     queue_position: int | None = None
     held: bool = Field(default=False, description="Queued, and waiting for the user's Start.")
     created_at: float
@@ -282,6 +326,7 @@ class SettingsModel(BaseModel):
     trim_silence: bool
     normalize: bool
     detect_tempo_key: bool
+    tempo_sync: bool
     write_midi: bool
     watch_folder: str
     watch_enabled: bool
@@ -303,6 +348,7 @@ class SettingsPatch(BaseModel):
     trim_silence: bool | None = None
     normalize: bool | None = None
     detect_tempo_key: bool | None = None
+    tempo_sync: bool | None = None
     write_midi: bool | None = None
     watch_folder: str | None = None
     watch_enabled: bool | None = None

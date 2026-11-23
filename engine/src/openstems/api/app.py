@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.routing import APIRoute
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -66,6 +67,14 @@ def create_app(token: str, service: Service | None = None) -> FastAPI:
     )
     app.state.service = service
     app.state.token = token
+    # `pnpm dev` serves the interface from a local web server, which is another origin than
+    # this API, so the browser asks permission before each call. The app sets this to that
+    # server's address in development only; the built app loads files and never asks.
+    dev_origin = os.environ.get("OPENSTEMS_DEV_ORIGIN", "")
+    if dev_origin:
+        app.add_middleware(
+            CORSMiddleware, allow_origins=[dev_origin], allow_methods=["*"], allow_headers=["*"]
+        )
 
     def check_token(candidate: str | None) -> bool:
         return bool(candidate) and secrets.compare_digest(candidate or "", token)

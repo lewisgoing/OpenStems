@@ -84,6 +84,7 @@ class JobManager:
                 "recipe_name": data.get("recipe_name", job.recipe_id),
                 "stems": data.get("stems", []),
                 "analysis": data.get("analysis", {}),
+                "notes": data.get("notes", []),
                 # A job that was waiting for Start still waits after a restart.
                 "held": bool(data.get("held")) and job.state is JobState.QUEUED,
             }
@@ -112,6 +113,7 @@ class JobManager:
             "options": job.options,
             "stems": extra.get("stems", []),
             "analysis": extra.get("analysis", {}),
+            "notes": extra.get("notes", []),
             "queue_position": queued.index(job.id) if job.id in queued else None,
             "held": held,
             "created_at": job.created_at,
@@ -169,6 +171,7 @@ class JobManager:
                 "recipe_name": recipe_name,
                 "stems": [],
                 "analysis": {},
+                "notes": [],
                 "held": hold,
             }
             self._order.append(job.id)
@@ -218,6 +221,7 @@ class JobManager:
             job.message = ""
             job.output_dir = None
             self._extra[job.id]["stems"] = []
+            self._extra[job.id]["notes"] = []
             self._extra[job.id]["held"] = False  # asking again is asking for it to run
             # A retried job goes to the back of the queue.
             self._order.remove(job.id)
@@ -367,6 +371,7 @@ class JobManager:
         job.message = "From cache" if job.cached else ""
         self._extra[job.id]["stems"] = result["stems"]
         self._extra[job.id]["analysis"] = result.get("analysis", {})
+        self._extra[job.id]["notes"] = result.get("notes", [])
         self._current = None
         manifest_dir = result["directory"]
         from openstems.pipeline.run import read_manifest

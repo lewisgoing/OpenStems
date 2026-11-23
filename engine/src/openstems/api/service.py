@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -18,23 +20,30 @@ from openstems.api.links import LinkManager
 from openstems.api.watcher import FolderWatcher
 from openstems.audio.decode import probe
 from openstems.cli_inputs import expand_inputs
+from openstems.doctor import DoctorReport
 from openstems.domain.errors import DomainError
+from openstems.domain.memory import GB, MemoryPlan, memory_is_estimated, recommended_ids
 from openstems.domain.recipe import Recipe, single_model_recipe
-from openstems.engines.host import fake_mode
+from openstems.engines.host import fake_mode, memory_plan
 from openstems.links import Fetched, check_url
+from openstems.procutil import physical_memory_bytes
 from openstems.runtime import Runtime, build_runtime
-from openstems.settings import config_dir, update_settings
+from openstems.settings import config_dir, gpu_allowed, update_settings
 
 SELFTEST_FILE = "selftest.json"
+# The doctor's last report, kept in the cache folder between starts.
+MACHINE_FILE = "machine.json"
 # Songs fetched from links are kept here, inside the output folder: the user chose that
 # drive for large files, and the watch folder never looks into it.
 LINKS_DIR = "_links"
 ACTIVE_STATES = ("queued", "preparing", "running", "writing")
 
 
-def run_selftest_process(timeout: float = 1800.0) -> dict[str, Any]:
-    """The self-test's JSON report. It exits 1 on a mismatch and still prints the report."""
-    command = [sys.executable, "-m", "openstems.cli", "selftest", "--json"]
+def _cli_json(args: list[str], timeout: float) -> tuple[dict[str, Any] | None, list[str]]:
+    """Run one of the engine's own commands in a process of its own and read the JSON it
+    prints. The API process never imports torch: what needs the GPU is asked this way.
+    Returns the report, or None and why there is none."""
+    command = [sys.executable, "-m", "openstems.cli", *args, "--json"]
     try:
         done = subprocess.run(
             command,
@@ -48,7 +57,9 @@ def run_selftest_process(timeout: float = 1800.0) -> dict[str, Any]:
             check=False,
         )
     except subprocess.TimeoutExpired:
-        return {"ok": False, "problems": [f"The self-test did not finish in {timeout:.0f} s."]}
+        return None, [f"did not finish in {timeout:.0f} s."]
+    except OSError as exc:
+        return None, [f"could not start: {exc}"]
     start = done.stdout.find("{")
     try:
         report = json.loads(done.stdout[start:]) if start >= 0 else None
@@ -56,11 +67,46 @@ def run_selftest_process(timeout: float = 1800.0) -> dict[str, Any]:
         report = None
     if not isinstance(report, dict):
         tail = (done.stderr or done.stdout).strip().splitlines()[-6:]
-        return {
-            "ok": False,
-            "problems": [f"The self-test crashed (exit code {done.returncode}).", *tail],
-        }
+        return None, [f"crashed (exit code {done.returncode}).", *tail]
+    return report, []
+
+
+def run_selftest_process(timeout: float = 1800.0) -> dict[str, Any]:
+    """The self-test's JSON report. It exits 1 on a mismatch and still prints the report."""
+    report, why = _cli_json(["selftest"], timeout)
+    if report is None:
+        return {"ok": False, "problems": [f"The self-test {why[0]}", *why[1:]]}
     return report
+
+
+def run_doctor_process(timeout: float = 120.0) -> DoctorReport:
+    """The doctor's report, from a process of its own: it imports torch and touches the
+    GPU, which the API process must not do, or it would hold GPU memory next to the worker
+    for as long as the app runs. A check that fails is a report with that one problem and
+    the CPU's budget."""
+    data, why = _cli_json(["doctor"], timeout)
+    if data is not None:
+        try:
+            return DoctorReport.from_dict(data)
+        except TypeError as exc:
+            why = [f"gave an unexpected report: {exc}"]
+    ram = physical_memory_bytes()
+    return DoctorReport(
+        python=platform.python_version(),
+        torch=None,
+        cuda_available=False,
+        cuda_version=None,
+        gpu_name=None,
+        vram_gb=None,
+        ffmpeg=None,
+        ffmpeg_decode_ok=True,  # not known: the one problem below says what is
+        problems=[f"The system check {why[0]}", *why[1:]],
+        ram_gb=ram / GB if ram else None,
+    )
+
+
+def _gb(size: int | None) -> float | None:
+    return None if size is None else round(size / GB, 2)
 
 
 class Service:
@@ -72,7 +118,9 @@ class Service:
         self.downloads = DownloadManager(self.bus)
         self.links = LinkManager(self.bus, self._links_root, self._queue_fetched)
         self.watcher = FolderWatcher(self._queue_watched)
-        self._system: dict[str, Any] | None = None
+        self._doctor: DoctorReport | None = None  # what the doctor found on this machine
+        self._examined = False  # the doctor ran since this process started
+        self._system_lock = threading.Lock()
 
     # -- lifecycle ------------------------------------------------------------
 
@@ -81,6 +129,9 @@ class Service:
         self.jobs.start()
         self._configure_watcher()
         self.watcher.start()
+        if not fake_mode():
+            self._doctor = self._read_machine()
+            threading.Thread(target=self._refresh_machine, name="machine", daemon=True).start()
 
     def _configure_watcher(self) -> None:
         settings = self.runtime.settings
@@ -111,50 +162,119 @@ class Service:
 
     # -- system ---------------------------------------------------------------
 
+    def _report(self) -> DoctorReport:
+        """What the doctor found on this machine. It runs once, in its own process, and
+        two requests that arrive together must not both start it."""
+        with self._system_lock:
+            if self._doctor is None:
+                self._doctor = self._examine()
+            return self._doctor
+
+    def _examine(self) -> DoctorReport:
+        report = run_doctor_process()
+        self._examined = True
+        if report.torch is not None:  # a check that did not finish is not worth keeping
+            self._write_machine(report)
+        return report
+
+    def _machine_file(self) -> Path:
+        return self.runtime.settings.cache_path / MACHINE_FILE
+
+    def _read_machine(self) -> DoctorReport | None:
+        """The report an earlier start of this version left behind, so the app does not
+        wait for the doctor every time it starts."""
+        try:
+            data = json.loads(self._machine_file().read_text(encoding="utf-8"))
+            if data.get("version") != __version__:
+                return None
+            return DoctorReport.from_dict(data["report"])
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            return None
+
+    def _write_machine(self, report: DoctorReport) -> None:
+        try:
+            path = self._machine_file()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps({"version": __version__, "report": report.to_dict()}, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+
+    def _refresh_machine(self) -> None:
+        """Look at the machine again at each start, off the request path: a card, a driver
+        or the engine build may have changed since the kept report was written. On a first
+        start nothing is kept, and the first requests wait here for the doctor."""
+        with self._system_lock:
+            known = self._doctor
+            if known is None:
+                self._doctor = self._examine()
+                return
+            if self._examined:
+                return
+        report = run_doctor_process()
+        self._examined = True
+        if report.torch is None or report == known:
+            return
+        with self._system_lock:
+            self._doctor = report
+        self._write_machine(report)
+        # The budget, and with it every fit, may have changed.
+        self.bus.publish("worker.status", **self.jobs.worker_status)
+        self.bus.publish("models.changed", id=None)
+
+    def memory(self) -> MemoryPlan:
+        """What one model run may use on this machine, as the settings stand now."""
+        if fake_mode():
+            return memory_plan(fake=True)
+        return self._report().memory_plan(use_gpu=gpu_allowed())
+
     def system(self) -> dict[str, Any]:
-        if self._system is None:
-            if fake_mode():
-                import platform
-
-                self._system = {
-                    "python": platform.python_version(),
-                    "torch": None,
-                    "cuda_available": False,
-                    "cuda_version": None,
-                    "gpu_backend": None,
-                    "gpu_backend_version": None,
-                    "gpu_name": "FakeEngine (no GPU)",
-                    "vram_gb": None,
-                    "ffmpeg": None,
-                    "ffmpeg_decode_ok": True,
-                    "problems": [],
-                    "notes": [],
-                }
-            else:
-                from openstems.doctor import run_doctor
-
-                r = run_doctor()
-                self._system = {
-                    "python": r.python,
-                    "torch": r.torch,
-                    "cuda_available": r.cuda_available,
-                    "cuda_version": r.cuda_version,
-                    "gpu_backend": r.gpu_backend,
-                    "gpu_backend_version": r.gpu_backend_version,
-                    "gpu_name": r.gpu_name,
-                    "vram_gb": r.vram_gb,
-                    "ffmpeg": r.ffmpeg,
-                    "ffmpeg_decode_ok": r.ffmpeg_decode_ok,
-                    "problems": r.problems,
-                    "notes": r.notes,
-                }
+        plan = self.memory()
         return {
             "version": __version__,
-            **self._system,
+            **self._inspect(),
+            "memory_gb": _gb(plan.memory_bytes),
+            "memory_budget_gb": _gb(plan.budget_bytes),
+            "memory_kind": plan.kind,
+            "memory_overridden": plan.overridden,
             "fake_engine": fake_mode(),
             "worker": self.jobs.worker_status,
             "config_dir": str(config_dir()),
             "logs_dir": str(self.runtime.settings.logs_path),
+        }
+
+    def _inspect(self) -> dict[str, Any]:
+        if fake_mode():
+            return {
+                "python": platform.python_version(),
+                "torch": None,
+                "cuda_available": False,
+                "cuda_version": None,
+                "gpu_backend": None,
+                "gpu_backend_version": None,
+                "gpu_name": "FakeEngine (no GPU)",
+                "vram_gb": None,
+                "ffmpeg": None,
+                "ffmpeg_decode_ok": True,
+                "problems": [],
+                "notes": [],
+            }
+        r = self._report()
+        return {
+            "python": r.python,
+            "torch": r.torch,
+            "cuda_available": r.cuda_available,
+            "cuda_version": r.cuda_version,
+            "gpu_backend": r.gpu_backend,
+            "gpu_backend_version": r.gpu_backend_version,
+            "gpu_name": r.gpu_name,
+            "vram_gb": r.vram_gb,
+            "ffmpeg": r.ffmpeg,
+            "ffmpeg_decode_ok": r.ffmpeg_decode_ok,
+            "problems": r.problems,
+            "notes": r.notes,
         }
 
     # -- tracks ---------------------------------------------------------------
@@ -177,9 +297,14 @@ class Service:
 
     # -- recipes --------------------------------------------------------------
 
-    def recipe_info(self, recipe: Recipe, single_model: bool = False) -> dict[str, Any]:
+    def recipe_info(
+        self, recipe: Recipe, single_model: bool = False, plan: MemoryPlan | None = None
+    ) -> dict[str, Any]:
         catalog, store = self.runtime.catalog, self.runtime.store
+        plan = plan or self.memory()
         missing = [m for m in recipe.model_ids if not store.is_installed(catalog.get(m))]
+        # Models run one at a time: the largest one decides whether the recipe fits.
+        largest = plan.largest(catalog.get(m) for m in recipe.model_ids)
         return {
             "id": recipe.id,
             "name": recipe.name,
@@ -191,6 +316,7 @@ class Service:
             "selectable_outputs": recipe.selectable_outputs,
             "single_model": single_model,
             "outputs": [o.name for o in recipe.outputs],
+            "output_groups": recipe.groups,
             "models": list(recipe.model_ids),
             "passes": [
                 {"id": p.id, "models": list(p.models), "input": p.input} for p in recipe.passes
@@ -198,18 +324,30 @@ class Service:
             "missing_models": missing,
             "download_bytes": sum(catalog.get(m).total_bytes for m in missing),
             "supports_sum_to_mix": recipe.residual_into is not None,
+            "fit": plan.fit(largest) if largest else "fits",
+            "fit_model": largest.id if largest else None,
+            "memory_gb": _gb(plan.need(largest)) if largest else 0.0,
         }
 
     def recipes(self) -> list[dict[str, Any]]:
-        return [self.recipe_info(r) for r in self.runtime.recipes.values()]
+        plan = self.memory()
+        return [self.recipe_info(r, plan=plan) for r in self.runtime.recipes.values()]
 
     def resolve_recipe(self, recipe_id: str | None, model_id: str | None) -> Recipe:
         return self.runtime.recipe(recipe_id, model_id)
 
     # -- models ---------------------------------------------------------------
 
-    def model_info(self, model_id: str) -> dict[str, Any]:
+    def model_info(
+        self,
+        model_id: str,
+        plan: MemoryPlan | None = None,
+        recommended: list[str] | None = None,
+    ) -> dict[str, Any]:
         spec = self.runtime.catalog.get(model_id)
+        plan = plan or self.memory()
+        if recommended is None:
+            recommended = recommended_ids(list(self.runtime.catalog), plan)
         used_by = [r.id for r in self.runtime.recipes.values() if model_id in r.model_ids]
         return {
             "id": spec.id,
@@ -227,10 +365,16 @@ class Service:
             "notes": spec.notes,
             "used_by": used_by,
             "download": self.downloads.state(spec.id),
+            "memory_gb": _gb(plan.need(spec)),
+            "memory_estimated": memory_is_estimated(spec, plan.full_precision),
+            "fit": plan.fit(spec),
+            "recommended": spec.id in recommended,
         }
 
     def models(self) -> dict[str, Any]:
-        infos = [self.model_info(spec.id) for spec in self.runtime.catalog]
+        plan = self.memory()
+        recommended = recommended_ids(list(self.runtime.catalog), plan)
+        infos = [self.model_info(spec.id, plan, recommended) for spec in self.runtime.catalog]
         return {
             "models": infos,
             "models_dir": str(self.runtime.store.root),

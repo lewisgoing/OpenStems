@@ -51,6 +51,9 @@ class ModelSpec:
     experimental: bool = False
     custom: bool = False
     notes: str = ""
+    # Peak GPU memory of one run at batch 1 with half precision, in GB, when it was
+    # measured (docs/benchmarks.md). None: `domain.memory` estimates it.
+    memory_gb: float | None = None
 
     def __post_init__(self) -> None:
         if self.architecture not in ARCHITECTURES:
@@ -66,6 +69,8 @@ class ModelSpec:
             raise DomainError(f"{self.id}: at most one config file")
         if self.chunk_size <= 0 or self.num_overlap <= 0:
             raise DomainError(f"{self.id}: chunk_size and num_overlap must be positive")
+        if self.memory_gb is not None and self.memory_gb <= 0:
+            raise DomainError(f"{self.id}: memory_gb must be positive")
 
     @property
     def checkpoint(self) -> ModelFile:

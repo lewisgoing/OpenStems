@@ -46,10 +46,16 @@ class DerivedStem:
 
 @dataclass(frozen=True)
 class OutputStem:
-    """A file to write: its stem name and the signal it comes from."""
+    """A file to write: its stem name and the signal it comes from.
+
+    ``group`` names the larger stem this one is a part of (``kick`` is a part of ``drums``).
+    The parts of a group add up to it, and the group itself is not written: a mix of its
+    parts is that stem.
+    """
 
     name: str
     source: str
+    group: str = ""
 
 
 @dataclass(frozen=True)
@@ -70,6 +76,11 @@ class Recipe:
 
     def __post_init__(self) -> None:
         validate_recipe(self)
+
+    @property
+    def groups(self) -> dict[str, str]:
+        """The group of each output stem that has one."""
+        return {o.name: o.group for o in self.outputs if o.group}
 
     @property
     def model_ids(self) -> tuple[str, ...]:
@@ -100,7 +111,12 @@ class Recipe:
                 {"name": d.name, "add": list(d.add), "subtract": list(d.subtract)}
                 for d in self.derived
             ],
-            "outputs": [{"stem": o.name, "from": o.source} for o in self.outputs],
+            # A group is written only where there is one, so the cache key of a recipe
+            # without groups is what it always was.
+            "outputs": [
+                {"stem": o.name, "from": o.source, **({"group": o.group} if o.group else {})}
+                for o in self.outputs
+            ],
             "residual_into": self.residual_into,
         }
 
@@ -196,7 +212,13 @@ def validate_recipe(recipe: Recipe) -> None:
         if o.name in out_names:
             raise DomainError(f"{rid}: duplicate output stem {o.name!r}")
         check_ref(o.source, f"output {o.name!r}")
+        if o.group and not _STEM_RE.match(o.group):
+            raise DomainError(f"{rid}: bad group name {o.group!r} on output {o.name!r}")
         out_names.append(o.name)
+    for o in recipe.outputs:
+        # A mix of a whole group is named after it, so it cannot also be a stem's name.
+        if o.group in out_names:
+            raise DomainError(f"{rid}: group {o.group!r} is also the name of an output stem")
 
     if recipe.residual_into is not None and recipe.residual_into not in out_names:
         raise DomainError(f"{rid}: residual_into {recipe.residual_into!r} is not an output")
@@ -252,7 +274,10 @@ def recipe_from_dict(data: Mapping[str, Any], *, builtin: bool = True) -> Recipe
             )
             for raw in data.get("derived", ())
         )
-        outputs = tuple(OutputStem(name=raw["stem"], source=raw["from"]) for raw in data["outputs"])
+        outputs = tuple(
+            OutputStem(name=raw["stem"], source=raw["from"], group=raw.get("group", ""))
+            for raw in data["outputs"]
+        )
         return Recipe(
             id=data["id"],
             name=data.get("name", data["id"]),

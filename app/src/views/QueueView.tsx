@@ -3,6 +3,7 @@ import { AlertTriangle, Check, GripVertical, Layers, Play, RotateCcw, Trash2, X,
 import { useEffect, useRef, useState } from 'react'
 import type { Job, Model, Recipe } from '@/api/client'
 import { keys, useJobActions, useJobs } from '@/api/queries'
+import { JobNotes } from '@/components/Fit'
 import { LinkRow, useOpenLinks } from '@/components/LinkRow'
 import { RecipeBar } from '@/components/RecipeBar'
 import { useToast } from '@/components/toast'
@@ -254,6 +255,7 @@ function JobRow({ job, index, selected, dropTarget, onSelect, onStart, onCancel,
           <div className="mt-0.5 truncate text-[12px] text-muted" data-testid="job-status">
             {statusText(job)}
           </div>
+          <JobNotes notes={job.notes} className="mt-0.5" />
         </div>
 
         {active && <span className="tabular flex-none font-mono text-[12px] text-muted">{formatPercent(job.progress)}</span>}

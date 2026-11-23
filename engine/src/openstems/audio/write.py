@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import struct
 from pathlib import Path
 from typing import Any
 
@@ -30,9 +31,39 @@ def extension(fmt: str) -> str:
         raise DomainError(f"unknown output format {fmt!r}") from None
 
 
-def write_audio(path: Path, audio: np.ndarray, sample_rate: int, fmt: str = "wav32f") -> None:
+def tempo_chunk(bpm: float) -> bytes:
+    """The ``acid`` chunk that makes FL Studio stretch a WAV to the project's tempo.
+
+    FL Studio 2026 reads the tempo and nothing else: a file with a tempo and no beat count
+    is synced, one with a beat count and no tempo is not (tried in FL on 2026-11-23). The
+    other fields are what FL writes itself: the "stretch" flag, root note C5, 4/4. The beat
+    count is left at 0, since a whole song is rarely a whole number of beats long.
+    """
+    return b"acid" + struct.pack("<IIHHfIHHf", 24, 0x04, 60, 0x80, 0.0, 0, 4, 4, bpm)
+
+
+def _append_chunk(path: Path, chunk: bytes) -> None:
+    with path.open("r+b") as f:
+        head = f.read(12)
+        if head[:4] != b"RIFF" or head[8:] != b"WAVE":
+            return
+        end = f.seek(0, 2)
+        if end & 1:
+            f.write(b"\x00")
+            end += 1
+        if end + len(chunk) - 8 > 0xFFFFFFFF:
+            return
+        f.write(chunk)
+        f.seek(4)
+        f.write(struct.pack("<I", end + len(chunk) - 8))
+
+
+def write_audio(
+    path: Path, audio: np.ndarray, sample_rate: int, fmt: str = "wav32f", bpm: float | None = None
+) -> None:
     """Write ``(channels, samples)`` float32 audio. Float WAV is written untouched;
-    fixed-point formats are clipped to [-1, 1] by libsndfile."""
+    fixed-point formats are clipped to [-1, 1] by libsndfile. With ``bpm``, a WAV is
+    marked as tempo-synced for FL Studio; FLAC and MP3 cannot carry the mark."""
     if fmt not in FORMATS:
         raise DomainError(f"unknown output format {fmt!r}")
     _, container, subtype = FORMATS[fmt]
@@ -43,6 +74,8 @@ def write_audio(path: Path, audio: np.ndarray, sample_rate: int, fmt: str = "wav
     if fmt == "mp3":
         kwargs = {"compression_level": 0.0, "bitrate_mode": "CONSTANT"}  # 320 kbps
     sf.write(str(path), data, sample_rate, format=container, subtype=subtype, **kwargs)
+    if bpm and bpm > 0 and container == "WAV":
+        _append_chunk(path, tempo_chunk(bpm))
 
 
 def read_audio(path: Path) -> tuple[np.ndarray, int]:

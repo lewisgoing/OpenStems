@@ -8,7 +8,10 @@ import { FORMATS } from '@/components/FormatSelect'
 import { useToast } from '@/components/toast'
 import { UpdateSettings } from '@/components/Update'
 import { Button, CommitInput, Dialog, IconButton, Segmented, Select, Switch } from '@/components/ui'
+import { FitChip } from '@/components/Fit'
 import { cn, previewName } from '@/lib/format'
+import { type Machine, budgetHint, formatGb } from '@/lib/memory'
+import { useMachine } from '@/state/machine'
 import { isMac, words } from '@/platform'
 
 const QUALITY = [
@@ -24,6 +27,7 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
   const patch = usePatchSettings()
   const maintenance = useMaintenance()
   const toast = useToast()
+  const machine = useMachine()
   if (!settings) return null
 
   const save = (changes: SettingsPatch) => patch.mutate(changes, { onError: toast.error })
@@ -79,6 +83,9 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
             <Row label="Detect tempo and key" hint="Fills the {bpm} and {key} tokens and shows them with the stems.">
               <Switch label="Detect tempo and key" checked={settings.detect_tempo_key} onChange={(v) => save({ detect_tempo_key: v })} />
             </Row>
+            <Row label="Tempo-sync for FL Studio" hint="Writes the detected tempo into WAV stems and mixes, so FL Studio stretches them to your project's tempo. Not for FLAC or MP3.">
+              <Switch label="Tempo-sync for FL Studio" checked={settings.tempo_sync} onChange={(v) => save({ tempo_sync: v })} />
+            </Row>
             <Row label="Write MIDI" hint="A draggable .mid next to vocal, bass and melody stems. Monophonic: one note at a time.">
               <Switch label="Write MIDI" checked={settings.write_midi} onChange={(v) => save({ write_midi: v })} />
             </Row>
@@ -98,7 +105,7 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
               <Select
                 label="Default recipe"
                 value={settings.default_recipe}
-                options={recipes.filter((r) => !r.selectable_outputs).map((r) => ({ value: r.id, label: r.name }))}
+                options={recipes.filter((r) => !r.selectable_outputs).map((r) => ({ value: r.id, label: r.name, trailing: <FitChip fit={r.fit} short /> }))}
                 onChange={(v) => save({ default_recipe: v })}
                 className="min-w-[200px]"
               />
@@ -131,6 +138,7 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
                 {system?.vram_gb ? ` · ${gpuMemory(system)}` : ''}
               </span>
             </Row>
+            <MemoryRow machine={machine} />
             <Row
               label="Use the GPU"
               hint={`Off runs separation on the CPU: much slower, but a way through when ${isMac() ? 'the GPU misbehaves' : 'the graphics card or its driver misbehaves'}.`}
@@ -293,6 +301,21 @@ export function gpuMemory(system: { vram_gb?: number | null; gpu_backend?: strin
   if (!system.vram_gb) return ''
   const size = `${system.vram_gb.toFixed(1)} GB`
   return system.gpu_backend === 'mps' ? `${size} shared with the Mac` : size
+}
+
+/**
+ * What this machine has for one model run, and where the number comes from. Models run one
+ * at a time, so this is what the largest one may take. Absent when the engine does not know.
+ */
+export function MemoryRow({ machine }: { machine: Machine }) {
+  if (machine.budget === null) return null
+  return (
+    <Row label="Memory for one model" hint={budgetHint(machine)}>
+      <span className="text-muted" data-testid="memory-budget">
+        {formatGb(machine.budget)}
+      </span>
+    </Row>
+  )
 }
 
 /**

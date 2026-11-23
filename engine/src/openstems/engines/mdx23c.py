@@ -8,9 +8,9 @@ from openstems.engines.torch_common import (
     TorchLoadedModel,
     config_stems,
     finish_load,
+    load_device,
     load_state_dict,
     load_yaml,
-    pick_device,
     quiet_stdout,
     require_paths,
 )
@@ -19,14 +19,18 @@ from openstems.engines.torch_common import (
 class MDX23CEngine:
     name = "mdxnet-infer"
 
-    def load(self, spec: ModelSpec, store: ModelStore) -> TorchLoadedModel:
+    def load(
+        self, spec: ModelSpec, store: ModelStore, device: str | None = None
+    ) -> TorchLoadedModel:
         from mdxnet_infer.config import MDX23CConfig
         from mdxnet_infer.model import TFC_TDF_net
 
         checkpoint, config_path = require_paths(spec, store)
         raw = load_yaml(config_path)
         # The network builds its STFT window on a device at construction time.
-        device = pick_device()
+        target = load_device(device)
         with quiet_stdout():
-            module = TFC_TDF_net(MDX23CConfig.from_mapping(raw), device)
-        return finish_load(spec, module, load_state_dict(checkpoint), config_stems(raw))
+            module = TFC_TDF_net(MDX23CConfig.from_mapping(raw), target)
+        return finish_load(
+            spec, module, load_state_dict(checkpoint), config_stems(raw), device=device
+        )

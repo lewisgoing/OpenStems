@@ -80,6 +80,9 @@ class Settings:
     trim_silence: bool = False
     normalize: bool = False
     detect_tempo_key: bool = True
+    # On: WAV stems and mixes carry the song's tempo, so FL Studio stretches them to the
+    # project's tempo. The tempo is detected even when detect_tempo_key is off.
+    tempo_sync: bool = False
     write_midi: bool = False
     watch_folder: str = ""
     watch_enabled: bool = False
@@ -123,12 +126,20 @@ class Settings:
         weights sit in the memory everything else uses, so no more than half of it."""
         budget = int(self.vram_budget_gb * 1024**3)
         if _is_mac():
-            from openstems.procutil import physical_memory_bytes
+            from openstems.procutil import machine_memory_bytes
 
-            memory = physical_memory_bytes()
+            memory = machine_memory_bytes()
             if memory:
                 budget = min(budget, memory // 2)
         return budget
+
+
+def gpu_allowed() -> bool:
+    """False when the user or the environment asked to stay on the CPU."""
+    forced = os.environ.get("OPENSTEMS_DEVICE", "").strip().lower()
+    if forced:
+        return forced != "cpu"
+    return load_settings().use_gpu
 
 
 _ENV = {

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import os
 import pickle
 import warnings
 from pathlib import Path
@@ -15,14 +14,14 @@ import torch
 import yaml
 
 from openstems.catalog.store import ModelStore
-from openstems.domain.errors import DomainError
+from openstems.domain.errors import DomainError, OutOfMemory
 from openstems.domain.model import ModelSpec
 from openstems.domain.quality import RunSettings
 from openstems.engines.base import CancelToken, ProgressFn
-from openstems.engines.device import empty_cache, is_gpu, mps_available
+from openstems.engines.device import empty_cache, is_gpu, is_oom, mps_available
 from openstems.engines.runner import ModelFn, run_model
 from openstems.engines.stft_fallback import ensure_stft
-from openstems.settings import load_settings
+from openstems.settings import gpu_allowed as settings_gpu_allowed
 
 # The loaders call torch.stft without a window on purpose and still use a deprecated
 # attention context manager; neither is something the user can act on.
@@ -33,6 +32,10 @@ warnings.filterwarnings("ignore", message="stft with return_complex=False is dep
 
 class EngineError(DomainError):
     pass
+
+
+class EngineMemoryError(EngineError, OutOfMemory):
+    """A checkpoint did not fit in memory. The pipeline answers by freeing memory."""
 
 
 @contextlib.contextmanager
@@ -62,10 +65,7 @@ def load_yaml(path: Path) -> dict[str, Any]:
 
 def gpu_allowed() -> bool:
     """False when the user or the environment asked to stay on the CPU."""
-    forced = os.environ.get("OPENSTEMS_DEVICE", "").strip().lower()
-    if forced:
-        return forced != "cpu"
-    return load_settings().use_gpu
+    return settings_gpu_allowed()
 
 
 def arch_supported(capability: tuple[int, int], arch_list: list[str]) -> bool:
@@ -113,23 +113,46 @@ def pick_device() -> torch.device:
     return torch.device("cpu")
 
 
+def load_device(device: str | None = None) -> torch.device:
+    """Where a model is loaded: the device asked for, or the one `pick_device` chooses.
+    The pipeline asks for "cpu" when a model did not fit on the GPU."""
+    return torch.device(device) if device else pick_device()
+
+
+def _read_checkpoint(path: Path) -> Any:
+    """``torch.load`` with ``weights_only=True``, memory-mapped where the file allows it.
+
+    Mapped, the tensors stay in the file until the model copies them into itself, so the
+    weights are in memory once, not twice. Only the zip format ``torch.save`` has written
+    since 1.6 can be mapped; an older file raises and is read whole, as before.
+    """
+    gelu = torch._C._nn.gelu  # pyright: ignore[reportAttributeAccessIssue]
+    with torch.serialization.safe_globals([gelu]):
+        try:
+            return torch.load(path, map_location="cpu", weights_only=True, mmap=True)
+        except pickle.UnpicklingError:
+            raise
+        except (RuntimeError, ValueError) as exc:
+            if is_oom(exc):
+                raise
+        return torch.load(path, map_location="cpu", weights_only=True)
+
+
 def load_state_dict(path: Path) -> dict[str, Any]:
     """Load a checkpoint with ``weights_only=True``. Checkpoints are pickles: nothing
     beyond tensors and plain containers is allowed to unpickle."""
     try:
-        gelu = torch._C._nn.gelu  # pyright: ignore[reportAttributeAccessIssue]
-        with torch.serialization.safe_globals([gelu]):
-            state = torch.load(path, map_location="cpu", weights_only=True)
+        state = _read_checkpoint(path)
     except pickle.UnpicklingError as exc:
         raise EngineError(
             f"{path.name}: cannot load with weights_only=True. The checkpoint holds more "
             f"than tensors and is refused ({exc})."
         ) from exc
     except MemoryError as exc:
-        raise EngineError(f"{path.name}: not enough memory to load the model") from exc
+        raise EngineMemoryError(f"{path.name}: not enough memory to load the model") from exc
     except RuntimeError as exc:
-        if "not enough memory" in str(exc) or "out of memory" in str(exc).lower():
-            raise EngineError(
+        if is_oom(exc):
+            raise EngineMemoryError(
                 f"{path.name}: not enough memory to load the model. Close other apps and retry."
             ) from exc
         raise EngineError(f"{path.name}: cannot load the checkpoint: {exc}") from exc
@@ -208,20 +231,23 @@ def finish_load(
     state: dict[str, Any],
     stems: tuple[str, ...],
     model_fn_factory=None,
+    device: str | None = None,
 ) -> TorchLoadedModel:
-    """Load weights strictly, check the stem count against the catalog, move to the device."""
+    """Load weights strictly, check the stem count against the catalog, move to the device.
+    ``state`` is emptied once the model holds the weights, so they are not kept twice."""
     # The catalog may rename stems, but it must name exactly as many as the model emits.
     if len(stems) != len(spec.stems):
         raise EngineError(
             f"{spec.id}: config emits {list(stems)} but the catalog names {list(spec.stems)}"
         )
     module.load_state_dict(state, strict=True)
-    device = pick_device()
+    state.clear()
+    target = load_device(device)
     # On the Apple GPU, check the STFT once before any model runs there (stft_fallback.py).
-    ensure_stft(device)
-    module = module.to(device).eval()
+    ensure_stft(target)
+    module = module.to(target).eval()
     fn = model_fn_factory(module) if model_fn_factory else None
-    return TorchLoadedModel(spec, module, device, fn, spec.stems)
+    return TorchLoadedModel(spec, module, target, fn, spec.stems)
 
 
 def require_paths(spec: ModelSpec, store: ModelStore) -> tuple[Path, Path]:

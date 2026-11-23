@@ -114,6 +114,8 @@ export function EngineProvider({ connection, children, onNotice }: EngineProvide
           break
         case 'settings.changed':
           void queryClient.invalidateQueries({ queryKey: keys.settings })
+          // The other window may have switched the GPU off: the memory budget follows.
+          void queryClient.invalidateQueries({ queryKey: keys.system })
           break
         case 'stemsets.changed':
           void queryClient.invalidateQueries({ queryKey: ['stemsets'] })

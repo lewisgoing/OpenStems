@@ -44,7 +44,8 @@ def post_process(
     extras: dict[str, Any] = {"bpm": None, "key": None, "trim": {}, "midi": {}, "offsets": {}}
 
     template = getattr(options, "naming_template", "") or ""
-    if getattr(options, "detect_tempo_key", False) or "{bpm}" in template or "{key}" in template:
+    wanted = getattr(options, "detect_tempo_key", False) or getattr(options, "tempo_sync", False)
+    if wanted or "{bpm}" in template or "{key}" in template:
         bpm, key = analysis.detect_tempo_key(mix, sample_rate)
         extras["bpm"], extras["key"] = bpm, key
     cancel.raise_if_cancelled()

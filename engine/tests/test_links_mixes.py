@@ -146,7 +146,9 @@ def test_a_link_is_fetched_and_runs_like_a_dropped_file(client: TestClient) -> N
     assert response.status_code == 200, response.text
     link = response.json()
     assert link["state"] in ("waiting", "resolving", "downloading")
-    assert link["name"] == "example.com"
+    # The site's name until the fetcher has resolved the title, which on a fast machine can
+    # happen before this first answer is written.
+    assert link["name"] in ("example.com", "Night Drive")
 
     jobs = wait_for(client, all_terminal)
     assert [job["state"] for job in jobs] == ["done"]
@@ -236,6 +238,21 @@ def test_a_mix_is_named_for_what_is_in_it() -> None:
     assert mix_label(["drums", "bass", "guitar", "piano"], six) == "no vocals, other"
     many = [f"s{i}" for i in range(12)]
     assert mix_label(many[:6], many) == "6 stems"
+    # A group that is all in, or all out, goes by its own name.
+    kit = ["kick", "snare", "hh"]
+    every = ["lead vocals", "backing vocals", *kit, "bass", "guitar", "piano", "other"]
+    groups = {"lead vocals": "vocals", "backing vocals": "vocals", **dict.fromkeys(kit, "drums")}
+    groups |= dict.fromkeys(["guitar", "piano", "other"], "melody")
+    assert mix_label(kit, every, groups) == "drums"
+    assert mix_label([*kit, "bass"], every, groups) == "drums + bass"
+    assert mix_label([n for n in every if n not in kit], every, groups) == "no drums"
+    assert mix_label(every[2:], every, groups) == "no vocals"
+    assert mix_label(["kick", "snare"], every, groups) == "kick + snare"
+    assert (
+        mix_label(["lead vocals", *kit, "bass", "guitar"], every, groups)
+        == "no backing vocals, piano, other"
+    )
+    assert mix_label(every, every, groups) == "mix"
 
 
 def done_job(client: TestClient, songs: list[Path], **options: Any) -> dict[str, Any]:

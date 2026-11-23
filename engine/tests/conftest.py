@@ -43,6 +43,9 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENSTEMS_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.delenv("OPENSTEMS_ENGINE", raising=False)
     monkeypatch.delenv("OPENSTEMS_FAKE_DELAY", raising=False)
+    # The machine's real memory must not decide a test: nothing pretends, nothing runs out.
+    monkeypatch.delenv("OPENSTEMS_MEMORY_GB", raising=False)
+    monkeypatch.delenv("OPENSTEMS_FAKE_OOM", raising=False)
     if sys.platform == "darwin":
         # The unit tests run on the CPU. A Mac that reports its GPU would otherwise have the
         # doctor run real operations on it; the tests about a Mac switch it back on themselves.
