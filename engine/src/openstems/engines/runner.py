@@ -37,6 +37,8 @@ def use_half_precision(device: torch.device | str) -> bool:
     if device.type != "cuda":
         return False
     try:
+        if torch.cuda.device_count() < 1:
+            return True
         return fast_half_precision(torch.cuda.get_device_capability(device))
     except Exception:
         return True

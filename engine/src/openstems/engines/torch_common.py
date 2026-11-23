@@ -89,6 +89,10 @@ def card_supported() -> bool:
     """The first GPU is one this PyTorch build can run. An old card on the standard build,
     or a new card on the build for old cards, is present but unusable."""
     try:
+        # Only ask about a card that is really there: on a machine with none, the query
+        # itself can bring the process down.
+        if torch.cuda.device_count() < 1:
+            return True
         return arch_supported(torch.cuda.get_device_capability(0), torch.cuda.get_arch_list())
     except Exception:
         return True
