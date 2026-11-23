@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 (2026-11-23)
 
 - **Every stem.** A new recipe, `every-stem`, chains four models into the deepest split
   in one run: lead and backing vocals, the drum kit piece by piece (kick, snare, toms, hh,
