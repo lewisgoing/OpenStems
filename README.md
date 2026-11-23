@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/app.png" width="900" alt="The OpenStems window: a queue with two finished songs, one being separated and one being fetched from a link, and the six stems of the selected song as waveforms">
+  <img src="docs/images/app.png" width="900" alt="The OpenStems window: a queue with two finished songs, one being separated and one being fetched from a link, and the six stems of deadmau5's Strobe as waveforms">
 </p>
 
 OpenStems is a desktop app for producers. Drop audio files, folders or a link on it, pick a
@@ -38,7 +38,7 @@ machine.
 It is built for Windows with an NVIDIA card. AMD Radeon and Apple Silicon Macs are previews:
 see [Requirements](#requirements).
 
-<sub>The pictures on this page show a synthetic demo song, not a real recording.</sub>
+<sub>In the pictures, "deadmau5 - Strobe" is a real separation on an RTX 5070 Ti. The other songs are synthetic demo songs.</sub>
 
 ## How it works
 
@@ -88,6 +88,15 @@ are detected and shown with its stems.
 
 Drag one stem, or "Drag all", straight into your DAW or a folder. Reveal in Explorer opens the
 folder.
+
+### A drum track, split into its kit
+
+The Drum kit recipe takes the drums out of the song, then splits them into kick, snare, toms,
+hi-hat, ride and crash, with the whole drum stem beside them.
+
+<p align="center">
+  <img src="docs/images/drums.png" width="900" alt="deadmau5's Strobe through the Drum kit recipe: seven stems, kick, snare, toms, hh, ride, crash and drums, each as a waveform">
+</p>
 
 ### A mix of any stems, as one file
 
@@ -428,9 +437,11 @@ uv run python ../scripts/compare_wirings.py MUSDB   # score both full-song wirin
 uv run python ../scripts/gen_catalog.py --write # rebuild models.toml from the loaders
 ```
 
-**The pictures on this page** are taken from the built app with a synthetic demo song
+**The pictures on this page** are taken from the built app with synthetic demo songs
 (`scripts/make_demo_song.py`): `pnpm build`, then
-`README_SHOTS=1 pnpm e2e -g "readme pictures"` in `app/` rewrites `docs/images/`.
+`README_SHOTS=1 pnpm e2e -g "readme pictures"` in `app/` rewrites `docs/images/`. With
+`README_SONG=<file>` and `README_SONG_STEMS=<folder>` a real song, separated beforehand on the
+GPU, leads the queue and the drum kit picture is taken; only its waveforms are used.
 
 ## License
 

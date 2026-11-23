@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { basename, extname, join, resolve } from 'node:path'
 import { type CDPSession, type Page, test } from '@playwright/test'
 import { devGroupArgs } from '../electron/platform'
 import { clickTray, launch, trayPage } from './helpers'
@@ -12,6 +12,10 @@ import { clickTray, launch, trayPage } from './helpers'
 // The songs are synthetic (scripts/make_demo_song.py): the FakeEngine's stems are scaled
 // copies of the input, so the demo song's own parts are written over them before a picture
 // shows a waveform.
+// README_SONG=<file> with README_SONG_STEMS=<folder> puts a real song first in the queue and
+// adds the drum kit picture. The folder is that song separated beforehand on the real GPU:
+//   openstems separate <file> --recipe full-song --out <folder>   (and again with drum-kit)
+// Only the waveforms (the .peaks files) are taken from it; no audio is copied or committed.
 test.skip(process.env.README_SHOTS !== '1', 'set README_SHOTS=1 to capture the README pictures')
 
 const appDir = resolve(import.meta.dirname, '..')
@@ -48,6 +52,15 @@ test('readme pictures', async () => {
     ...(process.env.README_MODELS ? { OPENSTEMS_MODELS_DIR: process.env.README_MODELS } : {}),
   })
   const popup = await trayPage(app)
+  const real = process.env.README_SONG && process.env.README_SONG_STEMS ? process.env.README_SONG : null
+  const realName = real ? basename(real, extname(real)) : null
+  /** The real separation's waveforms over the FakeEngine's, for one recipe of the real song. */
+  const realPeaks = (recipe: string) => {
+    if (!realName) return
+    const from = join(process.env.README_SONG_STEMS ?? '', realName, recipe, '.peaks')
+    cpSync(from, join(outputDir, realName, recipe, '.peaks'), { recursive: true })
+  }
+  const first = realName ?? SONGS[0]
   // Twice the pixels, whatever the screen, so the pictures stay sharp on a high-density
   // display. Playwright's own screenshot puts the scale back, so the picture is taken here.
   const sessions = new Map<Page, CDPSession>()
@@ -68,14 +81,18 @@ test('readme pictures', async () => {
     await sharp(page, 1280, 800)
 
     // Two finished songs, with the demo song's parts as their stems.
-    await page.getByTestId('file-input').setInputFiles(SONGS.slice(0, 2).map((name) => join(songs, `${name}.mp3`)))
-    await done(page, 'job-row').nth(1).waitFor({ timeout: 120_000 })
-    for (const name of SONGS.slice(0, 2)) demo('stems', join(outputDir, name, 'full-song'), name)
+    const synthetic = real ? SONGS.slice(0, 1) : SONGS.slice(0, 2)
+    await page
+      .getByTestId('file-input')
+      .setInputFiles([...(real ? [real] : []), ...synthetic.map((name) => join(songs, `${name}.mp3`))])
+    await done(page, 'job-row').nth(1).waitFor({ timeout: 180_000 })
+    for (const name of synthetic) demo('stems', join(outputDir, name, 'full-song'), name)
+    realPeaks('full-song')
 
     // The hero: stems on the right, a song being separated and a link being fetched.
     await page.getByTestId('file-input').setInputFiles([join(songs, `${SONGS[2]}.mp3`)])
     await paste(page, 'https://www.youtube.com/slow/Golden-Hour')
-    await page.locator('[data-testid="job-row"]', { hasText: SONGS[0] }).click()
+    await page.locator('[data-testid="job-row"]', { hasText: first }).click()
     const panel = page.getByRole('complementary', { name: 'Stems' })
     await page.getByTestId('stem-row').nth(5).waitFor()
     await page.locator('[data-testid="link-row"][data-state="downloading"]').waitFor()
@@ -127,6 +144,22 @@ test('readme pictures', async () => {
     await popup.mouse.move(200, 560)
     await popup.waitForTimeout(400)
     await shot(popup, 'quick-drop-mix')
+
+    // A drum track: the real song through the Drum kit recipe.
+    if (real && realName) {
+      await page.getByRole('button', { name: 'Queue' }).click()
+      await page.getByRole('combobox', { name: 'Recipe' }).click()
+      await page.getByRole('option', { name: /Drum kit/ }).click()
+      await page.getByTestId('file-input').setInputFiles([real])
+      const kit = page.locator('[data-testid="job-row"][data-state="done"]', { hasText: 'Drum kit' })
+      await kit.waitFor({ timeout: 180_000 })
+      realPeaks('drum-kit')
+      await kit.click()
+      await page.getByTestId('stem-row').nth(6).waitFor()
+      await page.mouse.move(110, 600)
+      await page.waitForTimeout(1200)
+      await shot(page, 'drums')
+    }
   } finally {
     await app.close()
   }

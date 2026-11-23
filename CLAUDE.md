@@ -51,7 +51,9 @@ App (run from `app/`):
   `docs/images/` at twice the pixels, with a synthetic demo song (`scripts/make_demo_song.py`)
   whose parts are written over the FakeEngine's stems. `README_OUTPUT=<new folder>` and
   `README_MODELS=<folder>` set the folders the pictures show; each run leaves a few GB of
-  demo stems in the output folder
+  demo stems in the output folder. `README_SONG=<file>` with `README_SONG_STEMS=<folder>`
+  (that file separated beforehand on the real GPU with `full-song` and `drum-kit`, into that
+  folder) puts a real song first and adds `drums.png`; only its `.peaks` are copied
 - `--tray` on the app's command line starts it in the tray with no window (the end-to-end
   suite passes it through Playwright's `args`)
 - `REAL_SONG=<file> REAL_MODELS=<folder> pnpm e2e -g "real engine"`: the app on the real GPU
