@@ -38,6 +38,15 @@ Engine (run from `engine/`):
 - `uv run python ../scripts/benchmark.py SONG [--markdown]`: run time and peak VRAM
 - `uv run python ../scripts/check_stems.py FOLDER [--sum-to-mix]`: alignment check
 - `uv run python ../scripts/accept_recipes.py SONG`: run every recipe with alignment checks
+- Stem to MIDI benchmark (Phase 7, `docs/research/stem-to-midi.md`):
+  - `python -I ../scripts/midi_bench_data.py [--skip-slakh] [--max-gb N]`: fetch the CC BY
+    sets into `D:\lew-stems\bench`. Slakh's archive is shuffled, so complete songs need most of
+    its 104 GB streamed.
+  - `uv run --no-sync --with mido==1.3.3 --with mir_eval==0.8.2 python ../scripts/midi_bench.py score|pack`:
+    score transcribers with mir_eval, or build the audio pack the owner runs through Melodyne
+    and NeuralNote.
+  - `python ../scripts/make_midi_import_tests.py`: the MIDI files that show how a DAW imports
+    bends, MPE and tempo maps.
 - `python ../scripts/compare_builds.py run --out DIR MODEL...` in each environment, then
   `compare DIR DIR`: the same stems from two PyTorch builds (on the CPU)
 - `uv run pytest tests/test_links_mixes.py`: links and mixes, with a stand-in for the fetch
