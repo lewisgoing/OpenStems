@@ -4,6 +4,7 @@
   "version": "0.2.3",
   "description": "OpenStems desktop shell: drop audio in, drag DAW-ready stems out.",
   "author": "lewisgoing",
+  "license": "MIT",
   "main": "out/main/main.js",
   "type": "module",
   "scripts": {

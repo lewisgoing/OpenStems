@@ -231,3 +231,12 @@ uv run python ../scripts/accept_api.py F1 F2 F3 F4 F5  # the API on the real GPU
 uv run python ../scripts/compare_wirings.py MUSDB   # score both full-song wirings (SDR)
 uv run python ../scripts/gen_catalog.py --write # rebuild models.toml from the loaders
 ```
+
+## License
+
+The code is under the [MIT License](LICENSE).
+
+The models are not part of this repository and are not covered by that license. The app
+downloads them from their authors at run time, and each has its own terms; some authors state
+none. The Models view shows what is known for each one. Check a model's terms before using its
+stems commercially.
