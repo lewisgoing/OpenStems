@@ -5,6 +5,7 @@ import { useMemo, useRef, useState } from 'react'
 import type { Model, Recipe } from '@/api/client'
 import { formatBytes, stemColor } from '@/lib/format'
 import { MODEL_PREFIX, useSelection } from '@/state/selection'
+import { FormatSelect } from './FormatSelect'
 import { Button, Segmented, Select, type SelectOption, Switch, Tooltip } from './ui'
 
 export const QUALITY = [
@@ -86,6 +87,7 @@ export function RecipeBar({ recipes, models, onAddFiles }: RecipeBarProps) {
         minWidth={380}
       />
       <Segmented label="Quality" value={selection.quality} options={QUALITY} onChange={(quality) => update({ quality })} />
+      <FormatSelect compact className="flex-none" />
 
       {recipe?.selectable_outputs && (
         <StemPicker all={recipe.outputs} selected={selection.outputs} onChange={(outputs) => update({ outputs })} />

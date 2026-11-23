@@ -7,6 +7,7 @@ import { EngineProvider } from '@/api/engine'
 import { useJobActions, useJobs, useModels, useRecipes, useSettings } from '@/api/queries'
 import { useEngineStatus } from '@/api/status'
 import { DropOverlay } from '@/components/DropOverlay'
+import { FormatSelect } from '@/components/FormatSelect'
 import { QUALITY, useCurrentRecipe, useRecipeOptions } from '@/components/RecipeBar'
 import { ToastProvider, useToast } from '@/components/toast'
 import { Button, IconButton, ProgressBar, Segmented, Select, Tooltip, TooltipProvider } from '@/components/ui'
@@ -290,7 +291,10 @@ function DropTarget({ recipes, models }: { recipes: Recipe[]; models: Model[] })
         className="w-full"
         fitTrigger
       />
-      <Segmented label="Quality" value={selection.quality} options={QUALITY} onChange={(quality) => update({ quality })} className="w-full" />
+      <div className="flex items-center gap-2">
+        <Segmented label="Quality" value={selection.quality} options={QUALITY} onChange={(quality) => update({ quality })} className="min-w-0 flex-1" />
+        <FormatSelect compact className="w-[96px] flex-none" />
+      </div>
       {noStems ? (
         <p className="m-0 text-[12px] text-warn">No stems are ticked for this recipe. Pick them in the full app.</p>
       ) : (

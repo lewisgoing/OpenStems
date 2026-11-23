@@ -24,6 +24,8 @@ vi.mock('@/api/queries', () => ({
   keys: { jobs: ['jobs'] },
   useJobs: () => ({ data: jobs }),
   useJobActions: () => actions,
+  useSettings: () => ({ data: { output_format: 'wav32f' } }),
+  usePatchSettings: () => ({ mutate: vi.fn() }),
 }))
 vi.mock('@/api/engine', () => ({
   useEngine: () => ({ api: {}, connection: { baseUrl: 'http://127.0.0.1:1', token: 't' } }),

@@ -4,17 +4,12 @@ import type { SetupStatus, ShellStatus, TorchVariant } from '../../electron/brid
 import { VARIANT_DOWNLOAD, VARIANT_LABEL } from '../../electron/variant'
 import type { Recipe, Settings, SettingsPatch } from '@/api/client'
 import { useMaintenance, usePatchSettings, useSettings, useSystem } from '@/api/queries'
+import { FORMATS } from '@/components/FormatSelect'
 import { useToast } from '@/components/toast'
 import { UpdateSettings } from '@/components/Update'
 import { Button, CommitInput, Dialog, IconButton, Segmented, Select, Switch } from '@/components/ui'
 import { cn, previewName } from '@/lib/format'
 
-const FORMATS = [
-  { value: 'wav32f', label: 'WAV 32-bit float', description: 'Lossless, never clips. The default.' },
-  { value: 'wav24', label: 'WAV 24-bit', description: 'Lossless, smaller. Clips above 0 dBFS.' },
-  { value: 'flac', label: 'FLAC 24-bit', description: 'Lossless and compressed.' },
-  { value: 'mp3', label: 'MP3 320 kbps', description: 'Lossy. For sharing, not for mixing.' },
-]
 const QUALITY = [
   { value: 'fast' as const, label: 'Fast' },
   { value: 'balanced' as const, label: 'Balanced' },
@@ -50,7 +45,7 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
           </Group>
 
           <Group title="Output">
-            <Row label="Format" hint="Stems are 44.1 kHz stereo, the rate the models run at.">
+            <Row label="Format" hint="Stems are 44.1 kHz stereo, the rate the models run at. Also on the bar where you drop files.">
               <Select label="Output format" value={settings.output_format} options={FORMATS} onChange={(v) => save({ output_format: v as Settings['output_format'] })} className="min-w-[200px]" minWidth={300} />
             </Row>
             <Row label="Match the source sample rate" hint="Resample stems back to the source's rate, for example 48 kHz.">

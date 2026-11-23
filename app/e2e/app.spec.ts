@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { type Launched, enginePid, lastDrag, launch, processAlive } from './helpers'
+import { type Launched, enginePid, lastDrag, launch, processAlive, trayPage } from './helpers'
 
 let ctx: Launched
 
@@ -151,4 +151,28 @@ test('quitting the app leaves no engine process running', async () => {
 
   await ctx.app.close()
   await expect.poll(() => processAlive(engine!) || processAlive(worker!), { timeout: 20_000 }).toBe(false)
+})
+
+test('the output format picked on the bar is the format the stems are written in', async () => {
+  await ctx.page.getByRole('combobox', { name: 'Output format' }).click()
+  await ctx.page.getByRole('option', { name: /MP3 320 kbps/ }).click()
+  await expect(ctx.page.getByRole('combobox', { name: 'Output format' })).toContainText('MP3')
+  await addFiles('First Song.mp3')
+  await expect(doneJobs()).toHaveCount(1)
+  const folder = join(ctx.outputDir, 'First Song', 'full-song')
+  expect(readdirSync(folder).filter((f) => f.endsWith('.mp3'))).toHaveLength(6)
+  expect(readdirSync(folder).filter((f) => f.endsWith('.wav'))).toHaveLength(0)
+
+  // It is the setting itself: Settings and the quick-drop window show the same choice.
+  await ctx.page.getByRole('button', { name: 'Settings' }).click()
+  await expect(ctx.page.getByRole('combobox', { name: 'Output format' })).toContainText('MP3 320 kbps')
+  const popup = await trayPage(ctx.app)
+  await expect(popup.getByRole('combobox', { name: 'Output format' })).toContainText('MP3')
+
+  // MP3 stems drag out as real files too.
+  await ctx.page.getByRole('button', { name: 'Queue' }).click()
+  await doneJobs().click()
+  await ctx.page.getByTestId('drag-all').dispatchEvent('dragstart')
+  await expect.poll(() => lastDrag(ctx.app)).toHaveLength(6)
+  expect(((await lastDrag(ctx.app)) ?? [])[0]).toMatch(/\.mp3$/)
 })

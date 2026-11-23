@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- The output format (WAV 32-bit float, WAV 24-bit, FLAC, MP3 320 kbps) can be picked where
+  files are dropped: on the recipe bar of the full window and in the quick-drop window. It is
+  the same setting as Settings > Output > Format, so there is one format everywhere.
+
 ## 0.2.0 (2026-11-22)
 
 ### Renamed to OpenStems

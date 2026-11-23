@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -28,6 +29,7 @@ const actions = {
   clearFinished: { mutate: vi.fn() },
 }
 const modelActions = { pull: { mutate: vi.fn() }, cancel: { mutate: vi.fn() } }
+const patchSettings = { mutate: vi.fn() }
 let jobs: Job[] | undefined = []
 let recipes: Recipe[] = []
 let models: Model[] = []
@@ -36,6 +38,7 @@ const settings = {
   default_recipe: 'full-song',
   default_quality: 'balanced',
   sum_to_mix: false,
+  output_format: 'wav32f',
 } as Parameters<typeof SelectionProvider>[0]['settings']
 
 vi.mock('@/api/queries', () => ({
@@ -45,6 +48,7 @@ vi.mock('@/api/queries', () => ({
   useCreateJobs: () => createJobs,
   useModelActions: () => modelActions,
   useSettings: () => ({ data: settings }),
+  usePatchSettings: () => patchSettings,
   useRecipes: () => ({ data: recipes }),
   useModels: () => ({ data: { models } }),
 }))
@@ -382,6 +386,16 @@ describe('the quick-drop window', () => {
     expect(screen.getByText('This recipe needs a download')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Download' }))
     expect(modelActions.pull.mutate).toHaveBeenCalledWith('m1', expect.anything())
+  })
+
+  it('shows the output format and changes the setting when another is picked', async () => {
+    const user = userEvent.setup()
+    render(quickDrop())
+    const format = screen.getByRole('combobox', { name: 'Output format' })
+    expect(format).toHaveTextContent('WAV 32')
+    await user.click(format)
+    await user.click(await screen.findByRole('option', { name: /MP3 320 kbps/ }))
+    expect(patchSettings.mutate).toHaveBeenCalledWith({ output_format: 'mp3' }, expect.anything())
   })
 
   it('follows a recipe picked in the other window', () => {
