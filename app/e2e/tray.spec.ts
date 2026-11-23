@@ -4,18 +4,23 @@ import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import {
   type Launched,
+  MAC,
+  WINDOWS,
   clickTray,
-  doubleClickTray,
   enginePid,
   lastDrag,
   launch,
   mainPage,
   notices,
   processAlive,
+  reopenFromIcon,
   trayPage,
   trayState,
   workArea,
 } from './helpers'
+
+// "Tray" here is the tray icon on Windows and the menu bar item on a Mac: one controller
+// drives both, and the tests click it through the same hook.
 
 let ctx: Launched
 
@@ -40,11 +45,22 @@ test('a click on the tray icon opens the quick-drop window by the taskbar, and a
   const area = await workArea(ctx.app)
   const bounds = state.popupBounds!
   expect(bounds.width).toBe(380)
-  expect(bounds.height).toBe(500)
   expect(bounds.x).toBeGreaterThanOrEqual(area.x + 12)
-  expect(bounds.y).toBeGreaterThanOrEqual(area.y + 12)
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(area.x + area.width - 12)
   expect(bounds.y + bounds.height).toBeLessThanOrEqual(area.y + area.height - 12)
+  if (MAC) {
+    // A Mac hangs it from the menu bar: a small gap under the bar, wherever the Dock is.
+    // The bar's lower edge is the top of the work area, or the item's own lower edge when
+    // that reaches a little further down.
+    expect(bounds.y).toBeGreaterThanOrEqual(area.y + 6)
+    expect(bounds.y).toBeLessThanOrEqual(area.y + 6 + 12)
+    // Shorter only on a screen too small for the usual size.
+    expect(bounds.height).toBeLessThanOrEqual(500)
+    expect(bounds.height).toBe(Math.min(500, area.y + area.height - 12 - bounds.y))
+  } else {
+    expect(bounds.height).toBe(500)
+    expect(bounds.y).toBeGreaterThanOrEqual(area.y + 12)
+  }
 
   // Escape puts it away; so does a second click on the icon.
   await popup.keyboard.press('Escape')
@@ -145,8 +161,10 @@ test('closing the window leaves the app in the tray with the engine running, and
   await ctx.page.close()
   await expect.poll(async () => (await trayState(ctx.app)).mainOpen).toBe(false)
   expect(processAlive(engine!)).toBe(true)
-  // Said once, the first time.
-  await expect.poll(() => notices(ctx.app)).toEqual(['OpenStems is still running'])
+  // Said once, the first time. A Mac says nothing: an app that outlives its window is the
+  // usual thing there.
+  const said = MAC ? [] : ['OpenStems is still running']
+  await expect.poll(() => notices(ctx.app)).toEqual(said)
 
   // The quick-drop window works on its own.
   await clickTray(ctx.app)
@@ -159,11 +177,12 @@ test('closing the window leaves the app in the tray with the engine running, and
   await expect(main.locator('[data-testid="job-row"][data-state="done"]')).toHaveCount(1)
   await expect.poll(async () => (await trayState(ctx.app)).popupVisible).toBe(false)
 
-  // Closing it again says nothing new; a double click on the icon opens it once more.
+  // Closing it again says nothing new. A double click on the tray icon opens it once more;
+  // on a Mac a click on the Dock icon does.
   await main.close()
   await expect.poll(async () => (await trayState(ctx.app)).mainOpen).toBe(false)
-  expect(await notices(ctx.app)).toHaveLength(1)
-  await doubleClickTray(ctx.app)
+  expect(await notices(ctx.app)).toEqual(said)
+  await reopenFromIcon(ctx.app)
   await mainPage(ctx.app)
   await expect.poll(async () => (await trayState(ctx.app)).mainOpen).toBe(true)
 
@@ -172,7 +191,19 @@ test('closing the window leaves the app in the tray with the engine running, and
   await expect.poll(() => processAlive(engine!), { timeout: 20_000 }).toBe(false)
 })
 
+test('starting at login is a switch in Settings', async () => {
+  ctx = await launch()
+  await ctx.page.getByRole('button', { name: 'Settings' }).click()
+  // In tests it never reaches the registry or the Mac's login items.
+  const login = ctx.page.getByRole('switch', { name: /^(Start with Windows|Open at login)$/ })
+  await login.click()
+  await expect(login).toBeChecked()
+  await login.click()
+  await expect(login).not.toBeChecked()
+})
+
 test('with "Keep running in the tray" off, closing the window quits the app', async () => {
+  test.skip(!WINDOWS, 'Windows only: on a Mac closing the window never quits the app')
   // The preference lives in the profile, so the second launch reuses the first one's folder.
   const root = mkdtempSync(join(tmpdir(), 'openstems-e2e-'))
   ctx = await launch({}, { root })
@@ -181,13 +212,6 @@ test('with "Keep running in the tray" off, closing the window quits the app', as
   await expect(keep).toBeChecked()
   await keep.click()
   await expect(keep).not.toBeChecked()
-
-  // "Start with Windows" is a switch too; in tests it never reaches the registry.
-  const login = ctx.page.getByRole('switch', { name: 'Start with Windows' })
-  await login.click()
-  await expect(login).toBeChecked()
-  await login.click()
-  await expect(login).not.toBeChecked()
   await ctx.app.close()
 
   ctx = await launch({}, { root })

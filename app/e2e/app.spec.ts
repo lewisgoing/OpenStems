@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, test } from '@playwright/test'
-import { type Launched, enginePid, lastDrag, launch, processAlive, trayPage } from './helpers'
+import { type Page, expect, test } from '@playwright/test'
+import { type Launched, MAC, enginePid, lastDrag, launch, mainPage, processAlive, trayPage } from './helpers'
 
 let ctx: Launched
 
@@ -175,4 +175,38 @@ test('the output format picked on the bar is the format the stems are written in
   await ctx.page.getByTestId('drag-all').dispatchEvent('dragstart')
   await expect.poll(() => lastDrag(ctx.app)).toHaveLength(6)
   expect(((await lastDrag(ctx.app)) ?? [])[0]).toMatch(/\.mp3$/)
+})
+
+// The window's frame differs: Windows draws its buttons over the right of the title bar and
+// has no menu; a Mac has its three buttons at the left and an application menu.
+test('the title bar makes room for the window buttons on a Mac, and only there', async () => {
+  const inset = (page: Page) => page.evaluate(() => document.documentElement.style.getPropertyValue('--traffic-lights-inset'))
+  await expect.poll(() => inset(ctx.page)).toBe(MAC ? '80px' : '')
+  // The quick-drop window has no such buttons on either system.
+  expect(await inset(await trayPage(ctx.app))).toBe('')
+
+  const menus = await ctx.app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.items.map((item) => item.label) ?? null)
+  if (MAC) expect(menus).toEqual(expect.arrayContaining(['File', 'Edit']))
+  else expect(menus).toBeNull()
+})
+
+test('on a Mac, Settings in the application menu opens the Settings view', async () => {
+  test.skip(!MAC, 'Mac only: Windows has no application menu')
+  const settings = ctx.page.getByRole('button', { name: 'Settings' })
+  await expect(settings).not.toHaveAttribute('aria-current', 'page')
+  const pick = () =>
+    ctx.app.evaluate(({ Menu }) => {
+      const item = Menu.getApplicationMenu()?.items[0]?.submenu?.items.find((entry) => entry.label.startsWith('Settings'))
+      if (!item) throw new Error('the application menu has no Settings item')
+      item.click()
+    })
+  await pick()
+  await expect(settings).toHaveAttribute('aria-current', 'page')
+
+  // With the window closed, the same item brings it back, on Settings.
+  await ctx.page.close()
+  await expect.poll(() => ctx.app.windows().some((page) => !page.url().includes('window=tray'))).toBe(false)
+  await pick()
+  const again = await mainPage(ctx.app)
+  await expect(again.getByRole('button', { name: 'Settings' })).toHaveAttribute('aria-current', 'page')
 })

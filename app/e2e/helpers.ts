@@ -1,11 +1,19 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, mkdtempSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { type ElectronApplication, type Page, _electron as electron } from '@playwright/test'
+import { type Host, dataRoot, devGroupArgs, engineEnvDir, logsDir, venvExecutable } from '../electron/platform'
 
 const appDir = resolve(import.meta.dirname, '..')
 const engineDir = resolve(appDir, '..', 'engine')
+
+/** The suite runs on Windows and on a Mac. Where the two differ, the specs ask these. */
+export const MAC = process.platform === 'darwin'
+export const WINDOWS = process.platform === 'win32'
+
+/** The key held for a shortcut: Ctrl on Windows, Cmd on a Mac. */
+export const MOD = 'ControlOrMeta'
 
 export interface Launched {
   app: ElectronApplication
@@ -24,6 +32,8 @@ export interface TrayState {
 }
 
 interface E2EState {
+  updateInstalled: boolean
+  updateOpened: string | null
   lastDrag: string[] | null
   enginePid: () => number | null
   startAtLogin: boolean
@@ -34,7 +44,6 @@ interface E2EState {
   trayDoubleClick: () => void
 }
 
-
 let fixtureDir: string | null = null
 
 /** Short MP3, FLAC and MP4 files plus one with spaces and non-ASCII characters. */
@@ -42,7 +51,9 @@ export function fixtures(): string {
   if (!fixtureDir) {
     fixtureDir = mkdtempSync(join(tmpdir(), 'openstems-fixtures-'))
     const script = resolve(appDir, '..', 'scripts', 'make_fixtures.py')
-    execFileSync('uv', ['run', '--project', engineDir, 'python', script, fixtureDir], {
+    // The same dependency groups the app starts the engine with: on a Mac a plain `uv run`
+    // would try to install the NVIDIA PyTorch.
+    execFileSync('uv', ['run', '--project', engineDir, ...devGroupArgs(process.platform), 'python', script, fixtureDir], {
       cwd: engineDir,
       stdio: 'pipe',
     })
@@ -103,13 +114,35 @@ export function trayState(app: ElectronApplication): Promise<TrayState> {
   return app.evaluate(() => (globalThis as unknown as { __openstemsE2E: E2EState }).__openstemsE2E.tray())
 }
 
-/** A click on the tray icon. */
+/** A click on the tray icon, or on a Mac the menu bar item. */
 export function clickTray(app: ElectronApplication): Promise<void> {
   return app.evaluate(() => (globalThis as unknown as { __openstemsE2E: E2EState }).__openstemsE2E.trayClick())
 }
 
+/** A double click on the tray icon. Windows only: a Mac's menu bar item takes single clicks. */
 export function doubleClickTray(app: ElectronApplication): Promise<void> {
   return app.evaluate(() => (globalThis as unknown as { __openstemsE2E: E2EState }).__openstemsE2E.trayDoubleClick())
+}
+
+/**
+ * What a user does to get the full window back from the icon: a double click on the tray
+ * icon on Windows, a click on the Dock icon on a Mac.
+ */
+export function reopenFromIcon(app: ElectronApplication): Promise<void> {
+  if (!MAC) return doubleClickTray(app)
+  return app.evaluate(({ app }) => {
+    app.emit('activate')
+  })
+}
+
+/** The update stand-in was asked to install. */
+export function updateInstalled(app: ElectronApplication): Promise<boolean> {
+  return app.evaluate(() => (globalThis as unknown as { __openstemsE2E: E2EState }).__openstemsE2E.updateInstalled)
+}
+
+/** The page the manual update stand-in was asked to open, instead of a browser. */
+export function updateOpened(app: ElectronApplication): Promise<string | null> {
+  return app.evaluate(() => (globalThis as unknown as { __openstemsE2E: E2EState }).__openstemsE2E.updateOpened)
 }
 
 /** Put text on the stand-in clipboard that the Paste link button reads. */
@@ -119,20 +152,21 @@ export function setClipboard(app: ElectronApplication, text: string): Promise<vo
   }, text)
 }
 
-/** Notices the app would have raised as Windows notifications. */
+/** Notices the app would have raised as notifications. */
 export function notices(app: ElectronApplication): Promise<string[]> {
   return app.evaluate(() => (globalThis as unknown as { __openstemsE2E: E2EState }).__openstemsE2E.notices)
 }
 
 /**
- * A picture of the real screen around the quick-drop window, taskbar included: the window's
- * frame, shadow and position are drawn by Windows, so a page screenshot cannot show them.
+ * A picture of the real screen around the quick-drop window, taskbar or menu bar included:
+ * the window's frame, shadow and position are drawn by the system, so a page screenshot
+ * cannot show them. A Mac asks for the screen recording permission first.
  */
 export async function captureAroundPopup(app: ElectronApplication, path: string, margin = 40): Promise<void> {
   const bounds = (await trayState(app)).popupBounds
   if (!bounds) throw new Error('the quick-drop window does not exist')
   await app.evaluate(
-    async ({ desktopCapturer, screen }, { bounds, path, margin }) => {
+    async ({ desktopCapturer, screen }, { bounds, path, margin, fromTop }) => {
       const display = screen.getDisplayMatching(bounds)
       const scale = display.scaleFactor
       const sources = await desktopCapturer.getSources({
@@ -142,18 +176,20 @@ export async function captureAroundPopup(app: ElectronApplication, path: string,
       const source = sources.find((s) => s.display_id === String(display.id)) ?? sources[0]
       if (!source) throw new Error('no screen to capture')
       const left = Math.max(0, bounds.x - display.bounds.x - margin)
-      const top = Math.max(0, bounds.y - display.bounds.y - margin)
+      // The strip the window hangs from: down to the taskbar, or up to the menu bar.
+      const top = fromTop ? 0 : Math.max(0, bounds.y - display.bounds.y - margin)
+      const bottom = fromTop ? Math.min(display.size.height, bounds.y - display.bounds.y + bounds.height + margin) : display.size.height
       const right = Math.min(display.size.width, bounds.x - display.bounds.x + bounds.width + margin)
       const image = source.thumbnail.crop({
         x: Math.round(left * scale),
         y: Math.round(top * scale),
         width: Math.round((right - left) * scale),
-        height: Math.round((display.size.height - top) * scale),
+        height: Math.round((bottom - top) * scale),
       })
       const { writeFileSync } = process.mainModule!.require('node:fs') as typeof import('node:fs')
       writeFileSync(path, image.toPNG())
     },
-    { bounds, path, margin },
+    { bounds, path, margin, fromTop: MAC },
   )
 }
 
@@ -178,4 +214,64 @@ export function processAlive(pid: number): boolean {
   } catch {
     return false
   }
+}
+
+/* ---- the packaged app ---------------------------------------------------------------- */
+
+/** The unpacked build that `pnpm run pack` (Windows) or `pnpm run pack:mac` leaves in `release`. */
+export function packagedExe(): string {
+  return MAC
+    ? resolve(appDir, 'release', 'mac-arm64', 'OpenStems.app', 'Contents', 'MacOS', 'OpenStems')
+    : resolve(appDir, 'release', 'win-unpacked', 'OpenStems.exe')
+}
+
+/** Where a packaged app keeps its things for one user, and the environment that puts it there. */
+export interface Profile {
+  /** Variables to launch the app with. Empty for the real profile. */
+  env: Record<string, string>
+  /** The folder for Chromium's own data (`--user-data-dir`). */
+  userData: string
+  /** The Python environment that first-run setup creates. */
+  engineEnv: string
+  /** engine.log and selftest.json. */
+  logs: string
+  /** A program in that environment: `openstems`, `python`. */
+  program: (name: string) => string
+  /** Where electron-updater keeps a downloaded installer (Windows). */
+  updaterCache: string
+}
+
+function profileFor(host: Host, env: Record<string, string>, userData: string): Profile {
+  const engineEnv = engineEnvDir(host)
+  return {
+    env,
+    userData,
+    engineEnv,
+    logs: logsDir(host),
+    program: (name) => venvExecutable(engineEnv, name, host.platform),
+    updaterCache: join(dataRoot(host), '..', 'openstems-app-updater'),
+  }
+}
+
+/**
+ * A fresh user account, simulated in `folder`. Windows reads LOCALAPPDATA and APPDATA. A
+ * Mac has only the home folder, so HOME points there, and uv's cache and Python go with
+ * it: setup downloads everything again, as on a new Mac.
+ */
+export function cleanProfile(folder: string): Profile {
+  if (MAC) {
+    mkdirSync(folder, { recursive: true })
+    return profileFor({ platform: 'darwin', home: folder, env: {} }, { HOME: folder }, join(folder, 'openstems-user-data'))
+  }
+  const local = join(folder, 'Local')
+  const roaming = join(folder, 'Roaming')
+  for (const dir of [local, roaming]) mkdirSync(dir, { recursive: true })
+  const env = { LOCALAPPDATA: local, APPDATA: roaming }
+  return profileFor({ platform: process.platform, home: folder, env }, env, join(roaming, 'openstems-user-data'))
+}
+
+/** The profile of whoever runs the tests, untouched, for an installed copy of the app. */
+export function realProfile(): Profile {
+  const host: Host = { platform: process.platform, home: homedir(), env: process.env }
+  return profileFor(host, {}, mkdtempSync(join(tmpdir(), 'openstems-installed-')))
 }

@@ -1,6 +1,8 @@
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { type Launched, clickTray, launch, trayPage } from './helpers'
+import { type Launched, clickTray, launch, trayPage, updateOpened } from './helpers'
+
+const RELEASES = 'https://github.com/lewisgoing/OpenStems/releases/latest'
 
 // Self-update with a stand-in for the network: version 0.3.0 is on offer and "downloads" in
 // half a second. The real thing, electron-updater against GitHub, needs an installed app.
@@ -65,4 +67,39 @@ test('a restart asks first while a job is running', async () => {
   await page.getByRole('button', { name: 'Restart to update' }).click()
   await page.getByRole('button', { name: 'Restart now' }).click()
   await expect.poll(installed).toBe(true)
+})
+
+// An app that cannot install an update by itself (an unsigned Mac app) still says that a new
+// version is out, and its one button opens the release page. The stand-in is the same on
+// every system, so this runs on Windows too.
+test('an update the app cannot install itself opens the release page and stays on offer', async () => {
+  ctx = await launch({ OPENSTEMS_E2E_UPDATE: '0.3.0', OPENSTEMS_E2E_UPDATE_MANUAL: '1' })
+  const { page } = ctx
+  await page.getByRole('button', { name: 'Settings' }).click()
+  await page.getByRole('button', { name: 'Check for updates' }).click()
+  await expect(page.getByText(/Version 0\.3\.0 is available\./)).toBeVisible()
+  const found = await page.evaluate(() => window.openstems.updates())
+  expect(found.state).toBe('available')
+  expect(found.manual).toBe(true)
+  expect(found.url).toBe(RELEASES)
+
+  // The quick-drop window carries the offer too.
+  const popup = await trayPage(ctx.app)
+  await clickTray(ctx.app)
+  await expect(popup.locator('.update-pill')).toBeVisible()
+
+  // Nothing is opened before the click. The click opens the page (here: records it).
+  expect(await updateOpened(ctx.app)).toBeNull()
+  await page.locator('.update-pill').click()
+  await expect.poll(() => updateOpened(ctx.app)).toBe(RELEASES)
+
+  // There is no download and no restart: the offer stays as it was, ready to be used again.
+  const after = await page.evaluate(() => window.openstems.updates())
+  expect(after.state).toBe('available')
+  expect(after.error).toBeUndefined()
+  await expect(page.locator('.update-pill')).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Restart to update' })).toHaveCount(0)
+  expect(await installed()).toBe(false)
+  // A restart that is asked for anyway is refused: there is nothing to install.
+  expect((await page.evaluate(() => window.openstems.installUpdate(true))).started).toBe(false)
 })
