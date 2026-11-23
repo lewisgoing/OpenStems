@@ -1,8 +1,8 @@
 # OpenStems
 
 Local Windows app for stem separation. `PLAN.md` is the spec; follow it phase by phase.
-There is also a build for Apple Silicon Macs, written on Windows and not yet run on a Mac by
-us: `docs/adr/0014-macos.md`.
+There is also a build for Apple Silicon Macs, written on Windows. The owner runs it on an
+M1 Max; what has and has not been seen working there is in `docs/adr/0014-macos.md`.
 
 ## Commands
 
@@ -15,7 +15,9 @@ Engine (run from `engine/`):
   Apple GPU), then `uv run --no-sync ...` for every command below. A plain `uv sync` or
   `uv run` asks for the `cuda` group, which has no macOS wheel
 - `uv run openstems doctor`: Python, PyTorch, GPU backend (CUDA, ROCm or MPS), GPU, FFmpeg
-  check; non-zero without a working GPU. On a Mac the "VRAM" line reads "Memory (shared)"
+  check; non-zero without a working GPU. On a Mac the "VRAM" line reads "Memory (shared)".
+  `--json` prints the report as JSON (the API reads it that way).
+  "Memory for one model" is the budget one model run gets on this machine
 - `uv run openstems selftest [--ops-only] [-m MODEL]`: GPU against CPU, per operation and per
   model; non-zero on a mismatch
 - `uv run ruff check` and `uv run ruff format --check`: lint and format check
@@ -24,7 +26,14 @@ Engine (run from `engine/`):
   `tests/test_macos.py` covers the Mac branches on Windows by patching the platform
 - `uv run pytest -m gpu`: GPU tests, need downloaded models
 - `uv run openstems separate SONG --recipe full-song`: run a recipe on the GPU
-- `uv run openstems models list | pull | verify | check`: catalog and downloads
+- `uv run openstems models list | pull | verify | check`: catalog and downloads.
+  `pull --set recommended` is the seed set cut to what this machine's memory can run
+- `OPENSTEMS_MEMORY_GB=<number>` before any engine command or `pnpm dev`: plan as if the
+  machine (with a graphics card: the card) had that much memory, so a large machine acts as
+  a small one. It changes the budget, the fit, the recommended set and the warm-model cap.
+  It takes no memory away, so nothing really runs out
+- `uv run pytest tests/test_low_memory.py`: the memory rules, the fallback to the CPU and
+  the API's fit fields, with stand-ins and the FakeEngine
 - `uv run python ../scripts/null_test.py SONG`: runner vs the loader library (must be < -40 dB)
 - `uv run python ../scripts/benchmark.py SONG [--markdown]`: run time and peak VRAM
 - `uv run python ../scripts/check_stems.py FOLDER [--sum-to-mix]`: alignment check
@@ -37,7 +46,8 @@ Engine (run from `engine/`):
 - `uv run openstems openapi --out openapi.json`: export the schema after any API change, then
   `pnpm gen:api` in `app/` (a test fails if `engine/openapi.json` is stale)
 - `uv run python ../scripts/gen_catalog.py --write`: regenerate `catalog/models.toml` (never
-  edit that file by hand)
+  edit that file by hand). A model's `memory_gb` comes from `MEMORY_GB` in that script,
+  copied from the Peak VRAM column of `docs/benchmarks.md`
 
 App (run from `app/`):
 
@@ -47,6 +57,9 @@ App (run from `app/`):
   must be current
 - `SHOTS=1 SHOTS_DIR=<folder> pnpm e2e -g screenshots`: capture every view for design review,
   the quick-drop window included (`tray-on-screen.png` is the real screen around it)
+  and a machine with little memory (`memory-1-queue.png` to `memory-7-settings.png`)
+- `pnpm e2e low-memory`: the CPU note and the marks of an 8 GB machine, with the FakeEngine
+  (`OPENSTEMS_FAKE_OOM`, `OPENSTEMS_MEMORY_GB`)
 - `README_SHOTS=1 pnpm e2e -g "readme pictures"`: retake the README's pictures into
   `docs/images/` at twice the pixels, with a synthetic demo song (`scripts/make_demo_song.py`)
   whose parts are written over the FakeEngine's stems. `README_OUTPUT=<new folder>` and
@@ -68,7 +81,7 @@ App (run from `app/`):
 - `pnpm dist:mac` (on a Mac only, with uv and git on `PATH`): build
   `release/OpenStems-<version>-arm64.dmg` and `.zip`, their blockmaps and `latest-mac.yml`.
   `pnpm pack:mac` builds the unpacked app into `release/mac-arm64` (run `pnpm package:prepare`
-  first). Never run by us: there is no Mac here
+  first). Run only by CI and the release workflow: the development machine is not a Mac
 - `PACKAGE_PLATFORM=darwin node scripts/prepare-package.mjs`: the Mac packaging steps on
   Windows (uv for `aarch64-apple-darwin`, `requirements-mps.txt`). It leaves `app/package` in
   its Mac state: run `pnpm package:prepare` afterwards to put the Windows one back
@@ -81,7 +94,7 @@ App (run from `app/`):
   draft or pre-release: installed apps would not see it. Publishing the release starts
   `.github/workflows/release-mac.yml`, which builds on a Mac runner and adds the dmg, the zip,
   their blockmaps and `latest-mac.yml` (it can also be started by hand with the tag; the tag
-  must be `v<version>`). Until it has finished Mac apps are offered nothing. Never run by us
+  must be `v<version>`). Until it has finished Mac apps are offered nothing. It built the 0.3.0 Mac files
 - CI (`.github/workflows/ci.yml`) runs the engine and app jobs on `windows-latest` and on
   `macos-15` (Apple Silicon). The Mac side syncs the `mps` group, sets `UV_NO_SYNC=1`, and
   ends with `pnpm run pack:mac` and no certificate
@@ -118,7 +131,11 @@ work). Tests never touch real settings: `tests/conftest.py` points every folder 
 API structure: `api/app.py` (routes), `api/service.py` (runtime, index, queue, downloads in one
 object), `api/jobs.py` (the queue and job states), `worker/supervisor.py` and `worker/process.py`
 (the GPU worker process), `api/db.py` (SQLite index). API tests use a real worker process with
-the FakeEngine; the API process itself never imports torch.
+the FakeEngine; the API process itself never imports torch. What needs torch is asked of a
+process of its own: the self-test, and the doctor (`service.run_doctor_process`, which runs
+`openstems doctor --json`). The doctor's report is kept in the cache folder as `machine.json`
+and checked again in the background at each start (`Service._refresh_machine`), so only the
+first start of a version waits for it. `/v1/models` and `/v1/recipes` need it for the fit.
 
 GPU builds: PyTorch comes from one of four conflicting dependency groups: `cuda` (default,
 CUDA 13.0), `cu126` (the same PyTorch for CUDA 12.6, for GTX 900 and 10 series cards; never
@@ -131,18 +148,45 @@ decides which build first-run setup installs: one of the first three on Windows,
 `mps` on a Mac, where nothing is detected (`variantsFor`). A user reported AMD support working
 on a Radeon on 2026-11-22; it has not been run on one by us: `docs/adr/0007-amd-rocm.md`.
 
-Mac: Apple Silicon and macOS 14 or later only. Nothing has been run on a Mac by us, so every
+Mac: Apple Silicon and macOS 14 or later only. The development machine is Windows, so every
 Mac branch must be right by reading, and every Mac decision must be a plain function covered
 by a unit test that runs on Windows with the platform passed in or patched. The Electron glue
 that only carries those decisions is read, not tested: ADR 0014 names it ("Read, not
-tested"). Say "not run on a Mac by us" wherever Mac support is described
-(`docs/adr/0014-macos.md`). On "mps" the engine checks the STFT against the CPU once per
+tested"). The owner tests on an M1 Max with 32 GB: 0.3.0 was installed from the dmg there on
+2026-11-23 and setup, a separation and the menu bar item worked. Say what has been seen on a
+Mac and what has not wherever Mac support is described, and when a change cannot be proven
+from Windows give the owner steps to run on the Mac (`docs/adr/0014-macos.md`). On "mps" the engine checks the STFT against the CPU once per
 process and, if it fails, runs `torch.stft` and `torch.istft` on the CPU from then on
 (`engines/stft_fallback.py`); the doctor reports that as a note, not a problem.
 `PYTORCH_ENABLE_MPS_FALLBACK=1` is set in `openstems/__init__.py` on a Mac. Warm models are
 capped at half the machine's memory there (`Settings.vram_budget_bytes`). The pinned loaders
 refuse `device="mps"` in their own inference code (removed upstream on 2026-09-14); the engine
 uses only their model classes, so do not route anything through their `demix_track`.
+
+Memory: `domain/memory.py` holds the rules as plain functions with no torch
+(`docs/adr/0015-low-memory.md`). A model needs its `memory_gb` (measured at half precision on
+CUDA), or an estimate from its checkpoint size; at full precision (mps, the CPU, GTX 900 and
+10 series) the part above the weights is doubled, which is an estimate. The budget for one
+run is the card's memory on CUDA and ROCm, (memory - 2 GB) x 0.75 on mps and half the
+machine's memory on the CPU. Fit is "fits" up to 85 percent of the budget, "tight" up to all
+of it, "no" above; a recipe is as large as its largest model. "no" never blocks a run. The
+API carries `fit` on models and recipes, `recommended` on models (use it, not `seed`, for the
+first download), the budget and `memory_kind` (where models run: the app words the budget by
+it) in the system info and `notes` on a job. The app's sentences about a fit are in
+`app/src/lib/memory.ts`; they say what may happen, since the engine never consults the fit
+and always tries the GPU first. On out-of-memory
+(`engines/device.is_oom` is the one check: CUDA's class, the MPS wording, the CPU's)
+`Pipeline._separate` goes in order: the runner's batch backoff, drop the other warm models
+and retry, then that model on the CPU for this job, with the note "<model name> ran on the
+CPU: not enough GPU memory" on the job and in the manifest. A machine that runs on the CPU
+anyway stops after the retry, with no note. `ModelHost.release` is what frees memory between
+the steps (warm models, the collector, the GPU's cache). A budget under 8 GB is a small
+machine: one warm model (`ModelHost.get`) and unload after 60 s idle. With
+`OPENSTEMS_ENGINE=fake` there is no budget unless `OPENSTEMS_MEMORY_GB` is set (then the
+CPU's rule), and `OPENSTEMS_FAKE_OOM=<model id>[:run|load|once|always],...` (or `all`) makes
+models run out of memory on a pretend GPU. Every Mac and full-precision figure is an
+estimate until measured: say so wherever they are described. On the development machine
+everything fits and the recommended set is the seed set.
 
 Folders on a Mac: settings, user recipes, models and `engine-env` in
 `~/Library/Application Support/OpenStems`, the cache in `~/Library/Caches/OpenStems`, logs in
@@ -204,6 +248,22 @@ app asks for the file before a drag can start (`state/mix.ts`, `useMixFile`). Th
 is decided in `mix_label` (Python, the file) and `mixLabel` (TypeScript, the screen): change
 both together. `docs/adr/0013-links-and-mixes.md`.
 
+Groups: an output of a recipe can name a `group`, the larger stem it is a part of (`kick`
+in `drums`). The parts add up to it and the group itself is never written: it is a mix of
+its parts, named after the group by `mix_label` and `mixLabel`. The group travels in the
+recipe (`output_groups`), the manifest and each job stem, and is written only where there
+is one, so other recipes keep their cache keys. `every-stem` is the recipe that uses it
+(13 stems; its `other drums` and `backing vocals` are differences, so the parts sum
+exactly). In the app `state/mix.ts` holds the plain functions (`stemSections`, `partName`,
+`groupsOf`) and `StemsPanel.tsx` the headings; a group's file is written when the pointer
+first reaches its handle. The 53-stem model is not chained into it on purpose: its stems
+overlap. `docs/adr/0017-every-stem.md`.
+
+Tempo sync: with the `tempo_sync` setting on, `write_audio` appends an `acid` chunk with the
+detected tempo to WAV stems and mixes (`audio/write.py`, `tempo_chunk`), which FL Studio
+reads to stretch them to the project's tempo. FL reads the tempo field only; the beat count
+stays 0. The option enters a run's cache key only when on. `docs/adr/0016-tempo-sync.md`.
+
 Dependencies point inward: `domain` imports nothing from the other packages and never imports
 torch. `cli` and `api` are the only entry points.
 
@@ -234,6 +294,10 @@ Component classes live in `@layer components` so Tailwind utilities can override
 7. Stop and ask before deleting user files, changing system settings, installing system-wide
    software, or settling anything listed under Open decisions in `PLAN.md`.
 8. Keep this file current.
+9. Windows and Mac move together. Every feature and fix covers both in the same change: the
+   code for each, wording per platform, tests for each, docs for each. Both CI jobs must pass.
+   A release carries the Windows installer and the Mac files; check that `release-mac.yml`
+   added the Mac ones before calling a release done.
 
 ## Machine notes
 

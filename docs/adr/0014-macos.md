@@ -16,7 +16,7 @@ The development machine is Windows, and nothing here was run on a Mac. Every Mac
 written by reading the code and the documentation. Every Mac decision is a plain function
 covered by unit tests that run on Windows with the platform passed in or patched; the glue
 that carries those decisions to Electron and the system is only read ("Read, not tested"
-below). Windows behaviour is unchanged: the same paths, the same commands, the same package. "Not run on a Mac by us" below lists what is
+below). Windows behaviour is unchanged: the same paths, the same commands, the same package. "Run on a Mac" and "Still unproven on a Mac" below say what is
 unproven, and "For whoever tests on a Mac" says how to find out.
 
 ## The decisions and why
@@ -82,7 +82,8 @@ has no MPS reference to compare with.
 - **Memory for warm models.** A Mac has no graphics memory of its own: weights sit in the
   memory everything else uses. `Settings.vram_budget_bytes` caps the warm-model budget at half
   of the machine's memory on a Mac. The stored setting (12 GB) is untouched. Half is a first
-  guess, not a measurement.
+  guess, not a measurement. ADR 0015 adds a budget for one model run, and one warm model at
+  most on a Mac with 8 GB.
 - **Doctor.** The backend reads "MPS" with the macOS version, the GPU name is the chip
   ("Apple M2 Pro", from `sysctl machdep.cpu.brand_string`), and the memory line reads "Memory
   (shared)" instead of "VRAM". It names an Intel Mac, a macOS older than 14, and MPS not being
@@ -245,9 +246,33 @@ push is the first place this code meets a Mac.
 A green Mac job shows that the code installs, imports, passes its tests and packages on a
 Mac. It runs no model, so it proves nothing in the next section.
 
-## Not run on a Mac by us
+## Run on a Mac: 2026-11-23
 
-Nothing below has been seen working. Each item is unproven until someone reports it.
+The first Mac job in CI passed on its first run: the engine tests, the component tests, the
+end-to-end suite with the FakeEngine and an ad hoc signed bundle. `release-mac.yml` then built
+the 0.3.0 dmg, zip and `latest-mac.yml` and added them to the release.
+
+The owner installed that dmg on an M1 Max with 32 GB and reported, without figures:
+
+- The app opened after the confirmation in System Settings, with the window buttons in place.
+- First-run setup finished: uv's Python, PyTorch and the model code.
+- A separation ran on the Apple GPU and the stems were right.
+- The menu bar item and the quick-drop window worked.
+
+Setup failed once before that, at its first step, with "EACCES: permission denied, mkdir" on
+`~/Library/Application Support/OpenStems`. That Mac's `Application Support` folder belonged to
+root, a fault on the machine that stops any new app. `sudo chown` on the folder fixed it. Setup
+now explains that case and gives the command (`platform.explainSetupError`).
+
+Not recorded from that run: how long a separation takes, whether the STFT check passed
+natively or the CPU patch went in, the doctor's output, and the self-test with a model.
+
+## Still unproven on a Mac
+
+The list as it stood before the run above. The items that run covers in broad terms (the
+models on MPS, first-run setup, the window, the menu bar item, packaging, opening a build with
+no Developer ID, the test suites) are seen working once, on one machine, with no measurements.
+The rest has not been seen at all.
 
 - **Whether the models run correctly on MPS, and how fast**, for each family: BS-RoFormer,
   Mel-Band RoFormer and MDX23C. They use complex tensors, `index_fill` and einsum, among

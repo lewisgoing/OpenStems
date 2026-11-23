@@ -9,7 +9,15 @@ Run time and peak VRAM per model and quality preset on the target machine.
 - Peak VRAM is `torch.cuda.max_memory_allocated`. It does not grow with track length because the
   overlap-add buffers live in RAM.
 
-Reproduce from `engine/`: `uv run python ../scripts/benchmark.py SONG --markdown`.
+- The Peak VRAM column of "Every model and preset" is each model's memory figure in the
+  catalog (`memory_gb`), which decides whether a model fits a machine. These are half
+  precision on CUDA. At full precision (a Mac, the CPU, GTX 900 and 10 series cards) the app
+  works with an estimate, not a measurement: nothing here was measured on a Mac. The rule
+  and its limits are in [`adr/0015-low-memory.md`](adr/0015-low-memory.md).
+
+Reproduce from `engine/`: `uv run python ../scripts/benchmark.py SONG --markdown`. After a new
+measurement, copy the figure into `MEMORY_GB` in `scripts/gen_catalog.py` and regenerate the
+catalog.
 
 ## Presets
 

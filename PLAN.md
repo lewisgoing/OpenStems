@@ -44,7 +44,9 @@ OpenStems turns any dropped audio file into DAW-ready stems on the local GPU, wi
 
 **Non-goals for now:** real-time or plugin (VST) processing, model training, Linux builds, auto-update and code signing.
 
-macOS was a non-goal until 2026-11-23. There is now a build for Apple Silicon Macs, written on Windows and not yet run on a Mac by us: `docs/adr/0014-macos.md`. The target machine above is still the only one the app is tested on.
+macOS was a non-goal until 2026-11-23. There is now a build for Apple Silicon Macs, written on Windows and run on one Mac so far (an M1 Max, 2026-11-23): `docs/adr/0014-macos.md`. The target machine above is still the only one the app is tested on.
+
+Machines with less memory than the target are supported since 2026-11-23: every model has a memory figure, every machine a budget, and a run that does not fit ends on the CPU with a note instead of failing. Not yet run on a small machine: `docs/adr/0015-low-memory.md`.
 
 ## Domain model
 
@@ -145,6 +147,7 @@ Each use case ships as a recipe, so choosing a use case is one click while choos
 | --- | --- | --- |
 | `full-song` | SW on the mix | vocals, drums, bass, guitar, piano, other |
 | `full-song-best-vocals` | Leap Xe vocals on the mix; SW on the mix for the rest | vocals from Leap Xe; drums, bass, guitar, piano, other from SW |
+| `every-stem` (added 2026-11-23, `docs/adr/0017-every-stem.md`) | Leap Xe vocals, then the lead and backing split; SW on the mix, then DrumSep on the drums stem | lead vocals, backing vocals; kick, snare, toms, hh, ride, crash, other drums; bass; guitar, piano, other. The parts are grouped as vocals, drums and melody, and the groups themselves are not written |
 | `vocals-instrumental` | Leap Xe vocals; Leap Xe instrumental | vocals, instrumental |
 | `acapella-clean` | Leap Xe vocals, then de-reverb, then the lead and backing split | dry vocals, lead, backing |
 | `drum-kit` | SW on the mix, then DrumSep on the drums stem | kick, snare, toms, hh, ride, crash, plus the full drums stem |
@@ -156,6 +159,7 @@ Each use case ships as a recipe, so choosing a use case is one click while choos
 - Recipes are TOML files in `engine/src/openstems/recipes/`. User recipes load from the config folder.
 - A pass names its input as `mix` or `<pass>.<stem>`. That is how `drum-kit` and `acapella-clean` chain.
 - A single-model run is a one-pass recipe generated on the fly.
+- An output can name a `group`, the larger stem it is a part of. The parts of a group add up to it.
 - `melody` assumes melody separation means everything that is not vocals, drums or bass. Confirm it under Open decisions.
 - `full-song-best-vocals` has a second wiring to test: SW on the Leap Xe instrumental instead of the mix. Keep whichever sounds cleaner.
 - Ensemble passes, which average several models for one stem, arrive in Phase 2.
@@ -359,7 +363,8 @@ Every decision has a default, so the build never blocks. Change any of them befo
 | Packaging | Installer in Phase 6 | Stay on a dev start script | Phase 6 |
 | Cloud-only models | Not supported | An optional MVSEP adapter behind the Engine port, after checking its API terms | After Phase 5 |
 | Apple Developer ID for the Mac build (the owner's to make) | Not bought: the Mac build is unsigned, macOS asks before the first open, and updates are manual | Buy a Developer ID (Apple Developer Program) and set the signing secrets, so the app is signed, notarized and updates itself (`docs/adr/0014-macos.md`) | Before the first release with a Mac build |
-| Who tests on a Mac (the owner's to make) | Nobody yet: Mac support is labelled as not run on a Mac by us, and waits for user reports | The owner or a named tester runs the doctor, the self-test and a separation on an Apple Silicon Mac | Before the label is dropped |
+| Recipes on a small machine (the owner's to make) | The built-in recipes name fixed models. On an 8 GB Mac `full-song` is tight and the Leap Xe recipes are marked as not fitting; lighter models are offered for download and run as single models | Light variants of the recipes, or recipes that pick a lighter model by fit (`docs/adr/0015-low-memory.md`) | Before the first release with a Mac build |
+| Who tests on a Mac (the owner's to make) | The owner, on an M1 Max with 32 GB (first run 2026-11-23). Smaller Macs wait for user reports | The owner or a named tester runs the doctor, the self-test and a separation on an Apple Silicon Mac | Before the label is dropped |
 
 ## Kickoff prompt
 
