@@ -117,22 +117,31 @@ def slakh_complete(song: Path) -> bool:
 
 
 def fetch_slakh(out: Path, wanted: int, max_gb: float | None = None) -> None:
-    """The archive stores files in no particular order: a song's files are spread through it.
-    The first ``wanted`` test songs met are chosen, and reading stops once all of them are
-    complete, which may take most of the 104 GB."""
+    """The archive stores files in no particular order: a song's files are spread through it,
+    so completing even a few songs takes most of the 104 GB. ``wanted`` > 0 keeps the first
+    that many test songs met and stops once they are complete; 0 keeps every test song (the
+    same download, about 7 to 8 GB on disk)."""
     folder = out / "slakh"
     folder.mkdir(parents=True, exist_ok=True)
-    chosen = sorted(p.name for p in folder.iterdir() if p.is_dir())[:wanted]
+    limit = wanted if wanted > 0 else None
+    chosen = sorted(p.name for p in folder.iterdir() if p.is_dir())[:limit]
     done = {name for name in chosen if slakh_complete(folder / name)}
-    if len(done) >= wanted:
+    if limit is not None and len(done) >= limit:
         print(f"slakh: {len(done)} complete test songs already here")
         return
-    print(f"slakh: streaming until {wanted} test songs are complete ({len(done)} so far)")
+    goal = f"{limit} test songs" if limit else "every test song"
+    print(f"slakh: streaming until {goal} is complete ({len(done)} so far)")
     started = time.time()
     seen_bytes = 0
+    next_report = 5e9
     with _open(SLAKH_URL) as response, tarfile.open(fileobj=response, mode="r|gz") as tar:
         for member in tar:
             seen_bytes += member.size
+            if seen_bytes >= next_report:
+                minutes = (time.time() - started) / 60
+                gb = seen_bytes / 1e9
+                print(f"slakh: {gb:.0f} GB read, {len(done)} complete, {minutes:.0f} min")
+                next_report += 5e9
             if max_gb is not None and seen_bytes > max_gb * 1e9:
                 print(f"slakh: stopped at the --max-gb limit ({max_gb:g} GB)")
                 break
@@ -141,7 +150,7 @@ def fetch_slakh(out: Path, wanted: int, max_gb: float | None = None) -> None:
                 continue
             track = match.group(1)
             if track not in chosen:
-                if len(chosen) >= wanted:
+                if limit is not None and len(chosen) >= limit:
                     continue
                 chosen.append(track)
             if track in done:
@@ -159,21 +168,24 @@ def fetch_slakh(out: Path, wanted: int, max_gb: float | None = None) -> None:
                 done.add(track)
                 minutes = (time.time() - started) / 60
                 print(
-                    f"slakh: {track} complete ({len(done)}/{wanted}), "
+                    f"slakh: {track} complete ({len(done)}), "
                     f"{seen_bytes / 1e9:.1f} GB read, {minutes:.0f} min"
                 )
-                if len(done) >= wanted:
+                if limit is not None and len(done) >= limit:
                     break
     minutes = (time.time() - started) / 60
-    files = {p.name: sum(1 for f in p.rglob("*") if f.is_file()) for p in folder.iterdir()}
-    print(f"slakh: {len(done)} of {wanted} test songs complete after {minutes:.0f} min")
-    print(f"slakh: files so far per chosen song: {dict(sorted(files.items()))}")
+    incomplete = sorted(set(chosen) - done)
+    print(f"slakh: {len(done)} test songs complete after {minutes:.0f} min")
+    if incomplete:
+        print(f"slakh: incomplete: {', '.join(incomplete)}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, default=Path(r"D:\lew-stems\bench"))
-    parser.add_argument("--slakh", type=int, default=25, help="number of Slakh test songs")
+    parser.add_argument(
+        "--slakh", type=int, default=0, help="number of Slakh test songs (0: all of them)"
+    )
     parser.add_argument("--skip-slakh", action="store_true")
     parser.add_argument("--max-gb", type=float, help="stop reading the Slakh archive after this")
     args = parser.parse_args()
