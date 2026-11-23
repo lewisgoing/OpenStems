@@ -86,42 +86,88 @@ def fetch_small(out: Path, name: str, record: str, files: list[str]) -> None:
     print(f"{name}: done")
 
 
-def fetch_slakh(out: Path, wanted: int) -> None:
+def _slakh_stems(metadata: str) -> dict[str, bool]:
+    """Stem ids in a Slakh metadata.yaml and whether each was rendered to audio. A small
+    line parser, so the fetch needs no YAML library."""
+    stems: dict[str, bool] = {}
+    current = None
+    for line in metadata.splitlines():
+        head = re.match(r"^  (S\d\d):\s*$", line)
+        if head:
+            current = head.group(1)
+            stems[current] = False
+            continue
+        rendered = re.match(r"^    audio_rendered:\s*(\w+)", line)
+        if current and rendered:
+            stems[current] = rendered.group(1).lower() == "true"
+    return stems
+
+
+def slakh_complete(song: Path) -> bool:
+    """The mix, the metadata, and every stem's MIDI and (when rendered) audio are present."""
+    meta = song / "metadata.yaml"
+    if not (meta.is_file() and (song / "mix.flac").is_file()):
+        return False
+    stems = _slakh_stems(meta.read_text("utf-8", errors="replace"))
+    return bool(stems) and all(
+        (song / "MIDI" / f"{sid}.mid").is_file()
+        and (not rendered or (song / "stems" / f"{sid}.flac").is_file())
+        for sid, rendered in stems.items()
+    )
+
+
+def fetch_slakh(out: Path, wanted: int, max_gb: float | None = None) -> None:
+    """The archive stores files in no particular order: a song's files are spread through it.
+    The first ``wanted`` test songs met are chosen, and reading stops once all of them are
+    complete, which may take most of the 104 GB."""
     folder = out / "slakh"
     folder.mkdir(parents=True, exist_ok=True)
-    have = {p.name for p in folder.iterdir() if (p / ".done").exists()}
-    if len(have) >= wanted:
-        print(f"slakh: {len(have)} test songs already here")
+    chosen = sorted(p.name for p in folder.iterdir() if p.is_dir())[:wanted]
+    done = {name for name in chosen if slakh_complete(folder / name)}
+    if len(done) >= wanted:
+        print(f"slakh: {len(done)} complete test songs already here")
         return
-    print(f"slakh: streaming the archive until {wanted} test songs are in ({len(have)} so far)")
-    current: str | None = None
+    print(f"slakh: streaming until {wanted} test songs are complete ({len(done)} so far)")
     started = time.time()
+    seen_bytes = 0
     with _open(SLAKH_URL) as response, tarfile.open(fileobj=response, mode="r|gz") as tar:
         for member in tar:
+            seen_bytes += member.size
+            if max_gb is not None and seen_bytes > max_gb * 1e9:
+                print(f"slakh: stopped at the --max-gb limit ({max_gb:g} GB)")
+                break
             match = SLAKH_TEST.match(member.name)
-            track = match.group(1) if match else None
-            if current and track != current:
-                (folder / current / ".done").write_text("ok")
-                have.add(current)
-                print(f"slakh: {current} ({len(have)}/{wanted})")
-                current = None
-                if len(have) >= wanted:
-                    break
-            if not match or not member.isfile() or track in have:
+            if not match or not member.isfile():
                 continue
-            current = track
+            track = match.group(1)
+            if track not in chosen:
+                if len(chosen) >= wanted:
+                    continue
+                chosen.append(track)
+            if track in done:
+                continue
             target = _safe_target(folder, f"{track}/{match.group(2)}")
+            if target.is_file() and target.stat().st_size == member.size:
+                continue
             target.parent.mkdir(parents=True, exist_ok=True)
             source = tar.extractfile(member)
             if source is None:
                 continue
             with target.open("wb") as dst:
                 shutil.copyfileobj(source, dst)
-    if current and current not in have:
-        (folder / current / ".done").write_text("ok")
-        have.add(current)
+            if slakh_complete(folder / track):
+                done.add(track)
+                minutes = (time.time() - started) / 60
+                print(
+                    f"slakh: {track} complete ({len(done)}/{wanted}), "
+                    f"{seen_bytes / 1e9:.1f} GB read, {minutes:.0f} min"
+                )
+                if len(done) >= wanted:
+                    break
     minutes = (time.time() - started) / 60
-    print(f"slakh: {len(have)} test songs in {minutes:.0f} min")
+    files = {p.name: sum(1 for f in p.rglob("*") if f.is_file()) for p in folder.iterdir()}
+    print(f"slakh: {len(done)} of {wanted} test songs complete after {minutes:.0f} min")
+    print(f"slakh: files so far per chosen song: {dict(sorted(files.items()))}")
 
 
 def main() -> None:
@@ -129,12 +175,13 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=Path(r"D:\lew-stems\bench"))
     parser.add_argument("--slakh", type=int, default=25, help="number of Slakh test songs")
     parser.add_argument("--skip-slakh", action="store_true")
+    parser.add_argument("--max-gb", type=float, help="stop reading the Slakh archive after this")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     for name, (record, files) in SMALL.items():
         fetch_small(args.out, name, record, files)
     if not args.skip_slakh:
-        fetch_slakh(args.out, args.slakh)
+        fetch_slakh(args.out, args.slakh, args.max_gb)
 
 
 if __name__ == "__main__":
