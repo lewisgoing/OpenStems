@@ -154,6 +154,13 @@ class Index:
             rows = self._db.execute(sql, args).fetchall()
         return [_stem_set_row(r) for r in rows]
 
+    def stem_set(self, directory: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM stem_sets WHERE directory = ?", (directory,)
+            ).fetchone()
+        return _stem_set_row(row) if row is not None else None
+
     def stem_set_dirs(self) -> list[str]:
         with self._lock:
             return [r[0] for r in self._db.execute("SELECT directory FROM stem_sets")]

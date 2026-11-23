@@ -191,6 +191,12 @@ class JobOptions(BaseModel):
     normalize: bool | None = None
     midi_stems: list[str] | None = None
     force: bool | None = None
+    bpm: float | None = Field(
+        default=None, description="The song's tempo, in place of the detected one."
+    )
+    key: str | None = Field(
+        default=None, description="The song's key, such as Am, in place of the detected one."
+    )
 
 
 class CreateJob(BaseModel):
@@ -355,6 +361,18 @@ class SettingsPatch(BaseModel):
     vram_budget_gb: float | None = None
     use_gpu: bool | None = None
     auto_start: bool | None = None
+
+
+class SetAnalysis(BaseModel):
+    """The tempo and key the user gives a song. A field left out is not changed; null
+    means the song has none (for a job that has not run yet: detect it)."""
+
+    bpm: float | None = None
+    key: str | None = None
+
+
+class SetStemSetAnalysis(SetAnalysis):
+    directory: str
 
 
 class StemSetInfo(BaseModel):

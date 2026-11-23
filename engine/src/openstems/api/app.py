@@ -278,6 +278,16 @@ def create_app(token: str, service: Service | None = None) -> FastAPI:
     def retry_job(job_id: str, service: Svc) -> dict[str, Any]:
         return service.jobs.retry(job_id)
 
+    @app.post(
+        "/v1/jobs/{job_id}/analysis",
+        response_model=s.JobInfo,
+        dependencies=secured,
+        responses=errors,
+    )
+    def set_job_analysis(job_id: str, body: s.SetAnalysis, service: Svc) -> dict[str, Any]:
+        """Set a job's tempo and key by hand: before it runs, or on its finished stems."""
+        return service.set_job_analysis(job_id, body.model_dump(exclude_unset=True))
+
     @app.delete(
         "/v1/jobs/{job_id}", response_model=s.Removed, dependencies=secured, responses=errors
     )
@@ -340,6 +350,17 @@ def create_app(token: str, service: Service | None = None) -> FastAPI:
     @app.get("/v1/stemsets", response_model=s.StemSetList, dependencies=secured, responses=errors)
     def list_stem_sets(service: Svc, q: str = "") -> dict[str, Any]:
         return {"stem_sets": service.stem_sets(q)}
+
+    @app.post(
+        "/v1/stemsets/analysis",
+        response_model=s.StemSetInfo,
+        dependencies=secured,
+        responses=errors,
+    )
+    def set_stem_set_analysis(body: s.SetStemSetAnalysis, service: Svc) -> dict[str, Any]:
+        """Set the tempo and key of a song's finished stems by hand."""
+        changes = body.model_dump(exclude_unset=True)
+        return service.set_analysis(changes.pop("directory"), changes)
 
     @app.post(
         "/v1/stemsets/rebuild", response_model=s.Rebuilt, dependencies=secured, responses=errors

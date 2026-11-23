@@ -339,6 +339,7 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
             stems={panel.stems}
             analysis={panel.analysis}
             notes={panel.notes}
+            onRetagged={(set) => setPanel((shown) => (shown ? { ...shown, stems: set.stems, analysis: set.analysis } : shown))}
             onClose={() => setPanel(null)}
           />
           </div>

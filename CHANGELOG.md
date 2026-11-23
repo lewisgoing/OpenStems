@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **The tempo and key can be corrected.** A song that waits in the queue shows two small
+  fields, "auto" until you type the tempo or the key yourself. Finished stems show the same
+  fields in the stems panel: type over a wrong figure and the manifest, file names made
+  with `{bpm}` or `{key}`, and the tempo FL Studio reads from the stems and their mixes all
+  follow. The audio is not rewritten and the song is not separated again. What detection
+  found is kept in the manifest. `docs/adr/0019-edit-tempo-key.md`.
+- The stems panel shows the tempo to two decimals, not rounded to a whole number.
+
 ## 0.3.1 (2026-11-23)
 
 - **Every stem.** A new recipe, `every-stem`, chains four models into the deepest split
