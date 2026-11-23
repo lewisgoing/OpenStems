@@ -1,0 +1,19 @@
+id = "drumless"
+name = "Drumless"
+version = 1
+use_case = "Drums"
+description = "The mix minus the drums stem from SW."
+
+[[passes]]
+id = "sw"
+model = "bs-roformer-sw"
+input = "mix"
+
+[[derived]]
+name = "no-drums"
+add = ["mix"]
+subtract = ["sw.drums"]
+
+[[outputs]]
+stem = "drumless"
+from = "no-drums"

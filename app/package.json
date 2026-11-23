@@ -1,0 +1,114 @@
+{
+  "name": "openstems-app",
+  "private": true,
+  "version": "0.2.0",
+  "description": "OpenStems desktop shell: drop audio in, drag DAW-ready stems out.",
+  "author": "lewisgoing",
+  "main": "out/main/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "test": "vitest run",
+    "e2e": "playwright test",
+    "gen:api": "openapi-typescript ../engine/openapi.json -o src/api/schema.d.ts",
+    "icons": "node scripts/make-icons.mjs",
+    "dist": "electron-vite build && node scripts/prepare-package.mjs && electron-builder --win nsis --publish never",
+    "package:prepare": "node scripts/prepare-package.mjs",
+    "pack": "electron-vite build && electron-builder --win --dir --publish never"
+  },
+  "dependencies": {
+    "@base-ui/react": "1.9.0",
+    "@tanstack/react-query": "^5.90.0",
+    "clsx": "2.1.1",
+    "electron-updater": "6.8.11",
+    "lucide-react": "^1.0.0",
+    "openapi-fetch": "0.17.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "tailwind-merge": "3.7.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "@tailwindcss/vite": "4.3.5",
+    "@testing-library/jest-dom": "^6.6.0",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "^14.6.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "electron": "45.4.1",
+    "electron-builder": "26.18.0",
+    "electron-vite": "6.0.0",
+    "jsdom": "31.0.1",
+    "openapi-typescript": "7.13.0",
+    "tailwindcss": "4.3.5",
+    "typescript": "^5.9.0",
+    "vite": "8.3.8",
+    "vitest": "5.1.1"
+  },
+  "packageManager": "pnpm@12.4.2",
+  "build": {
+    "appId": "ing.lewisgo.openstems",
+    "productName": "OpenStems",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "package/engine",
+        "to": "engine"
+      },
+      {
+        "from": "package/bin",
+        "to": "bin"
+      },
+      {
+        "from": "resources",
+        "to": "icons",
+        "filter": [
+          "*.png",
+          "*.ico"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "shortcutName": "OpenStems",
+      "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh",
+      "artifactName": "OpenStems-Setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "lewisgoing",
+        "repo": "OpenStems",
+        "releaseType": "release"
+      }
+    ]
+  }
+}

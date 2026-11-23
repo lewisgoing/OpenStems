@@ -1,0 +1,14 @@
+id = "cleanup-denoise"
+name = "Cleanup: denoise and de-bleed"
+version = 1
+use_case = "Cleanup"
+description = "One utility model on any file: removes noise and bleed."
+
+[[passes]]
+id = "fx"
+model = "mel-roformer-denoise-debleed-gabox"
+input = "mix"
+
+[[outputs]]
+stem = "clean"
+from = "fx.clean"

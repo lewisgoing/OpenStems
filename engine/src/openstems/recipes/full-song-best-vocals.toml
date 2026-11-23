@@ -1,0 +1,40 @@
+id = "full-song-best-vocals"
+name = "Full song, best vocals"
+version = 1
+use_case = "Full song"
+description = "Vocals from Leap Xe; drums, bass, guitar, piano and other from SW on the mix."
+residual_into = "other"
+
+[[passes]]
+id = "vox"
+model = "bs-roformer-leap-xe-vocals"
+input = "mix"
+
+[[passes]]
+id = "sw"
+model = "bs-roformer-sw"
+input = "mix"
+
+[[outputs]]
+stem = "vocals"
+from = "vox.vocals"
+
+[[outputs]]
+stem = "drums"
+from = "sw.drums"
+
+[[outputs]]
+stem = "bass"
+from = "sw.bass"
+
+[[outputs]]
+stem = "guitar"
+from = "sw.guitar"
+
+[[outputs]]
+stem = "piano"
+from = "sw.piano"
+
+[[outputs]]
+stem = "other"
+from = "sw.other"

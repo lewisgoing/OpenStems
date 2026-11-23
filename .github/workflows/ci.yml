@@ -1,0 +1,80 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  engine:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: engine/uv.lock
+      - name: Install
+        run: uv sync --locked
+      - name: Lint
+        run: |
+          uv run ruff check
+          uv run ruff format --check
+      - name: Type-check
+        run: uv run pyright
+      - name: Unit tests (CPU, no model downloads)
+        run: uv run pytest -q
+
+  app:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: engine/uv.lock
+      - name: Install the engine (the end-to-end suite runs it with the FakeEngine)
+        working-directory: engine
+        run: uv sync --locked
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: app/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - name: Install
+        working-directory: app
+        run: pnpm install --frozen-lockfile
+      - name: The generated API types match the engine
+        working-directory: app
+        run: |
+          pnpm gen:api
+          git diff --exit-code -- src/api/schema.d.ts
+      - name: Type-check
+        working-directory: app
+        run: pnpm typecheck
+      - name: Component tests
+        working-directory: app
+        run: pnpm test
+      - name: Build
+        working-directory: app
+        run: pnpm build
+      - name: End-to-end (Electron + FakeEngine)
+        working-directory: app
+        run: pnpm e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            app/playwright-report
+            app/test-results

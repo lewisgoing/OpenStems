@@ -1,0 +1,38 @@
+id = "acapella-clean"
+name = "Clean acapella"
+version = 1
+use_case = "Vocals"
+description = "Leap Xe vocals, then de-reverb, then the lead and backing split."
+
+[[passes]]
+id = "vox"
+model = "bs-roformer-leap-xe-vocals"
+input = "mix"
+
+[[passes]]
+id = "dry"
+model = "bs-roformer-dereverb-anvuew"
+input = "vox.vocals"
+
+[[passes]]
+id = "split"
+model = "bs-roformer-karaoke-becruily"
+input = "dry.dry"
+
+# Backing vocals are what the lead model leaves behind in the dry vocal.
+[[derived]]
+name = "backing-vocals"
+add = ["dry.dry"]
+subtract = ["split.lead"]
+
+[[outputs]]
+stem = "dry vocals"
+from = "dry.dry"
+
+[[outputs]]
+stem = "lead"
+from = "split.lead"
+
+[[outputs]]
+stem = "backing"
+from = "backing-vocals"
