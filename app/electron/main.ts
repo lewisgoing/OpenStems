@@ -1,6 +1,6 @@
 import { existsSync, statSync } from 'node:fs'
 import { extname } from 'node:path'
-import { BrowserWindow, Menu, app, dialog, ipcMain, nativeImage, shell } from 'electron'
+import { BrowserWindow, Menu, app, clipboard, dialog, ipcMain, nativeImage, shell } from 'electron'
 import type { ShellStatus } from './bridge'
 import { EngineProcess } from './engine'
 import { log } from './log'
@@ -58,6 +58,8 @@ const e2eState = {
   /** Stands in for the Windows login item, so tests never touch the registry. */
   startAtLogin: false,
   notices: [] as string[],
+  /** Stands in for the system clipboard, which tests must not read or change. */
+  clipboard: '',
   tray: () => ({
     icon: tray.presentation.icon,
     tooltip: tray.presentation.tooltip,
@@ -192,6 +194,13 @@ function registerIpc(): void {
     }
     const icon = nativeImage.createFromPath(iconPath(files.length > 1 ? 'drag-many.png' : 'drag-one.png'))
     event.sender.startDrag({ file: first, files, icon })
+  })
+
+  // The Paste link button: the text on the clipboard, which a sandboxed page cannot read
+  // without a prompt.
+  ipcMain.handle('clipboard:read', async () => {
+    const text = E2E ? e2eState.clipboard : await clipboard.readText()
+    return String(text).slice(0, 4096)
   })
 
   ipcMain.handle('shell:reveal', (_event, path: string) => {

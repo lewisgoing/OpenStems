@@ -28,6 +28,7 @@ interface E2EState {
   enginePid: () => number | null
   startAtLogin: boolean
   notices: string[]
+  clipboard: string
   tray: () => TrayState
   trayClick: () => void
   trayDoubleClick: () => void
@@ -109,6 +110,13 @@ export function clickTray(app: ElectronApplication): Promise<void> {
 
 export function doubleClickTray(app: ElectronApplication): Promise<void> {
   return app.evaluate(() => (globalThis as unknown as { __openstemsE2E: E2EState }).__openstemsE2E.trayDoubleClick())
+}
+
+/** Put text on the stand-in clipboard that the Paste link button reads. */
+export function setClipboard(app: ElectronApplication, text: string): Promise<void> {
+  return app.evaluate((_electron, value) => {
+    ;(globalThis as unknown as { __openstemsE2E: E2EState }).__openstemsE2E.clipboard = value
+  }, text)
 }
 
 /** Notices the app would have raised as Windows notifications. */

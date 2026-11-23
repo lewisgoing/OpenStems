@@ -179,6 +179,48 @@ class CreateBatch(BaseModel):
     )
 
 
+class CreateLink(BaseModel):
+    url: str = Field(description="The web address of a song's page, or of a media file.")
+    recipe: str | None = None
+    model: str | None = None
+    quality: Quality | None = None
+    options: JobOptions = JobOptions()
+    start: bool | None = Field(
+        default=None,
+        description="Once fetched: start as soon as the GPU is free, or wait for Start. "
+        "Default: the auto_start setting.",
+    )
+
+
+class LinkInfo(BaseModel):
+    """A song on its way from a link to the queue. It becomes a job once it is fetched."""
+
+    id: str
+    url: str
+    name: str = Field(description="The song's title once known; the site's name before.")
+    state: Literal["waiting", "resolving", "downloading", "failed"]
+    progress: float
+    error: str | None = None
+    created_at: float
+
+
+class LinkList(BaseModel):
+    links: list[LinkInfo]
+
+
+class CreateMix(BaseModel):
+    paths: list[str] = Field(description="Two or more stem files of one song.")
+
+
+class MixInfo(BaseModel):
+    path: str
+    name: str
+    label: str
+    stems: list[str]
+    samples: int
+    sample_rate: int
+
+
 class StemFile(BaseModel):
     name: str
     file: str

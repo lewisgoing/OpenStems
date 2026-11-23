@@ -45,7 +45,11 @@ export class StemPlayer {
     soloed: new Set(),
   }
 
-  constructor(private readonly headers: Record<string, string> = {}) {}
+  /** `silent` keeps everything running but sends no sound out: for automated tests. */
+  constructor(
+    private readonly headers: Record<string, string> = {},
+    private readonly silent = false,
+  ) {}
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener)
@@ -70,7 +74,12 @@ export class StemPlayer {
     this.abort = abort
     this.context = new AudioContext({ latencyHint: 'interactive' })
     const context = this.context
-    this.set({ status: 'loading', loaded: 0, total: stems.length, muted: new Set(), soloed: new Set(), error: undefined })
+    const output = context.createGain()
+    output.gain.value = this.silent ? 0 : 1
+    output.connect(context.destination)
+    // What was muted or soloed before the stems were loaded still is: a choice made first
+    // and listened to afterwards is the same choice.
+    this.set({ status: 'loading', loaded: 0, total: stems.length, error: undefined })
     try {
       let loaded = 0
       await Promise.all(
@@ -81,7 +90,8 @@ export class StemPlayer {
           if (generation !== this.generation) return
           this.buffers.set(stem.name, buffer)
           const gain = context.createGain()
-          gain.connect(context.destination)
+          gain.gain.value = this.isAudible(stem.name) ? 1 : 0
+          gain.connect(output)
           this.gains.set(stem.name, gain)
           loaded += 1
           this.set({ loaded })
@@ -187,6 +197,13 @@ export class StemPlayer {
     this.set({ muted })
   }
 
+  /** Mute exactly these stems: the ones left out of a mix. */
+  setMuted(names: Iterable<string>): void {
+    const muted = new Set(names)
+    this.applyGains(muted, this.state.soloed)
+    this.set({ muted })
+  }
+
   /** Solo one stem; with `additive`, add it to the soloed set instead. */
   toggleSolo(name: string, additive = false): void {
     let soloed = new Set(this.state.soloed)
@@ -212,6 +229,6 @@ export class StemPlayer {
     void this.context?.close().catch(() => undefined)
     this.context = null
     this.offset = 0
-    this.state = { ...this.state, status: 'idle', playing: false, loaded: 0, total: 0, duration: 0 }
+    this.set({ status: 'idle', playing: false, loaded: 0, total: 0, duration: 0 })
   }
 }

@@ -1,6 +1,6 @@
 import { Checkbox } from '@base-ui/react/checkbox'
 import { Popover } from '@base-ui/react/popover'
-import { Check, Download, Plus, SlidersHorizontal } from 'lucide-react'
+import { Check, Download, Link2, Plus, SlidersHorizontal } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import type { Model, Recipe } from '@/api/client'
 import { formatBytes, stemColor } from '@/lib/format'
@@ -18,6 +18,8 @@ interface RecipeBarProps {
   recipes: Recipe[]
   models: Model[]
   onAddFiles: (files: File[]) => void
+  /** Take the link on the clipboard. Ctrl+V does the same. */
+  onPasteLink: () => void
   /** Songs are waiting for Start: that is the main action now, so "Add files" steps back. */
   quietAdd?: boolean
 }
@@ -69,7 +71,7 @@ export function useRecipeOptions(recipes: Recipe[], models: Model[]): SelectOpti
   }, [recipes, models])
 }
 
-export function RecipeBar({ recipes, models, onAddFiles, quietAdd }: RecipeBarProps) {
+export function RecipeBar({ recipes, models, onAddFiles, onPasteLink, quietAdd }: RecipeBarProps) {
   const { selection, update } = useSelection()
   const { recipe, stems, missing } = useCurrentRecipe(recipes, models)
   const input = useRef<HTMLInputElement>(null)
@@ -133,6 +135,13 @@ export function RecipeBar({ recipes, models, onAddFiles, quietAdd }: RecipeBarPr
           if (files.length) onAddFiles(files)
         }}
       />
+      {/* One accent action: adding files. A link is the second way in, so it stays quiet. */}
+      <Tooltip label="Fetch the song behind a copied link: YouTube, SoundCloud, Bandcamp and more (Ctrl+V)">
+        <Button className="flex-none" onClick={onPasteLink}>
+          <Link2 size={14} />
+          Paste link
+        </Button>
+      </Tooltip>
       <Button variant={quietAdd ? 'default' : 'primary'} className="flex-none" onClick={() => input.current?.click()}>
         <Plus size={14} />
         Add files

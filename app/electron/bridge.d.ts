@@ -90,6 +90,8 @@ export interface OpenStemsBridge {
   pathsForFiles(files: File[]): string[]
   /** Start a native drag of one or more files out of the window. */
   startDrag(paths: string[]): void
+  /** The text on the clipboard, for pasting a link with a button. */
+  clipboardText(): Promise<string>
   revealInExplorer(path: string): Promise<void>
   openFolder(path: string): Promise<void>
   pickFolder(defaultPath?: string): Promise<string | null>

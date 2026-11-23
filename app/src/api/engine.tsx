@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { type ReactNode, createContext, useContext, useEffect, useMemo, useRef } from 'react'
-import { type Api, type Connection, type Job, type Schemas, eventsUrl, makeApi } from './client'
+import { type Api, type Connection, type Job, type Link, type Schemas, eventsUrl, makeApi } from './client'
 import { keys } from './queries'
 
 interface Engine {
@@ -17,7 +17,9 @@ export function useEngine(): Engine {
 }
 
 type EngineEvent =
-  | { type: 'snapshot'; jobs: Job[] }
+  | { type: 'snapshot'; jobs: Job[]; links?: Link[] }
+  | { type: 'link.updated'; link: Link }
+  | { type: 'link.removed'; id: string }
   | { type: 'job.updated'; job: Job }
   | { type: 'job.progress'; id: string; state: Job['state']; progress: number; message: string }
   | { type: 'job.removed'; id: string }
@@ -48,10 +50,24 @@ export function EngineProvider({ connection, children, onNotice }: EngineProvide
     const setJobs = (update: (jobs: Job[]) => Job[]) =>
       queryClient.setQueryData<Job[]>(keys.jobs, (jobs) => update(jobs ?? []))
 
+    const setLinks = (update: (links: Link[]) => Link[]) =>
+      queryClient.setQueryData<Link[]>(keys.links, (links) => update(links ?? []))
+
     const handle = (event: EngineEvent) => {
       switch (event.type) {
         case 'snapshot':
           queryClient.setQueryData(keys.jobs, event.jobs)
+          queryClient.setQueryData(keys.links, event.links ?? [])
+          break
+        case 'link.updated':
+          setLinks((links) =>
+            links.some((l) => l.id === event.link.id)
+              ? links.map((l) => (l.id === event.link.id ? event.link : l))
+              : [...links, event.link],
+          )
+          break
+        case 'link.removed':
+          setLinks((links) => links.filter((l) => l.id !== event.id))
           break
         case 'job.updated':
           setJobs((jobs) =>

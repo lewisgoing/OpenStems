@@ -14,16 +14,21 @@ from openstems.api.db import Index
 from openstems.api.downloads import DownloadManager
 from openstems.api.events import EventBus
 from openstems.api.jobs import JobManager
+from openstems.api.links import LinkManager
 from openstems.api.watcher import FolderWatcher
 from openstems.audio.decode import probe
 from openstems.cli_inputs import expand_inputs
 from openstems.domain.errors import DomainError
 from openstems.domain.recipe import Recipe, single_model_recipe
 from openstems.engines.host import fake_mode
+from openstems.links import Fetched, check_url
 from openstems.runtime import Runtime, build_runtime
 from openstems.settings import config_dir, update_settings
 
 SELFTEST_FILE = "selftest.json"
+# Songs fetched from links are kept here, inside the output folder: the user chose that
+# drive for large files, and the watch folder never looks into it.
+LINKS_DIR = "_links"
 ACTIVE_STATES = ("queued", "preparing", "running", "writing")
 
 
@@ -65,6 +70,7 @@ class Service:
         self.index = Index(self.runtime.settings.cache_path / "index.sqlite")
         self.jobs = JobManager(self.index, self.bus)
         self.downloads = DownloadManager(self.bus)
+        self.links = LinkManager(self.bus, self._links_root, self._queue_fetched)
         self.watcher = FolderWatcher(self._queue_watched)
         self._system: dict[str, Any] | None = None
 
@@ -95,6 +101,7 @@ class Service:
 
     def stop(self) -> None:
         self.watcher.stop()
+        self.links.stop()
         self.downloads.stop()
         self.jobs.stop()
         self.index.close()
@@ -251,12 +258,9 @@ class Service:
     ) -> dict[str, Any]:
         """Queue one file. ``start`` says whether it runs as soon as the GPU is free or
         waits for the user's Start; left out, the ``auto_start`` setting decides."""
-        recipe = self.resolve_recipe(recipe_id, model_id)
         if not os.path.isfile(path):
             raise DomainError(f"no such file: {path}")
-        opts = {k: v for k, v in options.items() if v is not None}
-        # Validate now so a bad request fails here, not later in the queue.
-        self.runtime.pipeline.plan(recipe, self.runtime.options(quality=quality, **opts))
+        recipe, opts = self._checked(recipe_id, model_id, quality, options)
         if start is None:
             start = self.runtime.settings.auto_start
         return self.jobs.create(
@@ -267,6 +271,71 @@ class Service:
             opts,
             hold=not start,
         )
+
+    def _checked(
+        self,
+        recipe_id: str | None,
+        model_id: str | None,
+        quality: str | None,
+        options: dict[str, Any],
+    ) -> tuple[Recipe, dict[str, Any]]:
+        """The recipe and the options of a request, validated now so a bad request fails
+        here, not later in the queue."""
+        recipe = self.resolve_recipe(recipe_id, model_id)
+        opts = {k: v for k, v in options.items() if v is not None}
+        self.runtime.pipeline.plan(recipe, self.runtime.options(quality=quality, **opts))
+        return recipe, opts
+
+    # -- links ----------------------------------------------------------------
+
+    def _links_root(self) -> Path:
+        return self.runtime.settings.output_path / LINKS_DIR
+
+    def add_link(
+        self,
+        url: str,
+        recipe_id: str | None,
+        model_id: str | None,
+        quality: str | None,
+        options: dict[str, Any],
+        start: bool | None = None,
+    ) -> dict[str, Any]:
+        """Fetch the song behind a link, then queue it like a dropped file."""
+        url = check_url(url)
+        self._checked(recipe_id, model_id, quality, options)
+        request = {
+            "recipe": recipe_id,
+            "model": model_id,
+            "quality": quality,
+            "options": options,
+            "start": start,
+        }
+        return self.links.add(url, request)
+
+    def _queue_fetched(self, request: dict[str, Any], fetched: Fetched) -> None:
+        self.create_job(
+            str(fetched.path),
+            request["recipe"],
+            request["model"],
+            request["quality"],
+            request["options"],
+            request["start"],
+        )
+
+    # -- mixes ----------------------------------------------------------------
+
+    def mix(self, paths: list[str]) -> dict[str, Any]:
+        """Write some of a song's stems as one file, next to them."""
+        from openstems.pipeline.mix import render_mix
+
+        files = [Path(p) for p in paths]
+        if not files:
+            raise DomainError("a mix needs at least two stems")
+        directory = files[0].parent
+        for file in files:
+            if file.parent != directory or not self.is_served(file) or not file.is_file():
+                raise DomainError("a mix is made of stems of one song")
+        return render_mix(directory, [file.name for file in files])
 
     # -- GPU self-test --------------------------------------------------------
 

@@ -4,6 +4,7 @@ import { useEngine } from './engine'
 
 export const keys = {
   jobs: ['jobs'] as const,
+  links: ['links'] as const,
   recipes: ['recipes'] as const,
   models: ['models'] as const,
   settings: ['settings'] as const,
@@ -16,6 +17,16 @@ export function useJobs() {
   return useQuery({
     queryKey: keys.jobs,
     queryFn: async () => (await unwrap(api.GET('/v1/jobs'))).jobs,
+    staleTime: Number.POSITIVE_INFINITY, // the WebSocket keeps this current
+  })
+}
+
+/** Songs being fetched from links, and the ones whose fetch failed. */
+export function useLinks() {
+  const { api } = useEngine()
+  return useQuery({
+    queryKey: keys.links,
+    queryFn: async () => (await unwrap(api.GET('/v1/links'))).links,
     staleTime: Number.POSITIVE_INFINITY, // the WebSocket keeps this current
   })
 }
@@ -73,6 +84,35 @@ export function useCreateJobs() {
         )
       ).jobs,
   })
+}
+
+export interface NewLink extends Omit<NewJobs, 'paths'> {
+  url: string
+}
+
+export function useLinkActions() {
+  const { api } = useEngine()
+  const path = (id: string) => ({ params: { path: { link_id: id } } })
+  return {
+    /** Fetch the song behind a link; it is queued like a dropped file once it is here. */
+    add: useMutation({
+      mutationFn: (body: NewLink) =>
+        unwrap(
+          api.POST('/v1/links', {
+            body: { url: body.url, recipe: body.recipe, model: body.model, quality: body.quality, options: body.options ?? {} },
+          }),
+        ),
+    }),
+    retry: useMutation({ mutationFn: (id: string) => unwrap(api.POST('/v1/links/{link_id}/retry', path(id))) }),
+    /** Cancel a fetch, or dismiss one that failed. */
+    remove: useMutation({ mutationFn: (id: string) => unwrap(api.DELETE('/v1/links/{link_id}', path(id))) }),
+  }
+}
+
+/** Write some of a song's stems as one file. Resolves with where it is. */
+export function useCreateMix() {
+  const { api } = useEngine()
+  return useMutation({ mutationFn: (paths: string[]) => unwrap(api.POST('/v1/mixes', { body: { paths } })) })
 }
 
 export function useJobActions() {

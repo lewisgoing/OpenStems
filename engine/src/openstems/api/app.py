@@ -23,6 +23,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from openstems import __version__
 from openstems.api import schemas as s
 from openstems.api.jobs import JobNotFound
+from openstems.api.links import LinkNotFound
 from openstems.api.service import Service
 from openstems.domain.errors import DomainError
 from openstems.engines.host import fake_mode
@@ -86,6 +87,10 @@ def create_app(token: str, service: Service | None = None) -> FastAPI:
 
     @app.exception_handler(JobNotFound)
     async def _not_found(request: Request, exc: JobNotFound) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=404)
+
+    @app.exception_handler(LinkNotFound)
+    async def _no_link(request: Request, exc: LinkNotFound) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=404)
 
     @app.exception_handler(DomainError)
@@ -271,6 +276,44 @@ def create_app(token: str, service: Service | None = None) -> FastAPI:
         service.jobs.remove(job_id)
         return {"removed": 1}
 
+    # -- links ----------------------------------------------------------------
+
+    @app.get("/v1/links", response_model=s.LinkList, dependencies=secured, responses=errors)
+    def list_links(service: Svc) -> dict[str, Any]:
+        """Songs being fetched from links, and the ones whose fetch failed."""
+        return {"links": service.links.list()}
+
+    @app.post("/v1/links", response_model=s.LinkInfo, dependencies=secured, responses=errors)
+    def create_link(body: s.CreateLink, service: Svc) -> dict[str, Any]:
+        """Fetch the song behind a link. Once it is here it is queued like a dropped file."""
+        return service.add_link(
+            body.url, body.recipe, body.model, body.quality, body.options.model_dump(), body.start
+        )
+
+    @app.post(
+        "/v1/links/{link_id}/retry",
+        response_model=s.LinkInfo,
+        dependencies=secured,
+        responses=errors,
+    )
+    def retry_link(link_id: str, service: Svc) -> dict[str, Any]:
+        return service.links.retry(link_id)
+
+    @app.delete(
+        "/v1/links/{link_id}", response_model=s.Removed, dependencies=secured, responses=errors
+    )
+    def remove_link(link_id: str, service: Svc) -> dict[str, Any]:
+        """Cancel a fetch that is under way, or dismiss one that failed."""
+        service.links.remove(link_id)
+        return {"removed": 1}
+
+    # -- mixes ----------------------------------------------------------------
+
+    @app.post("/v1/mixes", response_model=s.MixInfo, dependencies=secured, responses=errors)
+    def create_mix(body: s.CreateMix, service: Svc) -> dict[str, Any]:
+        """Write some of a song's stems as one file, next to them."""
+        return service.mix(body.paths)
+
     # -- settings -------------------------------------------------------------
 
     @app.get("/v1/settings", response_model=s.SettingsModel, dependencies=secured, responses=errors)
@@ -377,6 +420,7 @@ def create_app(token: str, service: Service | None = None) -> FastAPI:
                     "type": "snapshot",
                     "seq": 0,
                     "jobs": service.jobs.list(),
+                    "links": service.links.list(),
                     "worker": service.jobs.worker_status,
                 }
             )

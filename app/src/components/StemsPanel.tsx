@@ -1,9 +1,11 @@
-import { FolderOpen, GripVertical, Layers, Music2, Pause, Play, X } from 'lucide-react'
+import { Blend, FolderOpen, GripVertical, Layers, Music2, Pause, Play, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { type StemFile, fileUrl } from '@/api/client'
 import { useEngine } from '@/api/engine'
 import { StemPlayer } from '@/audio/player'
 import { cn, formatTime, stemColor } from '@/lib/format'
+import { capitalize, mixLabel, useMixFile } from '@/state/mix'
+import { useToast } from './toast'
 import { Button, IconButton, Tooltip } from './ui'
 import { Waveform, useSharedGain } from './Waveform'
 
@@ -19,7 +21,7 @@ export interface StemsPanelProps {
 function useStemPlayer(stems: StemFile[]) {
   const { connection } = useEngine()
   const player = useMemo(
-    () => new StemPlayer({ Authorization: `Bearer ${connection.token}` }),
+    () => new StemPlayer({ Authorization: `Bearer ${connection.token}` }, window.openstems.info.e2e),
     [connection.token],
   )
   const state = useSyncExternalStore(
@@ -97,6 +99,16 @@ export function StemsPanel({ title, subtitle, directory, stems, analysis, onClos
   }, [playPause])
 
   const allPaths = stems.map((s) => s.path)
+  // What solo and mute leave audible is a mix, and it can leave as one file. With every
+  // stem audible there is nothing to write: that is the song.
+  const toast = useToast()
+  const names = stems.map((s) => s.name)
+  const audibleNames = names.filter((name) => player.isAudible(name))
+  const partial = audibleNames.length > 0 && audibleNames.length < stems.length
+  const mixFile = useMixFile(directory, stems, partial ? audibleNames : null, toast.error)
+  const onlyAudible = audibleNames.length === 1 ? stems.find((s) => s.name === audibleNames[0]) : undefined
+  const mixPath = onlyAudible ? onlyAudible.path : mixFile.path
+  const mixName = capitalize(mixLabel(audibleNames, names))
   const bpm = typeof analysis?.bpm === 'number' ? Math.round(analysis.bpm) : null
   const key = typeof analysis?.key === 'string' ? analysis.key : null
   const loading = state.status === 'loading'
@@ -134,6 +146,24 @@ export function StemsPanel({ title, subtitle, directory, stems, analysis, onClos
           {loading ? `Loading ${state.loaded}/${state.total}` : <><Clock player={player} /> / {formatTime(totalSeconds)}</>}
         </span>
         <span className="flex-1" />
+        {partial && (
+          <Tooltip label={mixPath ? `Drag what you hear as one file: ${mixName}` : 'Writing the mix you hear'}>
+            <div
+              draggable={Boolean(mixPath)}
+              role="button"
+              tabIndex={0}
+              aria-disabled={!mixPath}
+              aria-label={`Drag the mix: ${mixName}`}
+              data-testid="drag-mix"
+              data-path={mixPath ?? undefined}
+              className={cn('btn btn-sm mix-drag', mixPath ? 'pressable stem-handle' : 'text-muted')}
+              onDragStart={(event) => (mixPath ? startDrag(event, [mixPath]) : event.preventDefault())}
+            >
+              {mixPath ? <Blend size={13} /> : <span className="spinner" aria-hidden="true" />}
+              {mixPath ? 'Drag mix' : 'Preparing'}
+            </div>
+          </Tooltip>
+        )}
         <Tooltip label="Drag every stem into your DAW or a folder">
           <div
             draggable

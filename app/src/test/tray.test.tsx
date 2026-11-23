@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +13,7 @@ import {
   taskbarEdge,
   trayPresentation,
 } from '../../electron/traylogic'
-import type { Job, Model, Recipe, StemFile } from '@/api/client'
+import type { Job, Link, Model, Recipe, StemFile } from '@/api/client'
 import { ToastProvider } from '@/components/toast'
 import { TooltipProvider } from '@/components/ui'
 import { SelectionProvider } from '@/state/selection'
@@ -34,6 +34,20 @@ const actions = {
 const modelActions = { pull: { mutate: vi.fn() }, cancel: { mutate: vi.fn() } }
 const patchSettings = { mutate: vi.fn() }
 let jobs: Job[] | undefined = []
+let links: Link[] = []
+const linkActions = { add: { mutate: vi.fn() }, retry: { mutate: vi.fn() }, remove: { mutate: vi.fn() } }
+const MIX_PATH = 'D:\\out\\Song\\full-song\\Mixes\\Song - no vocals.wav'
+const createMix = { mutateAsync: vi.fn(async (_paths: string[]) => ({ path: MIX_PATH })) }
+const link = (patch: Partial<Link>): Link => ({
+  id: 'l1',
+  url: 'https://www.youtube.com/watch?v=abc',
+  name: 'youtube.com',
+  state: 'resolving',
+  progress: 0,
+  error: null,
+  created_at: 0,
+  ...patch,
+})
 let recipes: Recipe[] = []
 let models: Model[] = []
 
@@ -48,6 +62,9 @@ vi.mock('@/api/queries', () => ({
   keys: { jobs: ['jobs'] },
   useJobs: () => ({ data: jobs }),
   useJobActions: () => actions,
+  useLinks: () => ({ data: links }),
+  useLinkActions: () => linkActions,
+  useCreateMix: () => createMix,
   useCreateJobs: () => createJobs,
   useModelActions: () => modelActions,
   useSettings: () => ({ data: settings }),
@@ -78,6 +95,37 @@ const audition = vi.hoisted(() => {
 vi.mock('@/audio/audition', () => ({
   Audition: vi.fn(function Audition() {
     return audition
+  }),
+}))
+
+// The synced player of a mix, stood in for the same way.
+const mixPlayer = vi.hoisted(() => {
+  type State = { status: 'idle' | 'loading' | 'ready' | 'error'; loaded: number; total: number; playing: boolean; muted: Set<string> }
+  const listeners = new Set<() => void>()
+  const idle = (): State => ({ status: 'idle', loaded: 0, total: 0, playing: false, muted: new Set() })
+  const player = {
+    state: idle(),
+    idle,
+    set(patch: Partial<State>) {
+      player.state = { ...player.state, ...patch }
+      for (const listener of listeners) listener()
+    },
+    subscribe: (listener: () => void) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    load: vi.fn(async (_stems: { name: string; url: string }[]) => player.set({ status: 'ready' })),
+    play: vi.fn(async () => player.set({ playing: true })),
+    pause: vi.fn(() => player.set({ playing: false })),
+    toggle: vi.fn(() => player.set({ playing: !player.state.playing })),
+    setMuted: vi.fn((names: Iterable<string>) => player.set({ muted: new Set(names) })),
+    dispose: vi.fn(() => player.set({ status: 'idle', playing: false })),
+  }
+  return player
+})
+vi.mock('@/audio/player', () => ({
+  StemPlayer: vi.fn(function StemPlayer() {
+    return mixPlayer
   }),
 }))
 
@@ -155,7 +203,9 @@ const lastActivity = () => bridge.reportActivity.mock.calls.at(-1)?.[0]
 beforeEach(() => {
   vi.clearAllMocks()
   audition.state = { path: null, status: 'idle' }
+  mixPlayer.state = mixPlayer.idle()
   jobs = []
+  links = []
   recipes = [recipe({})]
   models = []
 })
@@ -521,6 +571,190 @@ describe('the quick-drop window', () => {
     })
     expect(screen.getByRole('combobox', { name: 'Recipe' })).toHaveTextContent('Drum kit')
     expect(screen.getByRole('radio', { name: 'Fast' })).toBeChecked()
+  })
+})
+
+describe('links in the quick-drop window', () => {
+  it('offers Paste link in the empty window and takes the link on the clipboard', async () => {
+    bridge.clipboardText.mockResolvedValueOnce('https://youtu.be/abc123\n')
+    render(quickDrop())
+    expect(screen.getByText(/Or paste a link to one/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Paste link' }))
+    await waitFor(() =>
+      expect(linkActions.add.mutate).toHaveBeenCalledWith(
+        expect.objectContaining({ url: 'https://youtu.be/abc123', recipe: 'full-song', quality: 'balanced' }),
+        expect.anything(),
+      ),
+    )
+    expect(createJobs.mutate).not.toHaveBeenCalled()
+  })
+
+  it('says what to do when the clipboard holds no link', async () => {
+    jobs = [doneJob('a', 'Song', 1)]
+    bridge.clipboardText.mockResolvedValueOnce('just some words')
+    render(quickDrop())
+    await userEvent.click(screen.getByRole('button', { name: 'Paste a link' }))
+    expect(await screen.findByText("Copy a song's link first, then paste it here.")).toBeInTheDocument()
+    expect(linkActions.add.mutate).not.toHaveBeenCalled()
+  })
+
+  it('fetches a link pasted with Ctrl+V, and leaves other text alone', () => {
+    render(quickDrop())
+    const paste = (text: string) =>
+      fireEvent.paste(document.body, { clipboardData: { getData: () => text, files: [] } })
+    paste('some lyrics')
+    expect(linkActions.add.mutate).not.toHaveBeenCalled()
+    paste('https://soundcloud.com/artist/song')
+    expect(linkActions.add.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ url: 'https://soundcloud.com/artist/song' }),
+      expect.anything(),
+    )
+  })
+
+  it('shows a song being fetched above the jobs, and cancels it', async () => {
+    jobs = [doneJob('a', 'Song', 1)]
+    links = [link({ name: 'Night Drive', state: 'downloading', progress: 0.4 })]
+    render(quickDrop())
+    const list = screen.getByRole('list', { name: 'Recent jobs' })
+    expect(list.firstElementChild).toHaveAttribute('data-testid', 'link-row')
+    const row = screen.getByTestId('link-row')
+    expect(within(row).getByText('Night Drive')).toBeInTheDocument()
+    expect(within(row).getByText('40%')).toBeInTheDocument()
+    await userEvent.click(within(row).getByRole('button', { name: 'Cancel' }))
+    expect(linkActions.remove.mutate).toHaveBeenCalledWith('l1', expect.anything())
+  })
+
+  it('shows a fetch with no jobs yet instead of the empty window', () => {
+    links = [link({})]
+    render(quickDrop())
+    expect(screen.queryByRole('heading', { name: 'Drop a song here' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('link-status')).toHaveTextContent('Finding the song on youtube.com')
+  })
+
+  it('counts a fetch as work for the tray icon, but not one that failed', () => {
+    expect(activityOf([], null, [link({})]).active).toBe(1)
+    expect(activityOf([], null, [link({ state: 'failed', error: 'no' })]).active).toBe(0)
+    links = [link({ state: 'downloading' })]
+    render(quickDrop())
+    expect(lastActivity()).toMatchObject({ active: 1 })
+  })
+})
+
+describe('mixing the stems in the quick-drop window', () => {
+  const pill = (name: string) => screen.getAllByTestId('quick-stem').find((el) => el.textContent === name)!
+  const stemsOf = (track: string) => SIX.map((name) => stem(track, name))
+
+  it('starts with every stem in, and says how to leave one out', async () => {
+    jobs = [doneJob('a', 'Song', 1)]
+    render(quickDrop())
+    expect(screen.queryByTestId('mix-bar')).not.toBeInTheDocument()
+    audition.set({ path: stem('Song', 'bass').path, status: 'playing' })
+    await userEvent.click(screen.getByTestId('quick-mix'))
+    expect(audition.stop).toHaveBeenCalled()
+    expect(screen.getByTestId('quick-mix')).toHaveAttribute('aria-pressed', 'true')
+    for (const el of screen.getAllByTestId('quick-stem')) {
+      expect(el).toHaveAttribute('aria-pressed', 'true')
+      expect(el).toHaveAttribute('data-mix', 'in')
+    }
+    expect(screen.getByTestId('mix-label')).toHaveTextContent('Click a stem to leave it out')
+    expect(screen.queryByTestId('mix-drag')).not.toBeInTheDocument()
+    expect(createMix.mutateAsync).not.toHaveBeenCalled()
+  })
+
+  it('leaves a stem out on a click, writes the rest as one file and drags it', async () => {
+    jobs = [doneJob('a', 'Song', 1)]
+    render(quickDrop())
+    await userEvent.click(screen.getByTestId('quick-mix'))
+    await userEvent.click(pill('vocals'))
+    expect(audition.toggle).not.toHaveBeenCalled()
+    expect(pill('vocals')).toHaveAttribute('aria-pressed', 'false')
+    expect(pill('vocals')).toHaveAttribute('data-mix', 'out')
+    expect(mixPlayer.setMuted).toHaveBeenLastCalledWith(['vocals'])
+    expect(screen.getByTestId('mix-label')).toHaveTextContent('No vocals')
+    expect(screen.getByTestId('mix-drag')).toHaveTextContent('Preparing')
+    fireEvent.dragStart(screen.getByTestId('mix-drag'))
+    expect(bridge.startDrag).not.toHaveBeenCalled()
+
+    const rest = stemsOf('Song').slice(1).map((s) => s.path)
+    await waitFor(() => expect(createMix.mutateAsync).toHaveBeenCalledWith(rest))
+    await waitFor(() => expect(screen.getByTestId('mix-drag')).toHaveTextContent('Drag mix'))
+    fireEvent.dragStart(screen.getByTestId('mix-drag'))
+    expect(bridge.startDrag).toHaveBeenCalledWith([MIX_PATH])
+    // The stem itself still drags as itself.
+    fireEvent.dragStart(pill('drums'))
+    expect(bridge.startDrag).toHaveBeenLastCalledWith([stem('Song', 'drums').path])
+    // Back in: the whole song again, and nothing to write.
+    await userEvent.click(pill('vocals'))
+    expect(screen.getByTestId('mix-label')).toHaveTextContent('Click a stem to leave it out')
+    expect(screen.queryByTestId('mix-drag')).not.toBeInTheDocument()
+    expect(createMix.mutateAsync).toHaveBeenCalledTimes(1)
+  })
+
+  it('writes one file for several quick clicks, not one per click', async () => {
+    jobs = [doneJob('a', 'Song', 1)]
+    render(quickDrop())
+    await userEvent.click(screen.getByTestId('quick-mix'))
+    for (const name of ['vocals', 'guitar', 'piano', 'other']) await userEvent.click(pill(name))
+    expect(screen.getByTestId('mix-label')).toHaveTextContent('Drums + bass')
+    await waitFor(() => expect(createMix.mutateAsync).toHaveBeenCalledTimes(1))
+    expect(createMix.mutateAsync).toHaveBeenCalledWith([stem('Song', 'drums').path, stem('Song', 'bass').path])
+  })
+
+  it('plays what is in the mix, in sync, and pauses', async () => {
+    jobs = [doneJob('a', 'Song', 1)]
+    render(quickDrop())
+    await userEvent.click(screen.getByTestId('quick-mix'))
+    await userEvent.click(pill('vocals'))
+    await userEvent.click(screen.getByRole('button', { name: 'Play the mix' }))
+    expect(mixPlayer.load).toHaveBeenCalledWith(SIX.map((name) => expect.objectContaining({ name })))
+    await waitFor(() => expect(mixPlayer.play).toHaveBeenCalled())
+    expect(await screen.findByRole('button', { name: 'Pause the mix' })).toBeInTheDocument()
+    // The stems that sound show it; the one left out does not.
+    expect(pill('drums').querySelector('.audition-bars')).not.toBeNull()
+    expect(pill('vocals').querySelector('.audition-bars')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Pause the mix' }))
+    expect(mixPlayer.toggle).toHaveBeenCalled()
+  })
+
+  it('hands over the stem itself when one is left, and nothing when none is', async () => {
+    jobs = [doneJob('a', 'Song', 1)]
+    render(quickDrop())
+    await userEvent.click(screen.getByTestId('quick-mix'))
+    for (const name of SIX.slice(1)) await userEvent.click(pill(name))
+    expect(screen.getByTestId('mix-label')).toHaveTextContent('Vocals')
+    fireEvent.dragStart(screen.getByTestId('mix-drag'))
+    expect(bridge.startDrag).toHaveBeenCalledWith([stem('Song', 'vocals').path])
+    await userEvent.click(pill('vocals'))
+    expect(screen.getByTestId('mix-label')).toHaveTextContent('Nothing is in the mix')
+    expect(screen.getByRole('button', { name: 'Play the mix' })).toBeDisabled()
+    expect(screen.queryByTestId('mix-drag')).not.toBeInTheDocument()
+  })
+
+  it('goes back to listening to one stem when mixing is turned off or another song is laid out', async () => {
+    jobs = [doneJob('a', 'Older', 1), doneJob('b', 'Newer', 2)]
+    render(quickDrop())
+    await userEvent.click(screen.getByTestId('quick-mix'))
+    expect(screen.getByTestId('mix-bar')).toBeInTheDocument()
+    await userEvent.click(screen.getByTestId('quick-mix'))
+    expect(screen.queryByTestId('mix-bar')).not.toBeInTheDocument()
+    expect(mixPlayer.dispose).toHaveBeenCalled()
+    await userEvent.click(pill('bass'))
+    expect(audition.toggle).toHaveBeenCalledWith(expect.objectContaining({ path: stem('Newer', 'bass').path }))
+
+    await userEvent.click(screen.getByTestId('quick-mix'))
+    await userEvent.click(rows()[1]!)
+    expect(screen.queryByTestId('mix-bar')).not.toBeInTheDocument()
+    expect(screen.getByTestId('quick-mix')).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('offers no mix for a single stem, or for more stems than the window shows', () => {
+    jobs = [doneJob('a', 'Solo', 1, ['vocals'])]
+    const { unmount } = render(quickDrop())
+    expect(screen.queryByTestId('quick-mix')).not.toBeInTheDocument()
+    unmount()
+    jobs = [doneJob('b', 'Many', 2, Array.from({ length: 20 }, (_, i) => `stem ${i}`))]
+    render(quickDrop())
+    expect(screen.queryByTestId('quick-mix')).not.toBeInTheDocument()
   })
 })
 

@@ -19,6 +19,7 @@ const bridge: OpenStemsBridge = {
   // With context isolation on, the real path of a dropped File is only available here.
   pathsForFiles: (files) => files.map((file) => webUtils.getPathForFile(file)).filter(Boolean),
   startDrag: (paths) => ipcRenderer.send('drag:start', paths),
+  clipboardText: () => ipcRenderer.invoke('clipboard:read'),
   revealInExplorer: (path) => ipcRenderer.invoke('shell:reveal', path),
   openFolder: (path) => ipcRenderer.invoke('shell:open-folder', path),
   pickFolder: (defaultPath) => ipcRenderer.invoke('dialog:pick-folder', defaultPath),

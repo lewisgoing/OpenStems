@@ -2,7 +2,40 @@ import { describe, expect, it } from 'vitest'
 import type { Recipe } from '@/api/client'
 import { StemPlayer } from '@/audio/player'
 import { basename, formatBytes, formatPercent, formatTime, previewName, stemColor } from '@/lib/format'
+import { linkFrom, linkHost } from '@/lib/link'
+import { capitalize, mixLabel } from '@/state/mix'
 import { type Selection, toJobRequest } from '@/state/selection'
+
+describe('links', () => {
+  it('finds the web address in pasted text and nothing else', () => {
+    expect(linkFrom('https://youtu.be/abc123')).toBe('https://youtu.be/abc123')
+    expect(linkFrom('  https://soundcloud.com/artist/song?si=1\n')).toBe('https://soundcloud.com/artist/song?si=1')
+    expect(linkFrom('http://example.com/a.mp3 and more')).toBe('http://example.com/a.mp3')
+    for (const text of ['', null, undefined, 'a song title', 'C:\\Music\\song.mp3', 'file:///C:/song.mp3', 'https://', 'https://nodot']) {
+      expect(linkFrom(text)).toBeNull()
+    }
+  })
+
+  it('names the site a link points at', () => {
+    expect(linkHost('https://www.youtube.com/watch?v=1')).toBe('youtube.com')
+    expect(linkHost('https://artist.bandcamp.com/track/x')).toBe('artist.bandcamp.com')
+    expect(linkHost('not a link')).toBe('not a link')
+  })
+})
+
+describe('mixes', () => {
+  it('names a mix for what is in it, the way the engine names the file', () => {
+    const six = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other']
+    expect(mixLabel(six, six)).toBe('mix')
+    expect(mixLabel(six.slice(1), six)).toBe('no vocals')
+    expect(mixLabel(['drums', 'bass'], six)).toBe('drums + bass')
+    expect(mixLabel(['drums', 'bass', 'other'], six)).toBe('drums + bass + other')
+    expect(mixLabel(['drums', 'bass', 'guitar', 'piano'], six)).toBe('no vocals, other')
+    const many = Array.from({ length: 12 }, (_, i) => `s${i}`)
+    expect(mixLabel(many.slice(0, 6), many)).toBe('6 stems')
+    expect(capitalize('no vocals')).toBe('No vocals')
+  })
+})
 
 describe('format', () => {
   it('formats sizes, times and percentages', () => {

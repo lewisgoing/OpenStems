@@ -3,6 +3,7 @@ import { AlertTriangle, Check, GripVertical, Layers, Play, RotateCcw, Trash2, X,
 import { useEffect, useRef, useState } from 'react'
 import type { Job, Model, Recipe } from '@/api/client'
 import { keys, useJobActions, useJobs } from '@/api/queries'
+import { LinkRow, useOpenLinks } from '@/components/LinkRow'
 import { RecipeBar } from '@/components/RecipeBar'
 import { useToast } from '@/components/toast'
 import { Button, IconButton, ProgressBar, Tooltip } from '@/components/ui'
@@ -18,10 +19,12 @@ interface QueueViewProps {
   selectedJob: string | null
   onSelect: (job: Job | null) => void
   onAddFiles: (files: File[]) => void
+  onPasteLink: () => void
 }
 
-export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles }: QueueViewProps) {
+export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, onPasteLink }: QueueViewProps) {
   const { data: jobs = [] } = useJobs()
+  const links = useOpenLinks()
   const actions = useJobActions()
   const toast = useToast()
   const queryClient = useQueryClient()
@@ -56,15 +59,15 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles }
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col">
-      <RecipeBar recipes={recipes} models={models} onAddFiles={onAddFiles} quietAdd={held > 0} />
+      <RecipeBar recipes={recipes} models={models} onAddFiles={onAddFiles} onPasteLink={onPasteLink} quietAdd={held > 0} />
 
-      {jobs.length === 0 ? (
+      {jobs.length + links.length === 0 ? (
         <EmptyQueue />
       ) : (
         <>
           <div className="flex items-center justify-between px-5 pt-3 pb-1 text-muted">
             <span className="text-[12px] font-semibold tracking-wide uppercase">
-              Queue <span className="tabular ml-1 font-normal text-faint">{jobs.length}</span>
+              Queue <span className="tabular ml-1 font-normal text-faint">{jobs.length + links.length}</span>
             </span>
             <div className="flex items-center gap-1.5">
               <StartButton held={held} onStart={() => actions.startAll.mutate(undefined, { onError: toast.error })} />
@@ -109,6 +112,10 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles }
                   setOver(null)
                 }}
               />
+            ))}
+            {/* Songs still being fetched come last: that is where their jobs will appear. */}
+            {links.map((link) => (
+              <LinkRow key={link.id} link={link} />
             ))}
           </ul>
         </>
@@ -159,7 +166,8 @@ function EmptyQueue() {
         <StemsMark />
         <h2 className="m-0 font-display text-[17px] font-semibold">Drop audio or video here</h2>
         <p className="mt-2 mb-0 text-muted">
-          Files and folders work anywhere in this window. Stems land in your output folder, ready to drag into your DAW.
+          Files and folders work anywhere in this window, and so does a pasted link to a song. Stems land in your
+          output folder, ready to drag into your DAW.
         </p>
       </div>
     </div>

@@ -14,7 +14,7 @@ import { Button, Dialog, Segmented, TooltipProvider } from './components/ui'
 import { UpdatePill } from './components/Update'
 import { Wordmark } from './components/Wordmark'
 import { cn, formatBytes } from './lib/format'
-import { PendingDownload, useDropFlow } from './state/dropflow'
+import { PendingDownload, useDropFlow, usePaste } from './state/dropflow'
 import { SelectionProvider } from './state/selection'
 import { HistoryView } from './views/HistoryView'
 import { ModelsView } from './views/ModelsView'
@@ -199,7 +199,9 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
   // New jobs bring the queue into view.
   const showQueue = useCallback(() => setView((v) => (v.id === 'queue' ? v : { id: 'queue', animate: true })), [])
   const flow = useDropFlow(recipes, models, showQueue)
-  const { submit, addFiles } = flow
+  const { submit, addFiles, addLinks, pasteLink } = flow
+  usePaste(flow)
+  const addLink = useCallback((url: string) => addLinks([url]), [addLinks])
   const { data: settings } = useSettings()
 
   // Ctrl+1..4 switch views. Keyboard-initiated, so the view appears at once.
@@ -278,7 +280,7 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
 
       <main key={view.id} className="view flex min-w-0 flex-1" data-animate={view.animate}>
         {view.id === 'queue' && (
-          <QueueView recipes={recipes} models={models} selectedJob={panel?.key ?? null} onSelect={showJob} onAddFiles={addFiles} />
+          <QueueView recipes={recipes} models={models} selectedJob={panel?.key ?? null} onSelect={showJob} onAddFiles={addFiles} onPasteLink={pasteLink} />
         )}
         {view.id === 'history' && (
           <HistoryView
@@ -305,7 +307,7 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
         )}
       </main>
 
-      <DropOverlay onDrop={addFiles} label={flow.label} manual={settings ? !settings.auto_start : false} />
+      <DropOverlay onDrop={addFiles} onLink={addLink} label={flow.label} manual={settings ? !settings.auto_start : false} />
       <SeedOffer models={models} onStarted={() => setView({ id: 'models', animate: true })} />
       <PendingDownload flow={flow} models={models} />
     </div>

@@ -695,6 +695,69 @@
     transform: scaleY(1);
   }
 }
+/* Mixing: the stems that are in take their color, the ones left out step back. Like every
+   toggle, the change is at once. */
+.stem-pill[data-mix='in'] {
+  border-color: color-mix(in srgb, var(--stem, var(--color-accent)) 70%, transparent);
+  background: color-mix(in srgb, var(--stem, var(--color-accent)) 14%, var(--color-surface));
+}
+.stem-pill[data-mix='out'] {
+  border-style: dashed;
+  color: var(--color-faint);
+}
+.stem-pill[data-mix='out'] .stem-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--color-faint);
+}
+.mix-toggle {
+  gap: 5px;
+  padding: 0 10px;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+.mix-toggle[aria-pressed='true'] {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));
+  color: var(--color-text);
+}
+/* The line under the stems. It arrives once, when mixing is turned on: a small step down
+   from the stems it belongs to. */
+.mix-bar {
+  transition:
+    opacity 160ms var(--ease-out),
+    transform 160ms var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+.mix-play {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  cursor: pointer;
+}
+.mix-play:disabled {
+  background: var(--color-raised);
+  color: var(--color-faint);
+  cursor: default;
+}
+.mix-play .spinner {
+  width: 11px;
+  height: 11px;
+}
+/* The same width for "Drag mix" and "Preparing": nothing beside it moves. */
+.mix-drag {
+  justify-content: center;
+  min-width: 92px;
+}
+
 /* Stems that have just arrived rise in one after another: the moment the window is for.
    Picking another job shows its stems at once. */
 .stem-pills[data-fresh='true'] .stem-pill {
@@ -727,7 +790,8 @@
       transform: none;
     }
   }
-  .update-pill {
+  .update-pill,
+  .mix-bar {
     @starting-style {
       transform: none;
     }

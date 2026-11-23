@@ -1,16 +1,18 @@
 import { Download } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import type { Model, Recipe } from '@/api/client'
-import { useCreateJobs, useModelActions } from '@/api/queries'
+import { useCreateJobs, useLinkActions, useModelActions } from '@/api/queries'
 import { useCurrentRecipe } from '@/components/RecipeBar'
 import { useToast } from '@/components/toast'
 import { Button, Dialog } from '@/components/ui'
 import { formatBytes } from '@/lib/format'
+import { linkFrom } from '@/lib/link'
 import { toJobRequest, useSelection } from './selection'
 
-/** Files that wait for the models their recipe needs. */
+/** Files and links that wait for the models their recipe needs. */
 interface Pending {
   paths: string[]
+  links: string[]
   missing: string[]
 }
 
@@ -22,20 +24,25 @@ export interface DropFlow {
   /** Queue dropped or picked files, asking first when the recipe needs a download. */
   addPaths: (paths: string[]) => void
   addFiles: (files: File[]) => void
+  /** Fetch songs from their web addresses; each is queued like a file once it is here. */
+  addLinks: (urls: string[]) => void
+  /** The Paste link button: take the link that is on the clipboard. */
+  pasteLink: () => void
   pending: Pending | null
   setPending: (pending: Pending | null) => void
 }
 
 /**
- * From dropped files to queued jobs, shared by the full window and the quick-drop window:
- * the current recipe, quality and options go with the files, and a recipe whose models are
- * not installed holds the files until they are.
+ * From dropped files and pasted links to queued jobs, shared by the full window and the
+ * quick-drop window: the current recipe, quality and options go with them, and a recipe
+ * whose models are not installed holds them until they are.
  */
 export function useDropFlow(recipes: Recipe[], models: Model[], onQueued?: () => void): DropFlow {
   const [pending, setPending] = useState<Pending | null>(null)
   const { selection } = useSelection()
   const { recipe, model, missing } = useCurrentRecipe(recipes, models)
   const createJobs = useCreateJobs()
+  const { add: addLink } = useLinkActions()
   const toast = useToast()
 
   const submit = useCallback(
@@ -48,23 +55,42 @@ export function useDropFlow(recipes: Recipe[], models: Model[], onQueued?: () =>
     [createJobs, onQueued, recipe, selection, toast.error],
   )
 
-  const addPaths = useCallback(
-    (paths: string[]) => {
-      if (paths.length === 0) return
+  const submitLinks = useCallback(
+    (urls: string[]) => {
+      const { paths: _none, ...request } = toJobRequest(selection, recipe, [])
+      for (const url of urls) addLink.mutate({ ...request, url }, { onSuccess: onQueued, onError: toast.error })
+    },
+    [addLink, onQueued, recipe, selection, toast.error],
+  )
+
+  const add = useCallback(
+    (paths: string[], links: string[]) => {
+      if (paths.length === 0 && links.length === 0) return
       if (recipe?.selectable_outputs && selection.outputs.length === 0) {
         toast.show('Pick at least one stem for this recipe first.', { kind: 'error' })
         return
       }
       if (missing.length > 0) {
-        setPending({ paths, missing: missing.map((m) => m.id) })
+        setPending({ paths, links, missing: missing.map((m) => m.id) })
         return
       }
-      submit(paths)
+      if (paths.length > 0) submit(paths)
+      if (links.length > 0) submitLinks(links)
     },
-    [missing, recipe, selection.outputs.length, submit, toast],
+    [missing, recipe, selection.outputs.length, submit, submitLinks, toast],
   )
 
+  const addPaths = useCallback((paths: string[]) => add(paths, []), [add])
+  const addLinks = useCallback((urls: string[]) => add([], urls), [add])
   const addFiles = useCallback((files: File[]) => addPaths(window.openstems.pathsForFiles(files)), [addPaths])
+
+  const pasteLink = useCallback(() => {
+    void window.openstems.clipboardText().then((text) => {
+      const link = linkFrom(text)
+      if (link) addLinks([link])
+      else toast.show("Copy a song's link first, then paste it here.")
+    })
+  }, [addLinks, toast])
 
   // Once the models a pending drop needs are installed, queue it.
   useEffect(() => {
@@ -76,13 +102,45 @@ export function useDropFlow(recipes: Recipe[], models: Model[], onQueued?: () =>
     })
     if (installed) {
       setPending(null)
-      submit(pending.paths)
+      if (pending.paths.length > 0) submit(pending.paths)
+      if (pending.links.length > 0) submitLinks(pending.links)
     } else if (failed) {
       setPending(null)
     }
-  }, [pending, models, submit])
+  }, [pending, models, submit, submitLinks])
 
-  return { label: recipe?.name ?? model?.name ?? 'the selected model', submit, addPaths, addFiles, pending, setPending }
+  return {
+    label: recipe?.name ?? model?.name ?? 'the selected model',
+    submit,
+    addPaths,
+    addFiles,
+    addLinks,
+    pasteLink,
+    pending,
+    setPending,
+  }
+}
+
+/**
+ * Ctrl+V anywhere in the window: a copied link is fetched, copied files are queued. Text
+ * fields keep their own paste.
+ */
+export function usePaste(flow: Pick<DropFlow, 'addFiles' | 'addLinks'>): void {
+  const { addFiles, addLinks } = flow
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      const target = event.target
+      if (target instanceof Element && target.closest('input, textarea, [contenteditable="true"]')) return
+      const files = [...(event.clipboardData?.files ?? [])]
+      const link = linkFrom(event.clipboardData?.getData('text/plain'))
+      if (files.length === 0 && !link) return
+      event.preventDefault()
+      if (files.length > 0) addFiles(files)
+      else if (link) addLinks([link])
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [addFiles, addLinks])
 }
 
 /** Asks before a download a drop needs, then shows it until the files can be queued. */
@@ -92,6 +150,7 @@ export function PendingDownload({ flow, models }: { flow: DropFlow; models: Mode
   const { pending, setPending } = flow
   const missingModels = pending ? pending.missing.flatMap((id) => models.find((m) => m.id === id) ?? []) : []
   const busy = missingModels.some((m) => m.download?.state === 'downloading' || m.download?.state === 'verifying')
+  const what = pending && pending.paths.length === 0 ? 'link' : 'files'
 
   return (
     <Dialog
@@ -100,8 +159,8 @@ export function PendingDownload({ flow, models }: { flow: DropFlow; models: Mode
       title={busy ? 'Downloading models' : 'This recipe needs a download'}
       description={
         busy
-          ? 'Your files will start as soon as the download finishes.'
-          : `${missingModels.map((m) => m.name).join(', ')} (${formatBytes(missingModels.reduce((s, m) => s + m.bytes, 0))}). Your files are queued once it is installed.`
+          ? `Your ${what} will start as soon as the download finishes.`
+          : `${missingModels.map((m) => m.name).join(', ')} (${formatBytes(missingModels.reduce((s, m) => s + m.bytes, 0))}). Your ${what} ${what === 'link' ? 'is' : 'are'} queued once it is installed.`
       }
       footer={
         <>

@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Job, StemFile } from '@/api/client'
+import type { Job, Link, StemFile } from '@/api/client'
 import { StemsPanel } from '@/components/StemsPanel'
 import { ToastProvider, useToast } from '@/components/toast'
 import { CommitInput, ProgressBar, Segmented, TooltipProvider } from '@/components/ui'
@@ -22,10 +22,28 @@ const actions = {
 }
 let jobs: Job[] = []
 
+let links: Link[] = []
+const linkActions = { add: { mutate: vi.fn() }, retry: { mutate: vi.fn() }, remove: { mutate: vi.fn() } }
+const MIX_PATH = 'D:\\out\\Song\\full-song\\Mixes\\Song - no vocals.wav'
+const createMix = { mutateAsync: vi.fn(async (_paths: string[]) => ({ path: MIX_PATH })) }
+const link = (patch: Partial<Link>): Link => ({
+  id: 'l1',
+  url: 'https://www.youtube.com/watch?v=abc',
+  name: 'youtube.com',
+  state: 'resolving',
+  progress: 0,
+  error: null,
+  created_at: 0,
+  ...patch,
+})
+
 vi.mock('@/api/queries', () => ({
   keys: { jobs: ['jobs'] },
   useJobs: () => ({ data: jobs }),
   useJobActions: () => actions,
+  useLinks: () => ({ data: links }),
+  useLinkActions: () => linkActions,
+  useCreateMix: () => createMix,
   useSettings: () => ({ data: { output_format: 'wav32f' } }),
   usePatchSettings: () => ({ mutate: vi.fn() }),
 }))
@@ -91,11 +109,49 @@ function wrap(children: ReactNode) {
 beforeEach(() => {
   vi.clearAllMocks()
   jobs = []
+  links = []
 })
 
 describe('QueueView', () => {
   const view = (onSelect = vi.fn(), onAddFiles = vi.fn()) =>
-    wrap(<QueueView recipes={[]} models={[]} selectedJob={null} onSelect={onSelect} onAddFiles={onAddFiles} />)
+    wrap(
+      <QueueView recipes={[]} models={[]} selectedJob={null} onSelect={onSelect} onAddFiles={onAddFiles} onPasteLink={onPasteLink} />,
+    )
+  const onPasteLink = vi.fn()
+
+  it('has a Paste link button beside Add files', async () => {
+    view()
+    await userEvent.click(screen.getByRole('button', { name: 'Paste link' }))
+    expect(onPasteLink).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a song being fetched from a link after the jobs, and cancels it', async () => {
+    jobs = [job({ state: 'running', progress: 0.5 })]
+    links = [link({ name: 'Night Drive', state: 'downloading', progress: 0.37 })]
+    view()
+    expect(screen.getByText('Queue').parentElement).toHaveTextContent('Queue 2')
+    const row = screen.getByTestId('link-row')
+    expect(row.previousElementSibling).toHaveAttribute('data-testid', 'job-row')
+    expect(within(row).getByText('Night Drive')).toBeInTheDocument()
+    expect(within(row).getByTestId('link-status')).toHaveTextContent('Fetching from youtube.com')
+    expect(within(row).getByText('37%')).toBeInTheDocument()
+    expect(within(row).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '37')
+    await userEvent.click(within(row).getByRole('button', { name: 'Cancel' }))
+    expect(linkActions.remove.mutate).toHaveBeenCalledWith('l1', expect.anything())
+  })
+
+  it('keeps a fetch that failed, with the reason, to try again or dismiss', async () => {
+    links = [link({ state: 'failed', error: 'This link is a playlist of 12 songs. Paste the link to one song.' })]
+    view()
+    const row = screen.getByTestId('link-row')
+    expect(screen.queryByRole('heading', { name: 'Drop audio or video here' })).not.toBeInTheDocument()
+    expect(within(row).getByTestId('link-status')).toHaveTextContent('playlist of 12 songs')
+    expect(within(row).queryByRole('progressbar')).not.toBeInTheDocument()
+    await userEvent.click(within(row).getByRole('button', { name: 'Try again' }))
+    expect(linkActions.retry.mutate).toHaveBeenCalledWith('l1', expect.anything())
+    await userEvent.click(within(row).getByRole('button', { name: 'Dismiss' }))
+    expect(linkActions.remove.mutate).toHaveBeenCalledWith('l1', expect.anything())
+  })
 
   it('shows the drop hint when the queue is empty', () => {
     view()
@@ -212,6 +268,38 @@ describe('StemsPanel', () => {
     panel()
     await userEvent.click(screen.getByRole('button', { name: 'Reveal in Explorer' }))
     expect(bridge.revealInExplorer).toHaveBeenCalledWith(stems[0]!.path)
+  })
+})
+
+describe('StemsPanel: the mix you hear', () => {
+  const stems = ['vocals', 'drums', 'bass'].map(stem)
+  const panel = () =>
+    wrap(<StemsPanel title="Song" subtitle="Full song" directory="D:\\out\\Song\\full-song" stems={stems} onClose={vi.fn()} />)
+
+  it('offers no mix while every stem is audible', () => {
+    panel()
+    expect(screen.queryByTestId('drag-mix')).not.toBeInTheDocument()
+  })
+
+  it('writes what mute leaves audible as one file and drags it', async () => {
+    panel()
+    await userEvent.click(screen.getByRole('button', { name: 'Mute vocals' }))
+    const handle = screen.getByTestId('drag-mix')
+    expect(handle).toHaveTextContent('Preparing')
+    expect(handle).toHaveAttribute('aria-disabled', 'true')
+    await waitFor(() => expect(createMix.mutateAsync).toHaveBeenCalledWith([stems[1]!.path, stems[2]!.path]))
+    await waitFor(() => expect(screen.getByTestId('drag-mix')).toHaveTextContent('Drag mix'))
+    expect(screen.getByTestId('drag-mix')).toHaveAccessibleName('Drag the mix: No vocals')
+    fireEvent.dragStart(screen.getByTestId('drag-mix'))
+    expect(window.openstems.startDrag).toHaveBeenCalledWith([MIX_PATH])
+  })
+
+  it('drags the stem itself when solo leaves one', async () => {
+    panel()
+    await userEvent.click(screen.getByRole('button', { name: 'Solo bass' }))
+    fireEvent.dragStart(screen.getByTestId('drag-mix'))
+    expect(window.openstems.startDrag).toHaveBeenCalledWith([stems[2]!.path])
+    expect(createMix.mutateAsync).not.toHaveBeenCalled()
   })
 })
 

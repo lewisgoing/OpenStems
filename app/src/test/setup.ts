@@ -40,6 +40,7 @@ export const bridge = {
   onSetupStatus: vi.fn(() => () => undefined),
   pathsForFiles: vi.fn((files: File[]) => files.map((f) => `C:/in/${f.name}`)),
   startDrag: vi.fn(),
+  clipboardText: vi.fn(async () => ''),
   revealInExplorer: vi.fn(async () => undefined),
   openFolder: vi.fn(async () => undefined),
   pickFolder: vi.fn(async () => null),

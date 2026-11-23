@@ -22,6 +22,7 @@ dependencies = [
     "uvicorn>=0.54",
     "websockets>=15",
     "librosa>=0.11",
+    "yt-dlp[default,deno]==2026.10.26",
 ]
 
 [project.scripts]

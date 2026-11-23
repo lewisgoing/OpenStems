@@ -1,21 +1,24 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { AppWindow, Download, FolderOpen, Layers, Play, Plus, RotateCcw, X } from 'lucide-react'
-import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { AppWindow, Blend, Download, FolderOpen, Layers, Link2, Pause, Play, Plus, RotateCcw, SlidersHorizontal, X } from 'lucide-react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { TrayActivity } from '../../electron/bridge'
-import { type Job, type Model, type Recipe, type StemFile, fileUrl } from '@/api/client'
+import { type Job, type Link, type Model, type Recipe, type StemFile, fileUrl } from '@/api/client'
 import { EngineProvider, useEngine } from '@/api/engine'
 import { useJobActions, useJobs, useModels, useRecipes, useSettings } from '@/api/queries'
 import { useEngineStatus } from '@/api/status'
 import { Audition, type AuditionState } from '@/audio/audition'
+import { StemPlayer } from '@/audio/player'
 import { DropOverlay } from '@/components/DropOverlay'
 import { FormatSelect } from '@/components/FormatSelect'
+import { LinkRow, useOpenLinks } from '@/components/LinkRow'
 import { QUALITY, useCurrentRecipe, useRecipeOptions } from '@/components/RecipeBar'
 import { ToastProvider, useToast } from '@/components/toast'
 import { Button, IconButton, ProgressBar, Segmented, Select, Tooltip, TooltipProvider } from '@/components/ui'
 import { UpdatePill } from '@/components/Update'
 import { Wordmark } from '@/components/Wordmark'
 import { cn, formatBytes, formatPercent, stemColor } from '@/lib/format'
-import { PendingDownload, useDropFlow } from '@/state/dropflow'
+import { PendingDownload, useDropFlow, usePaste } from '@/state/dropflow'
+import { type MixFile, capitalize, mixLabel, useMixFile } from '@/state/mix'
 import { SelectionProvider, useSelection } from '@/state/selection'
 import { ACTIVE, StartButton, StateIcon, StemsMark, statusText } from '@/views/QueueView'
 
@@ -149,13 +152,15 @@ function TrayShell() {
 /* ---- what the tray icon is told ------------------------------------------------- */
 
 /** The queue in the three facts the tray icon shows. */
-export function activityOf(jobs: Job[], finishedId: string | null): TrayActivity {
+export function activityOf(jobs: Job[], finishedId: string | null, links: Link[] = []): TrayActivity {
   // A song that waits for Start is not work in progress: the icon stays quiet about it.
   const open = jobs.filter((job) => !FINISHED.has(job.state) && !job.held)
   const running = open.find((job) => ACTIVE.has(job.state))
   const finished = finishedId ? jobs.find((job) => job.id === finishedId && job.state === 'done') : undefined
+  // A song being fetched from a link is work in progress; a fetch that failed is not.
+  const fetching = links.filter((link) => link.state !== 'failed').length
   return {
-    active: open.length,
+    active: open.length + fetching,
     current: running ? { name: running.track_name, progress: Math.round(running.progress * 100) / 100 } : null,
     done: finished ? { id: finished.id, name: finished.track_name, stems: finished.stems.length } : null,
   }
@@ -188,7 +193,11 @@ function useNewlyFinished(jobs: Job[] | undefined): string | null {
  * One stem at a time, by clicking its pill. It stops when the window is put away and when
  * the song it belongs to is no longer the one laid out.
  */
-function useAudition(shown: StemFile[]): { state: AuditionState; listen: (stem: StemFile, group: string) => void } {
+function useAudition(shown: StemFile[]): {
+  state: AuditionState
+  listen: (stem: StemFile, group: string) => void
+  stop: () => void
+} {
   const { connection } = useEngine()
   const audition = useMemo(
     () => new Audition({ Authorization: `Bearer ${connection.token}` }, window.openstems.info.e2e),
@@ -215,9 +224,108 @@ function useAudition(shown: StemFile[]): { state: AuditionState; listen: (stem: 
   useEffect(() => {
     if (error) toast.show(error, { kind: 'error' })
   }, [error, toast])
+  const stop = useCallback(() => audition.stop(), [audition])
   return {
     state,
     listen: (stem, group) => void audition.toggle({ path: stem.path, url: fileUrl(connection, stem.path), group }),
+    stop,
+  }
+}
+
+/* ---- a mix of the stems ----------------------------------------------------------- */
+
+export interface Mixer {
+  /** The stems left out of the mix. */
+  off: string[]
+  playing: boolean
+  /** Stems are being fetched and decoded for playback: how many of how many. */
+  loading: { loaded: number; total: number } | null
+  /** The mix as one file, for dragging out. */
+  file: MixFile
+  toggleStem: (name: string) => void
+  playPause: () => void
+}
+
+/**
+ * The laid-out song's stems as a mix: every stem is in until it is clicked out. What is in
+ * can be heard together, in sync, and dragged out as one file.
+ */
+function useMixer(job: Job | undefined, onEnter: () => void): { mixer: Mixer | null; toggle: () => void } {
+  const { connection } = useEngine()
+  const toast = useToast()
+  const [mix, setMix] = useState<{ id: string; off: string[] } | null>(null)
+  const jobId = job?.id ?? ''
+  const off = job && mix?.id === job.id ? mix.off : null
+  const mixing = off !== null
+  const stems = useMemo(() => job?.stems ?? [], [job?.stems])
+
+  const player = useMemo(
+    () => new StemPlayer({ Authorization: `Bearer ${connection.token}` }, window.openstems.info.e2e),
+    [connection.token],
+  )
+  const state = useSyncExternalStore(
+    (listener) => player.subscribe(listener),
+    () => player.state,
+  )
+  useEffect(() => () => player.dispose(), [player])
+  // Leaving the mix, or laying out another song, lets go of the decoded stems.
+  useEffect(() => {
+    if (!mixing) return
+    return () => player.dispose()
+  }, [player, mixing, jobId])
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden) player.pause()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [player])
+  const error = state.status === 'error' ? state.error : undefined
+  useEffect(() => {
+    if (error) toast.show(error, { kind: 'error' })
+  }, [error, toast])
+
+  const chosen = off === null ? null : stems.map((stem) => stem.name).filter((name) => !off.includes(name))
+  const file = useMixFile(jobId, stems, chosen, toast.error)
+
+  const toggle = () => {
+    if (!job) return
+    if (mixing) {
+      setMix(null)
+      return
+    }
+    onEnter()
+    player.setMuted([])
+    setMix({ id: job.id, off: [] })
+  }
+  const toggleStem = (name: string) => {
+    if (!job || off === null) return
+    const next = off.includes(name) ? off.filter((other) => other !== name) : [...off, name]
+    player.setMuted(next)
+    setMix({ id: job.id, off: next })
+  }
+  const playPause = () => {
+    if (state.status === 'loading') return
+    if (state.status === 'ready') {
+      player.toggle()
+      return
+    }
+    void player.load(stems.map((stem) => ({ name: stem.name, url: fileUrl(connection, stem.path) }))).then(() => player.play())
+  }
+
+  return {
+    toggle,
+    mixer:
+      off === null
+        ? null
+        : {
+            off,
+            playing: state.playing,
+            loading: state.status === 'loading' ? { loaded: state.loaded, total: state.total } : null,
+            file,
+            toggleStem,
+            playPause,
+          },
   }
 }
 
@@ -226,14 +334,18 @@ function useAudition(shown: StemFile[]): { state: AuditionState; listen: (stem: 
 export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Model[] }) {
   const { data: loaded } = useJobs()
   const jobs = loaded ?? []
+  const links = useOpenLinks()
   const flow = useDropFlow(recipes, models)
+  usePaste(flow)
+  const { addLinks } = flow
+  const addLink = useCallback((url: string) => addLinks([url]), [addLinks])
   const actions = useJobActions()
   const toast = useToast()
   const input = useRef<HTMLInputElement>(null)
   const finishedId = useNewlyFinished(loaded)
 
   // Tell the tray icon what the queue is doing. Sent only when one of the facts changes.
-  const activity = JSON.stringify(activityOf(jobs, finishedId))
+  const activity = JSON.stringify(activityOf(jobs, finishedId, links))
   useEffect(() => {
     window.openstems.reportActivity(JSON.parse(activity) as TrayActivity)
   }, [activity])
@@ -250,7 +362,10 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
   const expanded = picked && withStems.some((job) => job.id === picked) ? picked : (latest?.id ?? null)
 
   const shown = [...jobs].reverse().slice(0, MAX_ROWS)
-  const audition = useAudition(jobs.find((job) => job.id === expanded)?.stems ?? [])
+  const laidOut = jobs.find((job) => job.id === expanded)
+  const audition = useAudition(laidOut?.stems ?? [])
+  const stopListening = audition.stop
+  const { mixer, toggle: toggleMix } = useMixer(laidOut, stopListening)
   const finished = jobs.filter((job) => FINISHED.has(job.state)).length
   const held = jobs.filter((job) => job.held).length
   const { data: settings } = useSettings()
@@ -273,30 +388,48 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
         }}
       />
 
-      {jobs.length === 0 ? (
+      {jobs.length + links.length === 0 ? (
         <div className="m-3 mt-0 grid flex-1 place-items-center rounded-[14px] border border-dashed border-line-strong p-6 text-center">
           <div>
             <StemsMark />
             <h1 className="m-0 font-display text-[16px] font-semibold">Drop a song here</h1>
             <p className="mx-auto mt-1.5 mb-4 max-w-[250px] text-muted">
-              Its stems come back to this window, ready to drag into your DAW.
+              Or paste a link to one. Its stems come back to this window, ready to drag into your DAW.
             </p>
-            <Button onClick={chooseFiles}>Choose files</Button>
+            <div className="flex justify-center gap-2">
+              <Button onClick={chooseFiles}>Choose files</Button>
+              <Button onClick={flow.pasteLink} title="Fetch the song behind a copied link (Ctrl+V)">
+                <Link2 size={14} />
+                Paste link
+              </Button>
+            </div>
           </div>
         </div>
       ) : (
         <>
-          <button
-            type="button"
-            className="drop-strip pressable mx-3 flex h-10 flex-none items-center justify-center gap-2 rounded-[10px] border border-dashed border-line-strong bg-transparent text-muted"
-            onClick={chooseFiles}
-          >
-            <Plus size={14} />
-            Drop a song, or choose files
-          </button>
+          <div className="mx-3 flex flex-none gap-1.5">
+            <button
+              type="button"
+              className="drop-strip pressable flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-[10px] border border-dashed border-line-strong bg-transparent text-muted"
+              onClick={chooseFiles}
+            >
+              <Plus size={14} />
+              Drop a song, or choose files
+            </button>
+            <Tooltip label="Paste a link to a song (Ctrl+V)">
+              <button
+                type="button"
+                aria-label="Paste a link"
+                className="drop-strip pressable grid h-10 w-10 flex-none place-items-center rounded-[10px] border border-dashed border-line-strong bg-transparent text-muted"
+                onClick={flow.pasteLink}
+              >
+                <Link2 size={15} />
+              </button>
+            </Tooltip>
+          </div>
           <div className="flex flex-none items-center justify-between pt-2 pr-2 pl-4 text-muted">
             <span className="text-[11.5px] font-semibold tracking-wide uppercase">
-              Recent <span className="tabular ml-1 font-normal text-faint">{jobs.length}</span>
+              Recent <span className="tabular ml-1 font-normal text-faint">{jobs.length + links.length}</span>
             </span>
             <div className="flex items-center gap-1">
               <StartButton held={held} onStart={() => actions.startAll.mutate(undefined, { onError: toast.error })} />
@@ -311,6 +444,10 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
             </div>
           </div>
           <ul className="m-0 min-h-0 flex-1 list-none overflow-y-auto px-2 pb-2" aria-label="Recent jobs">
+            {/* Newest first: a song still being fetched is newer than every job. */}
+            {[...links].reverse().map((link) => (
+              <LinkRow key={link.id} link={link} compact />
+            ))}
             {shown.map((job) => (
               <QuickRow
                 key={job.id}
@@ -320,6 +457,8 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
                 onPick={() => setPick({ id: job.id, since: finishedId })}
                 audition={audition.state}
                 onListen={(stem) => audition.listen(stem, job.id)}
+                mixer={job.id === expanded ? mixer : null}
+                onMix={toggleMix}
                 onStart={() => actions.start.mutate(job.id, { onError: toast.error })}
                 onCancel={() => actions.cancel.mutate(job.id, { onError: toast.error })}
                 onRetry={() => actions.retry.mutate(job.id, { onError: toast.error })}
@@ -329,7 +468,7 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
         </>
       )}
 
-      <DropOverlay onDrop={flow.addFiles} label={flow.label} manual={settings ? !settings.auto_start : false} />
+      <DropOverlay onDrop={flow.addFiles} onLink={addLink} label={flow.label} manual={settings ? !settings.auto_start : false} />
       <PendingDownload flow={flow} models={models} />
     </div>
   )
@@ -379,6 +518,10 @@ interface QuickRowProps {
   /** What is being listened to, and the click that starts or stops a stem. */
   audition: AuditionState
   onListen: (stem: StemFile) => void
+  /** The stems are being mixed: a click takes a stem out of the mix or puts it back. */
+  mixer?: Mixer | null
+  /** Turn mixing on or off for this song. */
+  onMix?: () => void
   onStart: () => void
   onCancel: () => void
   onRetry: () => void
@@ -390,13 +533,15 @@ function startDrag(event: React.DragEvent, paths: string[]): void {
   window.openstems.startDrag(paths)
 }
 
-export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, onStart, onCancel, onRetry }: QuickRowProps) {
+export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mixer = null, onMix, onStart, onCancel, onRetry }: QuickRowProps) {
   const active = ACTIVE.has(job.state)
   const queued = job.state === 'queued'
   const done = job.state === 'done'
   const hasStems = done && job.stems.length > 0
   const pills = job.stems.slice(0, MAX_PILLS)
   const more = job.stems.length - pills.length
+  // A mix is of stems that can all be seen and clicked.
+  const canMix = Boolean(onMix) && more === 0 && job.stems.length > 1
 
   return (
     <li
@@ -477,28 +622,36 @@ export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, onS
           onClick={(event) => event.stopPropagation()}
         >
           {pills.map((stem, index) => {
-            const mine = audition.path === stem.path
-            const playing = mine && audition.status === 'playing'
+            const mine = !mixer && audition.path === stem.path
+            const inMix = mixer ? !mixer.off.includes(stem.name) : false
+            const playing = mixer ? inMix && mixer.playing : mine && audition.status === 'playing'
+            const act = () => (mixer ? mixer.toggleStem(stem.name) : onListen(stem))
             return (
-              // Click to listen, drag to use: the two things one does with a stem.
+              // Click to listen, drag to use: the two things one does with a stem. In a mix,
+              // the click takes the stem out or puts it back; the drag is still the stem.
               <div
                 key={stem.path}
                 draggable
                 role="button"
                 tabIndex={0}
-                aria-pressed={playing}
-                aria-label={playing ? `Stop ${stem.name}` : `Play ${stem.name}`}
-                title="Click to listen, drag into your DAW or a folder"
+                aria-pressed={mixer ? inMix : playing}
+                aria-label={mixer ? `${stem.name} in the mix` : playing ? `Stop ${stem.name}` : `Play ${stem.name}`}
+                title={
+                  mixer
+                    ? 'Click to leave it out of the mix or put it back, drag for this stem alone'
+                    : 'Click to listen, drag into your DAW or a folder'
+                }
                 data-testid="quick-stem"
                 data-audition={mine ? audition.status : undefined}
+                data-mix={mixer ? (inMix ? 'in' : 'out') : undefined}
                 className="stem-pill stem-handle"
                 style={{ ['--i' as string]: Math.min(index, 8), ['--stem' as string]: stemColor(stem.name) }}
-                onClick={() => onListen(stem)}
+                onClick={act}
                 onDragStart={(event) => startDrag(event, [stem.path])}
                 onKeyDown={(event) => {
                   if (event.key !== 'Enter' && event.key !== ' ') return
                   event.preventDefault()
-                  onListen(stem)
+                  act()
                 }}
               >
                 {/* One slot for the dot and for the bars, so starting to play moves nothing. */}
@@ -522,8 +675,88 @@ export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, onS
               +{more} in the full app
             </button>
           )}
+          {canMix && (
+            <button
+              type="button"
+              aria-pressed={mixer !== null}
+              title="Hear the stems together, leave some out, and drag the result out as one file"
+              data-testid="quick-mix"
+              className="stem-pill mix-toggle pressable"
+              onClick={onMix}
+            >
+              <SlidersHorizontal size={11} aria-hidden="true" />
+              Mix
+            </button>
+          )}
         </div>
       )}
+
+      {hasStems && expanded && mixer && <MixBar job={job} mixer={mixer} />}
     </li>
+  )
+}
+
+/**
+ * Under the stems while they are being mixed: play what is in, read what it is, drag it out.
+ * The drag handle keeps its width whatever it says, so nothing beside it moves.
+ */
+function MixBar({ job, mixer }: { job: Job; mixer: Mixer }) {
+  const names = job.stems.map((stem) => stem.name)
+  const chosen = names.filter((name) => !mixer.off.includes(name))
+  const whole = chosen.length === names.length
+  const empty = chosen.length === 0
+  // One stem alone is that stem's own file; more than one is a file the engine writes.
+  const only = chosen.length === 1 ? job.stems.find((stem) => stem.name === chosen[0]) : undefined
+  const path = only ? only.path : mixer.file.path
+  const preparing = !only && mixer.file.status === 'preparing'
+  const label = mixer.loading
+    ? `Loading ${mixer.loading.loaded}/${mixer.loading.total}`
+    : whole
+      ? 'Click a stem to leave it out'
+      : empty
+        ? 'Nothing is in the mix'
+        : capitalize(mixLabel(chosen, names))
+  return (
+    <div className="mix-bar mt-2 ml-[24px] flex items-center gap-2" data-testid="mix-bar" onClick={(event) => event.stopPropagation()}>
+      <button
+        type="button"
+        aria-label={mixer.playing ? 'Pause the mix' : 'Play the mix'}
+        disabled={empty || mixer.loading !== null}
+        className="mix-play pressable"
+        onClick={mixer.playPause}
+      >
+        {mixer.loading ? (
+          <span className="spinner" aria-hidden="true" />
+        ) : mixer.playing ? (
+          <Pause size={11} fill="currentColor" />
+        ) : (
+          <Play size={11} fill="currentColor" className="ml-px" />
+        )}
+      </button>
+      <span
+        className={cn('min-w-0 flex-1 truncate text-[12px]', whole || empty || mixer.loading ? 'text-muted' : 'font-medium')}
+        data-testid="mix-label"
+        role="status"
+      >
+        {label}
+      </span>
+      {!whole && !empty && (
+        <div
+          draggable={Boolean(path)}
+          role="button"
+          tabIndex={0}
+          aria-disabled={!path}
+          aria-label={preparing ? 'Preparing the mix' : `Drag the mix of ${job.track_name}`}
+          title="Drag this mix into your DAW or a folder, as one file"
+          data-testid="mix-drag"
+          data-state={only ? 'ready' : mixer.file.status}
+          className={cn('btn btn-sm mix-drag flex-none', path ? 'pressable stem-handle' : 'text-muted')}
+          onDragStart={(event) => (path ? startDrag(event, [path]) : event.preventDefault())}
+        >
+          {preparing ? <span className="spinner" aria-hidden="true" /> : <Blend size={13} />}
+          {preparing ? 'Preparing' : 'Drag mix'}
+        </div>
+      )}
+    </div>
   )
 }
