@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 (2026-11-22)
 
 - The output format (WAV 32-bit float, WAV 24-bit, FLAC, MP3 320 kbps) can be picked where
   files are dropped: on the recipe bar of the full window and in the quick-drop window. It is
