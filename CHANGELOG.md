@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-11-23)
 
 - **macOS on Apple Silicon (preview, not yet run on a Mac by us).** OpenStems can be built
   for Macs with an M1 or later chip and macOS 14 or later. The models run on the Apple GPU

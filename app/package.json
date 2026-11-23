@@ -1,7 +1,7 @@
 {
   "name": "openstems-app",
   "private": true,
-  "version": "0.2.5",
+  "version": "0.3.0",
   "description": "OpenStems desktop shell: drop audio in, drag DAW-ready stems out.",
   "author": "lewisgoing",
   "license": "MIT",
