@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -23,9 +24,32 @@ from openstems.pipeline.run import SAMPLE_RATE, read_manifest
 MIXES_DIR = "Mixes"
 
 
-def mix_label(chosen: list[str], every: list[str]) -> str:
-    """The mix in a few words, for its file name: ``no vocals``, ``drums + bass``."""
+def _whole_groups(names: list[str], every: list[str], groups: Mapping[str, str]) -> list[str]:
+    """``names`` with every group that is all there replaced by the group's name."""
+    out: list[str] = []
+    for name in names:
+        group = groups.get(name)
+        if group and all(n in names for n in every if groups.get(n) == group):
+            if group not in out:
+                out.append(group)
+        else:
+            out.append(name)
+    return out
+
+
+def mix_label(chosen: list[str], every: list[str], groups: Mapping[str, str] | None = None) -> str:
+    """The mix in a few words, for its file name: ``no vocals``, ``drums + bass``.
+
+    ``groups`` maps a stem to the larger stem it is a part of. A group that is all in, or
+    all out, goes by its own name: every part of the kit together is ``drums``.
+    """
+    count = len(chosen)
     left_out = [name for name in every if name not in chosen]
+    if groups:
+        chosen = _whole_groups(chosen, every, groups)
+        left_out = _whole_groups(left_out, every, groups)
+    if len(chosen) == 1 and left_out:
+        return chosen[0]
     if not left_out:
         return "mix"
     if len(left_out) == 1:
@@ -34,7 +58,7 @@ def mix_label(chosen: list[str], every: list[str]) -> str:
         return " + ".join(chosen)
     if len(left_out) <= 3:
         return "no " + ", ".join(left_out)
-    return f"{len(chosen)} stems"
+    return f"{count} stems"
 
 
 def render_mix(directory: Path, files: list[str]) -> dict[str, Any]:
@@ -90,7 +114,11 @@ def render_mix(directory: Path, files: list[str]) -> dict[str, Any]:
         fmt = "wav32f"
     source = manifest.get("source") or {}
     analysis = manifest.get("analysis") or {}
-    label = mix_label([s["name"] for s in chosen], [s["name"] for s in stems])
+    label = mix_label(
+        [s["name"] for s in chosen],
+        [s["name"] for s in stems],
+        {s["name"]: s["group"] for s in stems if s.get("group")},
+    )
     name = render_name(
         str(options.get("template") or DEFAULT_TEMPLATE),
         stem=label,
@@ -106,7 +134,9 @@ def render_mix(directory: Path, files: list[str]) -> dict[str, Any]:
     # must never see half a file.
     tmp = folder / f".{uuid.uuid4().hex[:8]}{extension(fmt)}"
     try:
-        write_audio(tmp, total, rate, fmt)
+        write_audio(
+            tmp, total, rate, fmt, analysis.get("bpm") if options.get("tempo_sync") else None
+        )
         os.replace(tmp, target)
     except OSError as exc:
         tmp.unlink(missing_ok=True)

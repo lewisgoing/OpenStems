@@ -3,7 +3,8 @@ import type { Recipe } from '@/api/client'
 import { StemPlayer } from '@/audio/player'
 import { basename, formatBytes, formatPercent, formatTime, previewName, stemColor } from '@/lib/format'
 import { linkFrom, linkHost } from '@/lib/link'
-import { capitalize, mixLabel } from '@/state/mix'
+import { outputChips } from '@/components/RecipeBar'
+import { capitalize, groupsOf, mixLabel, partName, stemSections } from '@/state/mix'
 import { type Selection, toJobRequest } from '@/state/selection'
 
 describe('links', () => {
@@ -34,6 +35,55 @@ describe('mixes', () => {
     const many = Array.from({ length: 12 }, (_, i) => `s${i}`)
     expect(mixLabel(many.slice(0, 6), many)).toBe('6 stems')
     expect(capitalize('no vocals')).toBe('No vocals')
+  })
+
+  // The same cases as the engine's test (`test_a_mix_is_named_for_what_is_in_it`).
+  it('calls a group that is all in, or all out, by its own name', () => {
+    const kit = ['kick', 'snare', 'hh']
+    const every = ['lead vocals', 'backing vocals', ...kit, 'bass', 'guitar', 'piano', 'other']
+    const groups = groupsOf([
+      ...['lead vocals', 'backing vocals'].map((name) => ({ name, group: 'vocals' })),
+      ...kit.map((name) => ({ name, group: 'drums' })),
+      { name: 'bass', group: null },
+      ...['guitar', 'piano', 'other'].map((name) => ({ name, group: 'melody' })),
+    ])
+    expect(groups.bass).toBeUndefined()
+    expect(mixLabel(kit, every, groups)).toBe('drums')
+    expect(mixLabel([...kit, 'bass'], every, groups)).toBe('drums + bass')
+    expect(mixLabel(every.filter((name) => !kit.includes(name)), every, groups)).toBe('no drums')
+    expect(mixLabel(every.slice(2), every, groups)).toBe('no vocals')
+    expect(mixLabel(['kick', 'snare'], every, groups)).toBe('kick + snare')
+    expect(mixLabel(['lead vocals', ...kit, 'bass', 'guitar'], every, groups)).toBe('no backing vocals, piano, other')
+    expect(mixLabel(every, every, groups)).toBe('mix')
+  })
+
+  it('keeps the parts of a group together and shortens their names under it', () => {
+    const stems = [
+      { name: 'lead vocals', group: 'vocals' },
+      { name: 'backing vocals', group: 'vocals' },
+      { name: 'kick', group: 'drums' },
+      { name: 'other drums', group: 'drums' },
+      { name: 'bass' },
+      { name: 'other', group: 'melody' },
+    ]
+    expect(stemSections(stems).map((s) => [s.group, s.stems.length])).toEqual([['vocals', 2], ['drums', 2], [null, 1], ['melody', 1]])
+    expect(stemSections<{ name: string; group?: string }>([{ name: 'a' }, { name: 'b' }]).map((s) => s.group)).toEqual([null, null])
+    expect(partName('lead vocals', 'vocals')).toBe('lead')
+    expect(partName('other drums', 'drums')).toBe('other')
+    expect(partName('kick', 'drums')).toBe('kick')
+    expect(partName('vocals', null)).toBe('vocals')
+  })
+
+  it('shows a grouped recipe as its groups, each with its number of parts', () => {
+    const outputs = ['lead vocals', 'backing vocals', 'kick', 'snare', 'bass', 'guitar']
+    const groups = { 'lead vocals': 'vocals', 'backing vocals': 'vocals', kick: 'drums', snare: 'drums', guitar: 'melody' }
+    expect(outputChips(outputs, groups)).toEqual([
+      { name: 'vocals', parts: 2 },
+      { name: 'drums', parts: 2 },
+      { name: 'bass', parts: 1 },
+      { name: 'melody', parts: 1 },
+    ])
+    expect(outputChips(['vocals', 'drums'])).toEqual([{ name: 'vocals', parts: 1 }, { name: 'drums', parts: 1 }])
   })
 })
 
@@ -117,6 +167,27 @@ describe('StemPlayer solo and mute', () => {
     player.toggleSolo('bass')
     expect(player.state.soloed.size).toBe(0)
     expect(player.isAudible('vocals')).toBe(false) // still muted
+  })
+
+  it('solos and mutes a group of stems as one', () => {
+    const player = new StemPlayer()
+    const kit = ['kick', 'snare']
+    player.toggleSoloMany(kit)
+    expect(kit.every((name) => player.isAudible(name))).toBe(true)
+    expect(player.isAudible('bass')).toBe(false)
+    player.toggleSoloMany(['bass'], true) // additive
+    expect(player.isAudible('bass') && player.isAudible('kick')).toBe(true)
+    player.toggleSoloMany(kit) // all of them soloed already: out again
+    expect([...player.state.soloed]).toEqual(['bass'])
+    player.toggleSoloMany(kit) // replaces the solo
+    expect([...player.state.soloed]).toEqual(kit)
+    player.toggleSoloMany(kit)
+
+    player.toggleMute('kick')
+    player.toggleMuteMany(kit) // one was muted: now both are
+    expect(kit.some((name) => player.isAudible(name))).toBe(false)
+    player.toggleMuteMany(kit)
+    expect(kit.every((name) => player.isAudible(name))).toBe(true)
   })
 
   it('notifies subscribers and reports position 0 before playback', () => {

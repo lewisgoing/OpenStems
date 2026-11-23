@@ -19,6 +19,21 @@ from openstems.recipes import builtin_recipes, load_recipes, user_recipes
 PLAN_RECIPES = {
     "full-song": ["vocals", "drums", "bass", "guitar", "piano", "other"],
     "full-song-best-vocals": ["vocals", "drums", "bass", "guitar", "piano", "other"],
+    "every-stem": [
+        "lead vocals",
+        "backing vocals",
+        "kick",
+        "snare",
+        "toms",
+        "hh",
+        "ride",
+        "crash",
+        "other drums",
+        "bass",
+        "guitar",
+        "piano",
+        "other",
+    ],
     "vocals-instrumental": ["vocals", "instrumental"],
     "acapella-clean": ["dry vocals", "lead", "backing"],
     "drum-kit": ["kick", "snare", "toms", "hh", "ride", "crash", "drums"],
@@ -80,6 +95,66 @@ def test_recipe_runs_and_stays_aligned(
         )
         full = read_audio(Path(drums.directory) / "Test Song - drums.wav")[0]
         assert np.array_equal(stems["drumless"], mix - full)
+
+
+def test_every_stem_parts_add_up_to_the_stems_they_were_split_from(
+    real_catalog_pipeline: Pipeline, song: Path, tmp_path: Path
+) -> None:
+    recipes = load_recipes(load_catalog())
+    recipe = recipes["every-stem"]
+    assert recipe.groups == {
+        "lead vocals": "vocals", "backing vocals": "vocals",
+        "kick": "drums", "snare": "drums", "toms": "drums", "hh": "drums",
+        "ride": "drums", "crash": "drums", "other drums": "drums",
+        "guitar": "melody", "piano": "melody", "other": "melody",
+    }  # fmt: skip
+    assert not recipe.experimental and recipe.residual_into == "other"
+
+    def run(recipe_id: str, sum_to_mix: bool = False) -> tuple[dict[str, np.ndarray], dict]:
+        options = RunOptions(quality="fast", sum_to_mix=sum_to_mix)
+        result = real_catalog_pipeline.run(song, recipes[recipe_id], tmp_path / "out", options)
+        audio = {s.name: read_audio(Path(result.directory) / s.file)[0] for s in result.stems}
+        return audio, result.manifest
+
+    stems, manifest = run("every-stem")
+    whole, _ = run("full-song-best-vocals")
+    kit = ["kick", "snare", "toms", "hh", "ride", "crash", "other drums"]
+    # The parts of a group are the stem it was split from, to float32 rounding.
+    assert np.allclose(sum(stems[n] for n in kit), whole["drums"], atol=1e-6)
+    assert np.allclose(stems["lead vocals"] + stems["backing vocals"], whole["vocals"], atol=1e-6)
+    for name in ("bass", "guitar", "piano", "other"):
+        assert np.array_equal(stems[name], whole[name])
+    # The manifest carries the group of each part, and nothing for a stem without one.
+    groups = {s["name"]: s.get("group") for s in manifest["stems"]}
+    assert groups["kick"] == "drums" and groups["bass"] is None
+
+    # Thirteen files, each sample in exactly one of them: with sum to mix they are the song.
+    exact, _ = run("every-stem", sum_to_mix=True)
+    assert np.allclose(sum(exact.values()), decode(song), atol=1e-5)
+
+
+def test_a_recipe_without_groups_keeps_its_cache_key() -> None:
+    # "group" is written only where there is one: old results stay valid.
+    recipe = load_recipes(load_catalog())["full-song"]
+    assert all("group" not in o for o in recipe.to_dict()["outputs"])
+    assert load_recipes(load_catalog())["every-stem"].to_dict()["outputs"][2] == {
+        "stem": "kick", "from": "kit.kick", "group": "drums",
+    }  # fmt: skip
+
+
+def test_a_group_cannot_share_a_name_with_a_stem() -> None:
+    from openstems.domain.recipe import recipe_from_dict
+
+    data = {
+        "id": "x",
+        "passes": [{"id": "sw", "model": "bs-roformer-sw"}],
+        "outputs": [
+            {"stem": "drums", "from": "sw.drums"},
+            {"stem": "bass", "from": "sw.bass", "group": "drums"},
+        ],
+    }
+    with pytest.raises(DomainError, match="also the name of an output stem"):
+        recipe_from_dict(data)
 
 
 def test_mega_53_writes_only_the_ticked_stems(

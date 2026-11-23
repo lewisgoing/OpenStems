@@ -15,6 +15,7 @@ from openstems.audio.decode import decode, probe
 from openstems.audio.midi import midi_bytes, read_midi_notes
 from openstems.audio.write import read_audio, write_audio
 from openstems.domain import OutputStem, PassSpec, Recipe
+from openstems.pipeline.mix import render_mix
 from openstems.pipeline.run import Pipeline, RunOptions
 from tests.conftest import RATE, tone
 
@@ -307,3 +308,68 @@ def test_watch_folder_through_the_api(tmp_path: Path, monkeypatch: pytest.Monkey
             time.sleep(0.05)
         assert [j["track_name"] for j in jobs] == ["Dropped In"]
         assert jobs[0]["state"] == "done" and jobs[0]["recipe_id"] == "full-song"
+
+
+# -- tempo sync for FL Studio -----------------------------------------------------
+
+
+def acid_tempo(path: Path) -> float | None:
+    """The tempo in a WAV's ``acid`` chunk, walking the chunks the way a reader does."""
+    data = path.read_bytes()
+    assert int.from_bytes(data[4:8], "little") == len(data) - 8  # the RIFF size is right
+    at = 12
+    while at + 8 <= len(data):
+        size = int.from_bytes(data[at + 4 : at + 8], "little")
+        if data[at : at + 4] == b"acid":
+            assert size == 24
+            assert int.from_bytes(data[at + 8 : at + 12], "little") == 0x04  # "stretch"
+            return float(np.frombuffer(data[at + 28 : at + 32], dtype="<f4")[0])
+        at += 8 + size + (size & 1)
+    return None
+
+
+@pytest.mark.parametrize("fmt", ["wav32f", "wav24"])
+def test_a_tempo_marks_a_wav_and_leaves_the_audio_alone(tmp_path: Path, fmt: str) -> None:
+    plain, marked = tmp_path / "plain.wav", tmp_path / "marked.wav"
+    audio = tone(0.5)[:, :-1]  # an odd number of frames, so 24-bit data needs its pad byte
+    write_audio(plain, audio, RATE, fmt)
+    write_audio(marked, audio, RATE, fmt, bpm=128.5)
+    assert acid_tempo(plain) is None
+    assert acid_tempo(marked) == 128.5
+    assert np.array_equal(read_audio(marked)[0], read_audio(plain)[0])
+    assert sf.info(str(marked)).frames == audio.shape[1]
+
+
+def test_flac_and_mp3_take_no_tempo_mark(tmp_path: Path) -> None:
+    for fmt, ext in (("flac", ".flac"), ("mp3", ".mp3")):
+        plain, marked = tmp_path / f"plain{ext}", tmp_path / f"marked{ext}"
+        write_audio(plain, tone(0.5), RATE, fmt)
+        write_audio(marked, tone(0.5), RATE, fmt, bpm=120.0)
+        assert marked.read_bytes() == plain.read_bytes()
+
+
+def test_tempo_sync_writes_the_detected_tempo_into_every_stem(pipeline, tmp_path) -> None:
+    source = tmp_path / "Click.wav"
+    write_audio(source, click_track(120.0, 10.0), RATE)
+    result = pipeline.run(source, full_song(), tmp_path / "out", RunOptions(tempo_sync=True))
+    bpm = result.manifest["analysis"]["bpm"]
+    assert bpm and result.manifest["options"]["tempo_sync"] is True
+    for stem in result.stems:
+        assert acid_tempo(Path(result.directory) / stem.file) == bpm
+    # A mix of those stems is in time with them, so it carries the same tempo.
+    mix = render_mix(Path(result.directory), [s.file for s in result.stems[:2]])
+    assert acid_tempo(Path(mix["path"])) == bpm
+
+
+def test_stems_are_unmarked_without_tempo_sync_or_a_tempo(pipeline, song, tmp_path) -> None:
+    source = tmp_path / "Click.wav"
+    write_audio(source, click_track(120.0, 10.0), RATE)
+    off = pipeline.run(source, full_song(), tmp_path / "off", RunOptions(detect_tempo_key=True))
+    assert "tempo_sync" not in off.manifest["options"]  # earlier runs keep their cache key
+    silent = tmp_path / "Silence.wav"
+    write_audio(silent, np.zeros((2, RATE * 3), dtype=np.float32), RATE)
+    none = pipeline.run(silent, full_song(), tmp_path / "none", RunOptions(tempo_sync=True))
+    assert none.manifest["analysis"]["bpm"] is None
+    for result in (off, none):
+        for stem in result.stems:
+            assert acid_tempo(Path(result.directory) / stem.file) is None

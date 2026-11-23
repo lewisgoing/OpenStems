@@ -25,7 +25,7 @@ import {
   trayPresentation,
   windowChrome,
 } from '../../electron/traylogic'
-import type { Job, Link, Model, Recipe, StemFile } from '@/api/client'
+import type { Job, Link, Model, Recipe, StemFile, SystemInfo } from '@/api/client'
 import { ToastProvider } from '@/components/toast'
 import { TooltipProvider } from '@/components/ui'
 import { SelectionProvider } from '@/state/selection'
@@ -47,6 +47,7 @@ const modelActions = { pull: { mutate: vi.fn() }, cancel: { mutate: vi.fn() } }
 const patchSettings = { mutate: vi.fn() }
 let jobs: Job[] | undefined = []
 let links: Link[] = []
+let system: Partial<SystemInfo> | undefined
 const linkActions = { add: { mutate: vi.fn() }, retry: { mutate: vi.fn() }, remove: { mutate: vi.fn() } }
 const MIX_PATH = 'D:\\out\\Song\\full-song\\Mixes\\Song - no vocals.wav'
 const createMix = { mutateAsync: vi.fn(async (_paths: string[]) => ({ path: MIX_PATH })) }
@@ -77,6 +78,7 @@ vi.mock('@/api/queries', () => ({
   useLinks: () => ({ data: links }),
   useLinkActions: () => linkActions,
   useCreateMix: () => createMix,
+  useSystem: () => ({ data: system }),
   useCreateJobs: () => createJobs,
   useModelActions: () => modelActions,
   useSettings: () => ({ data: settings }),
@@ -177,6 +179,7 @@ const job = (patch: Partial<Job>): Job => ({
   created_at: 0,
   started_at: null,
   finished_at: null,
+  notes: [],
   ...patch,
 })
 const doneJob = (id: string, track: string, finishedAt: number, names = SIX): Job =>
@@ -220,6 +223,7 @@ beforeEach(() => {
   links = []
   recipes = [recipe({})]
   models = []
+  system = undefined
 })
 
 /* ---- where the window goes -------------------------------------------------------- */
@@ -706,6 +710,49 @@ describe('the quick-drop window', () => {
     expect(screen.getByText('This recipe needs a download')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Download' }))
     expect(modelActions.pull.mutate).toHaveBeenCalledWith('m1', expect.anything())
+  })
+
+  it('says nothing about memory when the recipe fits', () => {
+    system = { cuda_available: true, gpu_backend: 'cuda', memory_budget_gb: 15.9, memory_gb: 15.9 }
+    recipes = [recipe({ fit: 'fits', fit_model: 'm1', memory_gb: 3.8 })]
+    render(quickDrop())
+    expect(screen.queryByTestId('fit-note')).not.toBeInTheDocument()
+  })
+
+  it('says in full when the recipe is tight or too large, on a Mac and on Windows, and still takes a drop', () => {
+    const leap = { id: 'leap', name: 'BS-RoFormer Leap Xe', bytes: 1, status: 'installed', stems: SIX, fit: 'no', memory_gb: 7.2 } as unknown as Model
+    models = [leap]
+    recipes = [recipe({ fit: 'no', fit_model: 'leap', memory_gb: 7.2 })]
+    system = { cuda_available: true, gpu_backend: 'cuda', memory_budget_gb: 6, memory_gb: 6 }
+    const { unmount } = render(quickDrop())
+    expect(screen.getByTestId('fit-note')).toHaveTextContent(
+      'BS-RoFormer Leap Xe needs about 7.2 GB. This PC has about 6.0 GB of VRAM for a model. It may not fit. If it does not, it runs on the CPU, which is much slower.',
+    )
+    fireEvent.change(screen.getByTestId('file-input'), { target: { files: [new File(['x'], 'a.mp3')] } })
+    expect(createJobs.mutate).toHaveBeenCalledTimes(1)
+    unmount()
+
+    bridge.info.platform = 'darwin'
+    try {
+      recipes = [recipe({ fit: 'tight', fit_model: 'leap', memory_gb: 4.2 })]
+      system = { cuda_available: true, gpu_backend: 'mps', memory_budget_gb: 4.5, memory_gb: 8 }
+      render(quickDrop())
+      const note = screen.getByTestId('fit-note')
+      expect(note).toHaveTextContent(
+        'BS-RoFormer Leap Xe needs about 4.2 GB. This Mac has about 4.5 GB of memory for a model. It should fit. If it does not, it runs on the CPU, which is much slower.',
+      )
+      expect(note.className).not.toMatch(/warn|danger/)
+    } finally {
+      bridge.info.platform = 'win32'
+    }
+  })
+
+  it('shows under a job what did not go as planned', () => {
+    jobs = [doneJob('a', 'Song', 1), { ...doneJob('b', 'Other', 2), notes: ['BS-RoFormer SW ran on the CPU: not enough GPU memory'] }]
+    render(quickDrop())
+    const [newest, older] = rows()
+    expect(within(newest!).getByRole('note')).toHaveTextContent('BS-RoFormer SW ran on the CPU: not enough GPU memory')
+    expect(within(older!).queryByRole('note')).not.toBeInTheDocument()
   })
 
   it('shows the output format and changes the setting when another is picked', async () => {

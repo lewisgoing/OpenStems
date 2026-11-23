@@ -44,6 +44,7 @@ def model_from_dict(model_id: str, raw: Mapping[str, Any], *, custom: bool = Fal
             experimental=bool(raw.get("experimental", False)),
             custom=custom,
             notes=raw.get("notes", ""),
+            memory_gb=float(raw["memory_gb"]) if raw.get("memory_gb") is not None else None,
         )
     except KeyError as exc:
         raise DomainError(f"model {model_id!r} is missing field {exc.args[0]!r}") from exc

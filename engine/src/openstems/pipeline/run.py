@@ -20,7 +20,9 @@ from openstems.audio import decode as audio_decode
 from openstems.audio.write import extension, write_audio, write_peaks
 from openstems.catalog.catalog import Catalog
 from openstems.catalog.store import ModelStore
-from openstems.domain.errors import Cancelled, DomainError
+from openstems.domain.errors import Cancelled, DomainError, OutOfMemory
+from openstems.domain.memory import CPU_NOTE
+from openstems.domain.model import ModelSpec
 from openstems.domain.naming import DEFAULT_TEMPLATE, render_name, safe_component
 from openstems.domain.quality import RunSettings, resolve_settings
 from openstems.domain.recipe import MIX, Recipe, check_against_models, split_ref
@@ -50,6 +52,7 @@ class RunOptions:
     trim_silence: bool = False
     normalize: bool = False
     detect_tempo_key: bool = False
+    tempo_sync: bool = False
     midi_stems: list[str] = field(default_factory=list)
     force: bool = False
 
@@ -62,6 +65,8 @@ class RunOptions:
             "normalize": self.normalize,
             "tempo_key": self.detect_tempo_key,
             "midi": sorted(self.midi_stems),
+            # Only when on, so the cache key of every earlier run stays what it was.
+            **({"tempo_sync": True} if self.tempo_sync else {}),
         }
 
 
@@ -124,6 +129,7 @@ def stem_set_from_manifest(directory: Path, manifest: dict[str, Any]) -> StemSet
                 peaks=raw.get("peaks"),
                 midi=raw.get("midi"),
                 offset=raw.get("offset", 0),
+                group=raw.get("group", ""),
             )
         )
     return StemSet(directory=str(directory), manifest=manifest, stems=stems)
@@ -220,7 +226,7 @@ class Pipeline:
         )
         samples = mix.shape[1]
 
-        signals, provenance = self._run_passes(recipe, settings, mix, report, cancel)
+        signals, provenance, notes = self._run_passes(recipe, settings, mix, report, cancel)
         outputs = self._collect_outputs(recipe, signals, mix, options)
         for name, audio in outputs.items():
             if audio.shape != mix.shape:
@@ -244,6 +250,7 @@ class Pipeline:
             out_dir,
             options,
             extras,
+            notes,
             report,
             cancel,
         )
@@ -257,8 +264,28 @@ class Pipeline:
         mix: np.ndarray,
         report: Callable[[str, float, str], None],
         cancel: CancelToken,
+    ) -> tuple[dict[str, np.ndarray], dict[str, dict[str, Any]], list[str]]:
+        """Run every pass in order. Returns the signals, the provenance of each pass and
+        the notes: what did not go as planned, such as a model that ran on the CPU."""
+        on_cpu: set[str] = set()  # models that did not fit on the GPU in this run
+        try:
+            signals, provenance = self._passes(recipe, settings, mix, report, cancel, on_cpu)
+        finally:
+            # The CPU was for this job only: the next one tries the GPU again.
+            for model_id in on_cpu:
+                self.host.evict(model_id)
+        notes = [f"{self.catalog.get(m).name} {CPU_NOTE}" for m in recipe.model_ids if m in on_cpu]
+        return signals, provenance, notes
+
+    def _passes(
+        self,
+        recipe: Recipe,
+        settings: dict[str, RunSettings],
+        mix: np.ndarray,
+        report: Callable[[str, float, str], None],
+        cancel: CancelToken,
+        on_cpu: set[str],
     ) -> tuple[dict[str, np.ndarray], dict[str, dict[str, Any]]]:
-        """Run every pass in order. Returns the signals and, per pass, its provenance."""
         needed = _needed_stems(recipe)
         signals: dict[str, np.ndarray] = {MIX: mix}
         provenance: dict[str, dict[str, Any]] = {}
@@ -276,21 +303,20 @@ class Pipeline:
                 label = f"{spec.name}" if len(recipe.passes) == 1 else f"{p.id}: {spec.name}"
                 base = _PREP + span * done_runs / runs
                 report("running", base, f"Loading {spec.name}")
-                loaded = self.host.get(spec)
 
-                def on_progress(f: float, base: float = base, label: str = label) -> None:
-                    report("running", base + span * f / runs, label)
+                def on_progress(
+                    f: float, base: float = base, label: str = label, model_id: str = model_id
+                ) -> None:
+                    suffix = " (on the CPU)" if model_id in on_cpu else ""
+                    report("running", base + span * f / runs, label + suffix)
 
-                try:
-                    out = loaded.separate(source, settings[model_id], on_progress, cancel, keep)
-                except Exception as exc:
-                    if "OutOfMemory" not in type(exc).__name__ or len(self.host.loaded_ids) < 2:
-                        raise
-                    # Other warm models were holding VRAM: drop them all and try once more.
-                    del exc, loaded
-                    self.host.clear()
-                    loaded = self.host.get(spec)
-                    out = loaded.separate(source, settings[model_id], on_progress, cancel, keep)
+                def moved_to_cpu(base: float = base, name: str = spec.name) -> None:
+                    report("running", base, f"Not enough GPU memory: {name} runs on the CPU")
+
+                out = self._separate(
+                    spec, source, settings[model_id], on_progress, cancel, keep, on_cpu,
+                    moved_to_cpu,
+                )  # fmt: skip
                 for stem, audio in out.items():
                     if stem in sums:
                         sums[stem] += audio
@@ -311,11 +337,62 @@ class Pipeline:
                         "id": m,
                         "sha256": self.catalog.get(m).checkpoint.sha256,
                         "settings": settings[m].as_dict(),
+                        **({"device": "cpu"} if m in on_cpu else {}),
                     }
                     for m in p.models
                 ],
             }
         return signals, provenance
+
+    def _separate(
+        self,
+        spec: ModelSpec,
+        source: np.ndarray,
+        settings: RunSettings,
+        on_progress: Callable[[float], None],
+        cancel: CancelToken,
+        keep: frozenset[str],
+        on_cpu: set[str],
+        moved_to_cpu: Callable[[], None],
+    ) -> dict[str, np.ndarray]:
+        """Run one model. When memory runs out, loading or running, the run degrades
+        instead of failing: the runner has already tried smaller batches, so first every
+        other warm model is dropped and the model tried again, then it runs on the CPU for
+        this job. ``on_cpu`` collects the models that ended up there. A machine that runs
+        on the CPU anyway has only the first of those steps: no move, and no note."""
+        if spec.id not in on_cpu:
+            for attempt in range(2):
+                loaded = None
+                try:
+                    loaded = self.host.get(spec)
+                    return loaded.separate(source, settings, on_progress, cancel, keep)
+                except Exception as exc:
+                    if not _out_of_memory(exc):
+                        raise
+                    # Other warm models may be holding the memory: worth one more try.
+                    retry = not attempt and any(m != spec.id for m in self.host.loaded_ids)
+                    # A failed load leaves no model to ask where it ran.
+                    cpu_already = (
+                        self.host.loads_on_cpu(spec) if loaded is None else _runs_on_cpu(loaded)
+                    )
+                    if cpu_already and not retry:
+                        raise DomainError(_NO_MEMORY.format(name=spec.name)) from exc
+                del loaded
+                if not retry:
+                    break
+                self.host.release()
+            on_cpu.add(spec.id)
+            moved_to_cpu()
+            # Nothing may stay on the GPU: on a Mac the CPU run draws on the same memory.
+            self.host.release()
+        try:
+            return self.host.get(spec, device="cpu").separate(
+                source, settings, on_progress, cancel, keep
+            )
+        except Exception as exc:
+            if not _out_of_memory(exc):
+                raise
+            raise DomainError(_NO_MEMORY.format(name=spec.name)) from exc
 
     def _collect_outputs(
         self,
@@ -371,6 +448,7 @@ class Pipeline:
         out_dir: Path,
         options: RunOptions,
         extras: dict[str, Any],
+        notes: list[str],
         report: Callable[[str, float, str], None],
         cancel: CancelToken,
     ) -> StemSet:
@@ -412,7 +490,8 @@ class Pipeline:
                 if out_rate != SAMPLE_RATE:
                     wanted = round(final.shape[1] * out_rate / SAMPLE_RATE)
                     final = _fit_length(audio_decode.resample(final, SAMPLE_RATE, out_rate), wanted)
-                write_audio(tmp / file_name, final, out_rate, options.output_format)
+                bpm = extras.get("bpm") if options.tempo_sync else None
+                write_audio(tmp / file_name, final, out_rate, options.output_format, bpm)
                 midi_name = None
                 midi_writer = extras.get("midi", {}).get(out.name)
                 if midi_writer is not None:
@@ -431,6 +510,7 @@ class Pipeline:
                         peaks=peaks_name,
                         midi=midi_name,
                         offset=int(extras.get("offsets", {}).get(out.name, 0)),
+                        group=out.group,
                     )
                 )
                 report(
@@ -467,6 +547,8 @@ class Pipeline:
                     for d in recipe.derived
                 ],
                 "stems": [s.to_dict() for s in stems],
+                # What did not go as planned, in plain words. Empty for an ordinary run.
+                "notes": notes,
             }
             (tmp / MANIFEST_NAME).write_text(
                 json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -477,6 +559,28 @@ class Pipeline:
             shutil.rmtree(tmp, ignore_errors=True)
             raise
         return StemSet(directory=str(out_dir), manifest=manifest, stems=stems)
+
+
+_NO_MEMORY = (
+    "{name}: not enough memory to run this model, even on the CPU. "
+    "Close other apps and try again, or choose a smaller model."
+)
+
+
+def _out_of_memory(exc: BaseException) -> bool:
+    """Whether a load or a run failed for lack of memory, on any device."""
+    if isinstance(exc, (OutOfMemory, MemoryError)):
+        return True
+    # Imported here: the API process reads manifests through this module without torch.
+    from openstems.engines.device import is_oom
+
+    # "mps" lets the Apple GPU's "Invalid buffer size" count as well. A failed load has no
+    # model to ask for its device, and no other device words an error that way.
+    return is_oom(exc, "mps")
+
+
+def _runs_on_cpu(loaded: object) -> bool:
+    return str(getattr(loaded, "device", "")).startswith("cpu")
 
 
 def _needed_stems(recipe: Recipe) -> dict[str, set[str]]:

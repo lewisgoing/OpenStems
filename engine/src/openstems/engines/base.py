@@ -61,4 +61,7 @@ class LoadedModel(Protocol):
 class Engine(Protocol):
     name: str
 
-    def load(self, spec: ModelSpec, store: ModelStore) -> LoadedModel: ...
+    def load(self, spec: ModelSpec, store: ModelStore, device: str | None = None) -> LoadedModel:
+        """Build the model on the device the settings choose, or on ``device`` ("cpu")
+        when the pipeline asks for one."""
+        ...

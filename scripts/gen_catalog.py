@@ -34,7 +34,8 @@ HEADER = """\
 # they download at runtime and are sha256-verified before loading.
 #
 # stems are listed in the order the model emits them. chunk_size is the config's chunk
-# rounded down to a multiple of the model's STFT hop.
+# rounded down to a multiple of the model's STFT hop. memory_gb is the peak GPU memory of
+# one run with half precision on CUDA, measured (docs/benchmarks.md, "Every model and preset").
 """
 
 
@@ -52,6 +53,31 @@ class Entry:
     license: str | None = None
     notes: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
+
+
+# Peak VRAM in GB of one run at the preset's batch size with fp16 on CUDA, copied from
+# docs/benchmarks.md ("Every model and preset"). The batch is 1 except for DrumSep, measured
+# at its preset's batch of 4, which is the larger figure. A model missing here gets an
+# estimate from its checkpoint size (openstems.domain.memory).
+MEMORY_GB: dict[str, float] = {
+    "bs-roformer-sw": 2.32,
+    "bs-roformer-leap-xe-vocals": 3.80,
+    "bs-roformer-leap-xe-instrumental": 3.80,
+    "bs-roformer-hyperace-v2-vocals": 2.96,
+    "bs-roformer-hyperace-v2-instrumental": 2.96,
+    "bs-roformer-karaoke-becruily": 2.66,
+    "bs-roformer-karaoke-anvuew": 2.00,
+    "bs-roformer-dereverb-anvuew": 1.47,
+    "bs-roformer-mega-53": 9.50,
+    "mel-roformer-vocals-becruily": 1.51,
+    "mel-roformer-instrumental-becruily": 1.51,
+    "mel-roformer-deux-becruily": 1.77,
+    "mel-roformer-kim-vocals": 1.51,
+    "mel-roformer-dereverb-anvuew": 1.51,
+    "mel-roformer-denoise-debleed-gabox": 1.74,
+    "mel-roformer-guitar-becruily": 0.90,
+    "mdx23c-drumsep": 1.09,
+}
 
 
 ARCH = {
@@ -326,6 +352,8 @@ def render(info: dict[str, Any]) -> str:
         note = f"  # config says {info['config_chunk']}; rounded down to the STFT hop"
     lines.append(f"chunk_size = {info['chunk_size']}{note}")
     lines.append(f"num_overlap = {info['num_overlap']}")
+    if e.id in MEMORY_GB:
+        lines.append(f"memory_gb = {MEMORY_GB[e.id]:.2f}")
     if e.seed:
         lines.append("seed = true")
     if e.experimental:

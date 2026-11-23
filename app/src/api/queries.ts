@@ -186,6 +186,8 @@ export function usePatchSettings() {
     mutationFn: (patch: SettingsPatch) => unwrap(api.PATCH('/v1/settings', { body: patch })),
     onSuccess: (settings) => {
       queryClient.setQueryData(keys.settings, settings)
+      // Switching the GPU on or off changes the memory budget, and with it every fit.
+      void queryClient.invalidateQueries({ queryKey: keys.system })
       void queryClient.invalidateQueries({ queryKey: keys.models })
       void queryClient.invalidateQueries({ queryKey: keys.recipes })
     },

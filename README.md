@@ -20,6 +20,7 @@
   <a href="#install">Install</a> ·
   <a href="#what-it-does">What it does</a> ·
   <a href="#recipes">Recipes</a> ·
+  <a href="#memory">Memory</a> ·
   <a href="#macos">macOS</a> ·
   <a href="#from-the-terminal">Terminal</a> ·
   <a href="#local-api">API</a> ·
@@ -56,8 +57,10 @@ anyway"). It needs no administrator rights and adds a Start menu entry.
 **First launch.** The app looks at the graphics card, sets up its Python environment for it
 (it downloads Python and PyTorch, about 3 GB, into your user profile), checks the GPU, and
 offers to download the recommended models (3.4 GB). After that, drop a file on the window.
+On a machine with little memory the app offers lighter models in place of the ones that
+would not fit: see [Memory](#memory).
 
-**Mac.** A preview that has not been run on a Mac by us: see [macOS](#macos).
+**Mac.** A preview, run on one Mac so far (an M1 Max): see [macOS](#macos).
 
 **Uninstalling** removes the app and that Python environment. Your models, outputs and
 settings stay where they are. Logs are in `%LOCALAPPDATA%\OpenStems\logs`, and Settings has an
@@ -75,7 +78,8 @@ environment (several GB). Details:
 | --- | --- |
 | **NVIDIA** | Built and tested on an RTX 5070 Ti (16 GB). The GTX 16 and RTX 20 series and later use the standard build. The GTX 900 and 10 series get a build of their own, as an untested preview: [`docs/adr/0012-older-nvidia.md`](docs/adr/0012-older-nvidia.md). |
 | **AMD Radeon** (untested preview) | A Radeon that AMD's PyTorch for Windows supports: RX 9070, RX 9070 XT, RX 9060 XT, RX 7900 XTX, RX 7700, PRO W7900 or AI PRO R9700, with AMD driver 26.2.2 or newer. See [AMD Radeon](#amd-radeon). |
-| **Mac** (preview, not run on a Mac by us) | Apple Silicon (M1 or later) and macOS 14 or later. Intel Macs are not supported. See [macOS](#macos). |
+| **Mac** (preview, run on one M1 Max so far) | Apple Silicon (M1 or later) and macOS 14 or later. Intel Macs are not supported. See [macOS](#macos). |
+| **Memory** | A Mac with 16 GB, or a current card with 6 GB, fits every standard recipe. An 8 GB Mac and a 4 GB card fit the main ones. See [Memory](#memory). |
 | **To build from source** | [uv](https://docs.astral.sh/uv/), Node 22 and pnpm. |
 
 ## What it does
@@ -145,7 +149,8 @@ menu bar, and a few things differ: see [macOS](#macos).
   Right-click for Quick drop, Show OpenStems and Quit. A double click opens the full app.
 - **Closing the window leaves the app in the tray**, with the engine ready for the next drop.
   Quit from the icon's menu. Settings > Tray turns this off, and can start the app with
-  Windows, in the tray. After ten minutes without a job the engine frees its graphics memory.
+  Windows, in the tray. After ten minutes without a job the engine frees its graphics memory
+  (after one minute on a machine with little memory).
 
 The decisions behind it are in [`docs/adr/0008-tray.md`](docs/adr/0008-tray.md).
 
@@ -173,6 +178,9 @@ the naming template.
   source sample rate" to get 48 kHz stems from a 48 kHz file.
 - **Tempo and key in file names.** `{bpm}` and `{key}` work in the naming template, for
   example `{track} {bpm}bpm {key} - {stem}`.
+- **Tempo-synced stems for FL Studio.** With "Tempo-sync for FL Studio" on in Settings, WAV
+  stems and mixes carry the detected tempo, and FL Studio stretches them to your project's
+  tempo when you drop them in. WAV only, and as accurate as the detected tempo.
 - **Watch folder.** New files that appear in a folder are queued with the default recipe and
   quality once they have finished copying.
 - **Stem to MIDI.** A draggable `.mid` next to vocal, bass and melody stems ("Write MIDI" in
@@ -209,6 +217,7 @@ a quality of Fast, Balanced or Best.
 | --- | --- |
 | `full-song` | vocals, drums, bass, guitar, piano, other |
 | `full-song-best-vocals` | the same, with vocals from Leap Xe |
+| `every-stem` | the deepest split, 13 stems: lead and backing vocals; kick, snare, toms, hh, ride, crash and other drums; bass; guitar, piano and other |
 | `vocals-instrumental` | vocals, instrumental |
 | `acapella-clean` | dry vocals, lead, backing |
 | `drum-kit` | kick, snare, toms, hh, ride, crash, drums |
@@ -221,6 +230,63 @@ The seven recommended models these need are a 3.4 GB download; the catalog has 1
 VRAM per model are in [`docs/benchmarks.md`](docs/benchmarks.md). Your own recipes are TOML
 files in `%APPDATA%\OpenStems\recipes`; see the built-in ones in
 `engine/src/openstems/recipes/`.
+
+## Memory
+
+Models differ in how much memory they need, and the app compares each one with your machine.
+Models and recipes are marked as fitting, tight, or too large. Nothing is blocked: you can
+run a recipe that is marked too large.
+
+| Machine | `full-song`, `drum-kit`, `melody`, `drumless` | `full-song-best-vocals`, `every-stem`, `vocals-instrumental`, `acapella-clean` | `cleanup-dereverb`, `cleanup-denoise` | `mega-53` |
+| --- | --- | --- | --- | --- |
+| Mac, 8 GB | tight | too large | fits | too large |
+| Mac, 16 or 24 GB | fits | fits | fits | too large |
+| Mac, 32 GB or more | fits | fits | fits | fits |
+| Card, 4 GB | fits | tight | fits | too large |
+| Card, 6 or 8 GB | fits | fits | fits | too large |
+| Card, 10 or 11 GB | fits | fits | fits | tight |
+| Card, 12 GB or more | fits | fits | fits | fits |
+| GTX 900 or 10 series, 4 GB | tight, or too large (see below) | too large | fits | too large |
+| GTX 900 or 10 series, 6 GB | fits | too large | fits | too large |
+| GTX 900 or 10 series, 8 or 11 GB | fits | tight (fits at 11 GB) | fits | too large |
+
+"Card" is an NVIDIA card from the GTX 16 or RTX 20 series on, or an AMD Radeon. The GTX 900
+and 10 series have rows of their own because they run the models at full precision, which
+needs more memory, as a Mac does.
+
+**Where the table comes from.** Each model's memory was measured on an RTX 5070 Ti
+([`docs/benchmarks.md`](docs/benchmarks.md)). The rows for cards from 4 to 12 GB follow from
+those measurements. The rows for Macs and for the GTX 900 and 10 series are estimates, set
+on the careful side: nothing has been measured on a Mac or on such a card yet, so a recipe
+may do better than its row says. A Mac shares its memory between the GPU, the system and
+your other apps, so the app plans with part of it: about 4.5 GB of 8, and 10.5 GB of 16.
+The table uses round sizes, and a card reports a little less than its name says. That
+matters in one row: on a 4 GB GTX 900 or 10 series card the main recipes are estimated at
+3.99 GB, so the app will most likely mark them too large there. They can still be run.
+
+**"Tight"** means it should run, with little to spare. Closing other apps helps, most of all
+on a Mac.
+
+**"Too large"** is the app's estimate, not a verdict. The engine always tries the GPU
+first, and a recipe marked too large may still fit.
+
+**"Ran on the CPU".** When the graphics memory runs out during a job, the job does not fail.
+The engine first frees the other models it had loaded and tries again. If that is not
+enough, it runs that one model on the processor instead. The stems are the same, but it
+takes many times longer, and the finished job says so: "ran on the CPU: not enough GPU
+memory". Only that job is affected: the next one starts on the GPU again.
+
+**The first download fits the machine.** Where a recommended model is too large, the app
+offers a lighter model for the same job in its place. On an 8 GB Mac that means becruily's
+Mel-Band vocal and instrumental models where a larger machine gets Leap Xe, and anvuew's
+karaoke model where it gets becruily's. The built-in recipes still name the larger models, so
+on such a machine pick the lighter model itself, under "Single model" in the recipe menu.
+
+On a machine with little memory the engine also keeps only one model loaded, and frees it
+after a minute without a job.
+
+The rules, and what is measured against what is estimated:
+[`docs/adr/0015-low-memory.md`](docs/adr/0015-low-memory.md).
 
 ## macOS
 
@@ -287,7 +353,8 @@ this repository's releases or built yourself.
   Mac to be slower and to use more memory than the figures in `docs/benchmarks.md`. No Mac
   figures exist yet.
 - The GPU shares the Mac's memory with everything else. The engine keeps at most half of it
-  for loaded models.
+  for loaded models, and only one model on a Mac with 8 GB. What fits which Mac is under
+  [Memory](#memory).
 - **Notifications** are the system's. macOS shows them only for an app with a valid
   signature, which is one reason the build is signed ad hoc. Not yet seen on a Mac.
 - **Updates are manual while the app has no Developer ID.** The app says when a new version
@@ -365,13 +432,14 @@ uv run openstems separate "song.mp3" --recipe full-song --quality balanced --out
 ```
 
 `doctor` prints the Python and PyTorch versions, the GPU backend (CUDA, ROCm, or MPS on a
-Mac), the GPU name and VRAM, and whether FFmpeg decoding works. It exits non-zero without a
+Mac), the GPU name and VRAM, the memory one model run may use, and whether FFmpeg decoding
+works. It exits non-zero without a
 working GPU.
 
 | Command | What it does |
 | --- | --- |
 | `separate <files or folders>` | `--recipe` or `--model` (a single model), `--quality fast \| balanced \| best`, `--out`, `--sum-to-mix`, `--format`, `--match-source-rate`, `--stems`, `--midi vocals,bass`, `--trim-silence`, `--normalize`, `--force` |
-| `models list \| pull \| verify` | The catalog, downloads with resume and sha256 verification, and a full re-hash of what is installed. `pull --set seed` downloads the seven recommended models (3.4 GB); `--set all` fetches all 17 |
+| `models list \| pull \| verify` | The catalog, downloads with resume and sha256 verification, and a full re-hash of what is installed. `pull --set seed` downloads the seven recommended models (3.4 GB); `--set recommended` downloads that set cut to what this machine's memory can run; `--set all` fetches all 17 |
 | `models check` | Tests that every catalog URL is still live |
 | `models import CHECKPOINT --config CONFIG --arch ARCH` | Adds a checkpoint of your own |
 | `recipes list`, `config show`, `config set <key> <value>` | Recipes and settings |
@@ -381,6 +449,12 @@ command again returns from the cache. Ctrl+C stops within a chunk and leaves no 
 
 Settings live in `%APPDATA%\OpenStems\settings.json`; `OPENSTEMS_MODELS_DIR`,
 `OPENSTEMS_OUTPUT_DIR` and `OPENSTEMS_CACHE_DIR` override the folders.
+
+`OPENSTEMS_MEMORY_GB=<number>` makes the engine plan as if the machine (on a PC with a
+graphics card: the card) had that much memory, for example `OPENSTEMS_MEMORY_GB=8` on a
+32 GB Mac. It is for testing and support: it changes what is marked as fitting, the first
+download and how many models stay loaded, but it does not take memory away, so nothing
+really runs out. See [`docs/adr/0015-low-memory.md`](docs/adr/0015-low-memory.md).
 
 ## Local API
 
@@ -398,6 +472,9 @@ prints one JSON line with both. Everything the CLI does is there, with live prog
 | Events | `WS /v1/events`: job and download progress, in order |
 
 One GPU worker process runs the queue, keeps the last model warm, and is restarted if it dies.
+Models and recipes carry `fit` ("fits", "tight" or "no") against the machine's memory, the
+system info carries the budget (`memory_budget_gb`) and where models run (`memory_kind`),
+and a job carries `notes`, such as a model that ran on the CPU.
 Requests without the token get a 401. `uv run openstems openapi --out openapi.json` exports the
 schema that the app's TypeScript client is generated from.
 

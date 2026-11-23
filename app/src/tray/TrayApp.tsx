@@ -9,9 +9,10 @@ import { useEngineStatus } from '@/api/status'
 import { Audition, type AuditionState } from '@/audio/audition'
 import { StemPlayer } from '@/audio/player'
 import { DropOverlay } from '@/components/DropOverlay'
+import { JobNotes } from '@/components/Fit'
 import { FormatSelect } from '@/components/FormatSelect'
 import { LinkRow, useOpenLinks } from '@/components/LinkRow'
-import { QUALITY, useCurrentRecipe, useRecipeOptions } from '@/components/RecipeBar'
+import { QUALITY, useCurrentFit, useCurrentRecipe, useRecipeOptions } from '@/components/RecipeBar'
 import { ToastProvider, useToast } from '@/components/toast'
 import { Button, IconButton, ProgressBar, Segmented, Select, Tooltip, TooltipProvider } from '@/components/ui'
 import { UpdatePill } from '@/components/Update'
@@ -19,7 +20,7 @@ import { Wordmark } from '@/components/Wordmark'
 import { cn, formatBytes, formatPercent, stemColor } from '@/lib/format'
 import { isMac, shortcut, words } from '@/platform'
 import { PendingDownload, useDropFlow, usePaste } from '@/state/dropflow'
-import { type MixFile, capitalize, mixLabel, useMixFile } from '@/state/mix'
+import { type MixFile, capitalize, groupsOf, mixLabel, useMixFile } from '@/state/mix'
 import { SelectionProvider, useSelection } from '@/state/selection'
 import { ACTIVE, StartButton, StateIcon, StemsMark, statusText } from '@/views/QueueView'
 
@@ -151,7 +152,7 @@ function TrayShell() {
     )
   }
   return (
-    <SelectionProvider settings={settings}>
+    <SelectionProvider settings={settings} recipes={recipes}>
       <QuickDrop recipes={recipes} models={models.models} />
     </SelectionProvider>
   )
@@ -488,6 +489,7 @@ function DropTarget({ recipes, models }: { recipes: Recipe[]; models: Model[] })
   const { recipe, missing } = useCurrentRecipe(recipes, models)
   const options = useRecipeOptions(recipes, models)
   const noStems = Boolean(recipe?.selectable_outputs) && selection.outputs.length === 0
+  const { fit, note } = useCurrentFit(recipes, models)
   return (
     <div className="flex flex-none flex-col gap-2 p-3">
       <Select
@@ -511,6 +513,12 @@ function DropTarget({ recipes, models }: { recipes: Recipe[]; models: Model[] })
             Needs a {formatBytes(missing.reduce((sum, model) => sum + model.bytes, 0))} download. A drop asks first.
           </p>
         )
+      )}
+      {/* Tight or too large for this machine: said in full, since a chip has no room here. */}
+      {note && (
+        <p className="m-0 text-[12px] text-muted" role="note" data-testid="fit-note" data-fit={fit}>
+          {note}
+        </p>
       )}
     </div>
   )
@@ -622,6 +630,9 @@ export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mix
         </div>
       )}
 
+      {/* Under the row, at its full width: beside the stems handle there is no room to read it. */}
+      <JobNotes notes={job.notes} wrap className="mt-1 ml-[24px]" />
+
       {hasStems && expanded && (
         <div
           className="stem-pills mt-2 ml-[24px] flex flex-wrap gap-1.5"
@@ -723,7 +734,7 @@ function MixBar({ job, mixer }: { job: Job; mixer: Mixer }) {
       ? 'Click a stem to leave it out'
       : empty
         ? 'Nothing is in the mix'
-        : capitalize(mixLabel(chosen, names))
+        : capitalize(mixLabel(chosen, names, groupsOf(job.stems)))
   return (
     <div className="mix-bar mt-2 ml-[24px] flex items-center gap-2" data-testid="mix-bar" onClick={(event) => event.stopPropagation()}>
       <button

@@ -14,8 +14,10 @@ import { Button, Dialog, Segmented, TooltipProvider } from './components/ui'
 import { UpdatePill } from './components/Update'
 import { Wordmark } from './components/Wordmark'
 import { cn, formatBytes } from './lib/format'
+import { recommendedModels, recommendedReason } from './lib/memory'
 import { isMac, modKey, shortcut, words } from './platform'
 import { PendingDownload, useDropFlow, usePaste } from './state/dropflow'
+import { useMachine } from './state/machine'
 import { SelectionProvider } from './state/selection'
 import { HistoryView } from './views/HistoryView'
 import { ModelsView } from './views/ModelsView'
@@ -207,7 +209,7 @@ function Shell() {
     )
   }
   return (
-    <SelectionProvider settings={settings}>
+    <SelectionProvider settings={settings} recipes={recipes}>
       <Workspace recipes={recipes} models={models.models} />
     </SelectionProvider>
   )
@@ -261,6 +263,7 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
             directory: job.output_dir,
             stems: job.stems,
             analysis: job.analysis,
+            notes: job.notes,
           }
         : null,
     )
@@ -335,6 +338,7 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
             directory={panel.directory}
             stems={panel.stems}
             analysis={panel.analysis}
+            notes={panel.notes}
             onClose={() => setPanel(null)}
           />
           </div>
@@ -352,12 +356,15 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
 
 const SEED_OFFER_KEY = 'openstems.seed-offer.v1'
 
-function SeedOffer({ models, onStarted }: { models: Model[]; onStarted: () => void }) {
+export function SeedOffer({ models, onStarted }: { models: Model[]; onStarted: () => void }) {
   const actions = useModelActions()
   const toast = useToast()
   const nothingInstalled = models.every((m) => m.status !== 'installed' && !m.download)
   const [open, setOpen] = useState(() => nothingInstalled && localStorage.getItem(SEED_OFFER_KEY) === null)
-  const seed = models.filter((m) => m.seed)
+  const machine = useMachine()
+  // What the engine recommends for this machine. Where it is not the usual set, say why.
+  const seed = recommendedModels(models)
+  const reason = recommendedReason(models, machine)
   const close = () => {
     localStorage.setItem(SEED_OFFER_KEY, 'seen')
     setOpen(false)
@@ -367,7 +374,7 @@ function SeedOffer({ models, onStarted }: { models: Model[]; onStarted: () => vo
       open={open}
       onOpenChange={(next) => !next && close()}
       title="Download the recommended models?"
-      description={`${seed.length} models, ${formatBytes(seed.reduce((sum, m) => sum + m.bytes, 0))} in total. They cover every standard recipe: full song, vocals, drum kit, melody and cleanup. You can also download models one at a time later.`}
+      description={`${seed.length} models, ${formatBytes(seed.reduce((sum, m) => sum + m.bytes, 0))} in total. ${reason ?? 'They cover every standard recipe: full song, vocals, drum kit, melody and cleanup.'} You can also download models one at a time later.`}
       footer={
         <>
           <Button onClick={close}>Not now</Button>

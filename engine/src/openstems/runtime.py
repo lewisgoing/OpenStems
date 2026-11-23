@@ -52,6 +52,7 @@ class Runtime:
             trim_silence=s.trim_silence,
             normalize=s.normalize,
             detect_tempo_key=s.detect_tempo_key,
+            tempo_sync=s.tempo_sync,
             midi_stems=list(MIDI_STEMS) if s.write_midi else [],
         )
         for key, value in overrides.items():

@@ -112,6 +112,7 @@ class Index:
                 "midi": s.get("midi"),
                 "samples": s.get("samples"),
                 "sample_rate": s.get("sample_rate"),
+                "group": s.get("group") or None,
             }
             for s in manifest.get("stems", [])
         ]

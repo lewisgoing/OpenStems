@@ -712,6 +712,12 @@ export interface components {
             /** Message */
             message: string;
             /**
+             * Notes
+             * @description What did not go as planned, such as a model that ran on the CPU.
+             * @default []
+             */
+            notes: string[];
+            /**
              * Options
              * @default {}
              */
@@ -831,16 +837,41 @@ export interface components {
             download?: components["schemas"]["DownloadState"] | null;
             /** Experimental */
             experimental: boolean;
+            /**
+             * Fit
+             * @description Against the machine's memory budget. 'tight': it fits with less than 15 percent to spare. 'no' is advice: the model may still be run.
+             * @default fits
+             * @enum {string}
+             */
+            fit: "fits" | "tight" | "no";
             /** Id */
             id: string;
             /** License */
             license: string;
             /** Loader */
             loader: string;
+            /**
+             * Memory Estimated
+             * @description The figure was not measured the way this machine runs.
+             * @default false
+             */
+            memory_estimated: boolean;
+            /**
+             * Memory Gb
+             * @description What one run needs on this machine at batch 1, in GB.
+             * @default 0
+             */
+            memory_gb: number;
             /** Name */
             name: string;
             /** Notes */
             notes: string;
+            /**
+             * Recommended
+             * @description Part of the set offered for the first download here.
+             * @default false
+             */
+            recommended: boolean;
             /** Seed */
             seed: boolean;
             /**
@@ -905,14 +936,39 @@ export interface components {
             download_bytes: number;
             /** Experimental */
             experimental: boolean;
+            /**
+             * Fit
+             * @description Whether the recipe's largest model fits this machine. Models run one at a time, so a recipe is as large as its largest model.
+             * @default fits
+             * @enum {string}
+             */
+            fit: "fits" | "tight" | "no";
+            /**
+             * Fit Model
+             * @description The model that decides the fit.
+             */
+            fit_model?: string | null;
             /** Id */
             id: string;
+            /**
+             * Memory Gb
+             * @description What that model needs, in GB.
+             * @default 0
+             */
+            memory_gb: number;
             /** Missing Models */
             missing_models: string[];
             /** Models */
             models: string[];
             /** Name */
             name: string;
+            /**
+             * Output Groups
+             * @description The group of each output stem that is a part of a larger one, such as kick in drums. The parts of a group add up to it; the group is not written.
+             */
+            output_groups?: {
+                [key: string]: string;
+            };
             /** Outputs */
             outputs: string[];
             /** Passes */
@@ -1073,6 +1129,8 @@ export interface components {
             output_format: "wav32f" | "wav24" | "flac" | "mp3";
             /** Sum To Mix */
             sum_to_mix: boolean;
+            /** Tempo Sync */
+            tempo_sync: boolean;
             /** Trim Silence */
             trim_silence: boolean;
             /** Use Gpu */
@@ -1112,6 +1170,8 @@ export interface components {
             output_format?: ("wav32f" | "wav24" | "flac" | "mp3") | null;
             /** Sum To Mix */
             sum_to_mix?: boolean | null;
+            /** Tempo Sync */
+            tempo_sync?: boolean | null;
             /** Trim Silence */
             trim_silence?: boolean | null;
             /** Use Gpu */
@@ -1129,6 +1189,11 @@ export interface components {
         StemFile: {
             /** File */
             file: string;
+            /**
+             * Group
+             * @description The larger stem this one is a part of, if any.
+             */
+            group?: string | null;
             /** Midi */
             midi?: string | null;
             /** Name */
@@ -1209,6 +1274,22 @@ export interface components {
             gpu_name?: string | null;
             /** Logs Dir */
             logs_dir: string;
+            /** Memory Budget Gb */
+            memory_budget_gb?: number | null;
+            /** Memory Gb */
+            memory_gb?: number | null;
+            /**
+             * Memory Kind
+             * @default cpu
+             * @enum {string}
+             */
+            memory_kind: "cuda" | "mps" | "cpu";
+            /**
+             * Memory Overridden
+             * @description OPENSTEMS_MEMORY_GB stands in for the detected memory.
+             * @default false
+             */
+            memory_overridden: boolean;
             /**
              * Notes
              * @default []

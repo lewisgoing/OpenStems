@@ -22,15 +22,19 @@ from openstems.engines.base import CancelToken
 
 PROGRESS_INTERVAL = 0.1  # seconds between progress events
 IDLE_UNLOAD_SECONDS = 600.0  # with no job for this long, the warm models are unloaded
+# On a small machine a warm model is memory the user's other apps want back.
+SMALL_IDLE_UNLOAD_SECONDS = 60.0
 
 
-def idle_unload_seconds() -> float:
-    """How long the worker keeps models warm without a job. Zero or less means for ever."""
+def idle_unload_seconds(small: bool = False) -> float:
+    """How long the worker keeps models warm without a job. Zero or less means for ever.
+    ``small`` is for a machine with little memory, which lets go sooner."""
+    default = SMALL_IDLE_UNLOAD_SECONDS if small else IDLE_UNLOAD_SECONDS
     raw = os.environ.get("OPENSTEMS_IDLE_UNLOAD_SECONDS", "")
     try:
-        return float(raw) if raw.strip() else IDLE_UNLOAD_SECONDS
+        return float(raw) if raw.strip() else default
     except ValueError:
-        return IDLE_UNLOAD_SECONDS
+        return default
 
 
 def next_command(commands: Any, host: Any, idle_seconds: float) -> Any:
@@ -69,6 +73,7 @@ def stem_set_payload(result: Any) -> dict[str, Any]:
         "cached": result.cached,
         "cache_key": result.manifest.get("cache_key"),
         "analysis": result.manifest.get("analysis") or {},
+        "notes": list(result.manifest.get("notes") or []),
         "stems": [
             {
                 "name": s.name,
@@ -79,6 +84,7 @@ def stem_set_payload(result: Any) -> dict[str, Any]:
                 "offset": s.offset,
                 "samples": s.samples,
                 "sample_rate": s.sample_rate,
+                "group": s.group or None,
             }
             for s in result.stems
         ],
@@ -141,8 +147,9 @@ def worker_main(
         events.put(("fatal", f"{exc.__class__.__name__}: {exc}"))
         return
     events.put(("ready", os.getpid()))
-    idle_seconds = idle_unload_seconds()
     while True:
+        # The host learns how small the machine is when it first loads a model.
+        idle_seconds = idle_unload_seconds(runtime.pipeline.host.small)
         command = next_command(commands, runtime.pipeline.host, idle_seconds)
         kind = command[0]
         if kind == "shutdown":

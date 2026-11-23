@@ -1,6 +1,7 @@
 import { type ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { JobOptions, Quality, Recipe, Settings } from '@/api/client'
 import type { NewJobs } from '@/api/queries'
+import { suggestedRecipe } from '@/lib/memory'
 
 /** What dropped files will run: a recipe or a single model, plus quality and options. */
 export interface Selection {
@@ -26,9 +27,11 @@ export function useSelection(): SelectionApi {
   return api
 }
 
-function load(settings: Settings): Selection {
+function load(settings: Settings, recipes: Recipe[]): Selection {
+  // Before the user has chosen anything: the default recipe, or one that fits this machine
+  // when the default does not. A choice the user made is never changed.
   const fallback: Selection = {
-    target: settings.default_recipe,
+    target: suggestedRecipe(settings.default_recipe, recipes),
     quality: settings.default_quality,
     sumToMix: settings.sum_to_mix,
     outputs: [],
@@ -41,8 +44,8 @@ function load(settings: Settings): Selection {
   }
 }
 
-export function SelectionProvider({ settings, children }: { settings: Settings; children: ReactNode }) {
-  const [selection, setSelection] = useState<Selection>(() => load(settings))
+export function SelectionProvider({ settings, recipes = [], children }: { settings: Settings; recipes?: Recipe[]; children: ReactNode }) {
+  const [selection, setSelection] = useState<Selection>(() => load(settings, recipes))
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(selection))
   }, [selection])

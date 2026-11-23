@@ -5,7 +5,8 @@
 # they download at runtime and are sha256-verified before loading.
 #
 # stems are listed in the order the model emits them. chunk_size is the config's chunk
-# rounded down to a multiple of the model's STFT hop.
+# rounded down to a multiple of the model's STFT hop. memory_gb is the peak GPU memory of
+# one run with half precision on CUDA, measured (docs/benchmarks.md, "Every model and preset").
 
 [models.bs-roformer-sw]
 name = "BS-RoFormer SW"
@@ -17,6 +18,7 @@ stems = ["bass", "drums", "other", "vocals", "guitar", "piano"]
 sample_rate = 44100
 chunk_size = 588800
 num_overlap = 2
+memory_gb = 2.32
 seed = true
 notes = "Six-stem model by jarredou. Weight license undocumented: personal use only, do not redistribute."
 
@@ -44,6 +46,7 @@ stems = ["vocals"]
 sample_rate = 44100
 chunk_size = 881152  # config says 881559; rounded down to the STFT hop
 num_overlap = 2
+memory_gb = 3.80
 seed = true
 notes = "By unwa. Best public vocal score found: 11.79 dB SDR on MVSEP Multisong."
 
@@ -71,6 +74,7 @@ stems = ["instrumental"]
 sample_rate = 44100
 chunk_size = 881152  # config says 881559; rounded down to the STFT hop
 num_overlap = 2
+memory_gb = 3.80
 seed = true
 notes = "By unwa."
 
@@ -99,6 +103,7 @@ stems = ["vocals"]
 sample_rate = 44100
 chunk_size = 960000
 num_overlap = 4
+memory_gb = 2.96
 notes = "By unwa. Alternate for A/B listening and ensembles."
 
 [[models.bs-roformer-hyperace-v2-vocals.files]]
@@ -126,6 +131,7 @@ stems = ["instrumental"]
 sample_rate = 44100
 chunk_size = 960000
 num_overlap = 4
+memory_gb = 2.96
 notes = "By unwa. Alternate for A/B listening and ensembles."
 
 [[models.bs-roformer-hyperace-v2-instrumental.files]]
@@ -152,6 +158,7 @@ stems = ["lead"]
 sample_rate = 44100
 chunk_size = 881664  # config says 882000; rounded down to the STFT hop
 num_overlap = 4
+memory_gb = 2.66
 seed = true
 notes = "Splits lead vocals from backing vocals and instruments."
 
@@ -179,6 +186,7 @@ stems = ["lead"]
 sample_rate = 44100
 chunk_size = 640000
 num_overlap = 4
+memory_gb = 2.00
 notes = "Alternate lead and backing split."
 
 [[models.bs-roformer-karaoke-anvuew.files]]
@@ -205,6 +213,7 @@ stems = ["dry"]
 sample_rate = 44100
 chunk_size = 448000
 num_overlap = 2
+memory_gb = 1.47
 seed = true
 
 [[models.bs-roformer-dereverb-anvuew.files]]
@@ -231,6 +240,7 @@ stems = ["accordion", "acoustic-guitar", "back-vocal", "banjo", "bass", "bassoon
 sample_rate = 44100
 chunk_size = 881664  # config says 882000; rounded down to the STFT hop
 num_overlap = 2
+memory_gb = 9.50
 experimental = true
 notes = "Experimental: at least 16 GB of VRAM recommended."
 
@@ -258,6 +268,7 @@ stems = ["vocals"]
 sample_rate = 44100
 chunk_size = 352800
 num_overlap = 2
+memory_gb = 1.51
 notes = "Alternate for A/B listening and ensembles."
 
 [[models.mel-roformer-vocals-becruily.files]]
@@ -284,6 +295,7 @@ stems = ["instrumental"]
 sample_rate = 44100
 chunk_size = 352800
 num_overlap = 2
+memory_gb = 1.51
 notes = "Alternate for A/B listening and ensembles."
 
 [[models.mel-roformer-instrumental-becruily.files]]
@@ -310,6 +322,7 @@ stems = ["vocals", "instrumental"]
 sample_rate = 44100
 chunk_size = 573300
 num_overlap = 2
+memory_gb = 1.77
 notes = "Emits vocals and instrumental from one pass."
 
 [[models.mel-roformer-deux-becruily.files]]
@@ -336,6 +349,7 @@ stems = ["vocals"]
 sample_rate = 44100
 chunk_size = 352800
 num_overlap = 2
+memory_gb = 1.51
 notes = "By Kimberley Jensen. Alternate for A/B listening and ensembles."
 
 [[models.mel-roformer-kim-vocals.files]]
@@ -362,6 +376,7 @@ stems = ["dry"]
 sample_rate = 44100
 chunk_size = 352800
 num_overlap = 2
+memory_gb = 1.51
 notes = "Alternate de-reverb."
 
 [[models.mel-roformer-dereverb-anvuew.files]]
@@ -388,6 +403,7 @@ stems = ["clean"]
 sample_rate = 44100
 chunk_size = 485100
 num_overlap = 2
+memory_gb = 1.74
 seed = true
 
 [[models.mel-roformer-denoise-debleed-gabox.files]]
@@ -414,6 +430,7 @@ stems = ["guitar"]
 sample_rate = 44100
 chunk_size = 485100
 num_overlap = 2
+memory_gb = 0.90
 
 [[models.mel-roformer-guitar-becruily.files]]
 kind = "checkpoint"
@@ -439,6 +456,7 @@ stems = ["kick", "snare", "toms", "hh", "ride", "crash"]
 sample_rate = 44100
 chunk_size = 130560
 num_overlap = 4
+memory_gb = 1.09
 seed = true
 notes = "Six drum stems. Weights license undocumented: personal use only."
 

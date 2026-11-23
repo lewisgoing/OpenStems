@@ -160,7 +160,7 @@ function recommendForMac(arch: string): VariantChoice {
   return {
     variant: 'mps',
     gpu: 'Apple Silicon',
-    note: 'Mac support is new and has not been run on a Mac by OpenStems. It needs an Apple Silicon Mac with macOS 14 or later.',
+    note: 'Mac support is new: it has been run on one Mac so far, an M1 Max. It needs an Apple Silicon Mac with macOS 14 or later.',
   }
 }
 

@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Job, Link, StemFile } from '@/api/client'
+import type { Job, Link, Model, Recipe, StemFile, SystemInfo } from '@/api/client'
 import { StemsPanel } from '@/components/StemsPanel'
 import { ToastProvider, useToast } from '@/components/toast'
 import { CommitInput, ProgressBar, Segmented, TooltipProvider } from '@/components/ui'
@@ -23,6 +23,7 @@ const actions = {
 let jobs: Job[] = []
 
 let links: Link[] = []
+let system: Partial<SystemInfo> | undefined
 const linkActions = { add: { mutate: vi.fn() }, retry: { mutate: vi.fn() }, remove: { mutate: vi.fn() } }
 const MIX_PATH = 'D:\\out\\Song\\full-song\\Mixes\\Song - no vocals.wav'
 const createMix = { mutateAsync: vi.fn(async (_paths: string[]) => ({ path: MIX_PATH })) }
@@ -44,6 +45,7 @@ vi.mock('@/api/queries', () => ({
   useLinks: () => ({ data: links }),
   useLinkActions: () => linkActions,
   useCreateMix: () => createMix,
+  useSystem: () => ({ data: system }),
   useSettings: () => ({ data: { output_format: 'wav32f' } }),
   usePatchSettings: () => ({ mutate: vi.fn() }),
 }))
@@ -85,6 +87,7 @@ const job = (patch: Partial<Job>): Job => ({
   created_at: 0,
   started_at: null,
   finished_at: null,
+  notes: [],
   ...patch,
 })
 
@@ -110,6 +113,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   jobs = []
   links = []
+  system = undefined
 })
 
 describe('QueueView', () => {
@@ -215,6 +219,92 @@ describe('QueueView', () => {
     expect(third).toHaveTextContent('Queued, 1 ahead')
   })
 
+  it('shows what did not go as planned in a job, under its status', () => {
+    jobs = [job({ id: 'a', state: 'done', notes: ['BS-RoFormer SW ran on the CPU: not enough GPU memory'] }), job({ id: 'b', state: 'done' })]
+    view()
+    const [first, second] = screen.getAllByTestId('job-row')
+    expect(within(first!).getByRole('note')).toHaveTextContent('BS-RoFormer SW ran on the CPU: not enough GPU memory')
+    expect(within(first!).getByTestId('job-status')).toHaveTextContent('Done')
+    expect(within(second!).queryByRole('note')).not.toBeInTheDocument()
+  })
+
+  describe('a recipe and this machine', () => {
+    const recipe = (patch: Partial<Recipe>): Recipe =>
+      ({
+        id: 'full-song',
+        name: 'Full song',
+        description: '',
+        outputs: ['vocals', 'drums'],
+        use_case: 'Full song',
+        experimental: false,
+        missing_models: [],
+        download_bytes: 0,
+        selectable_outputs: false,
+        supports_sum_to_mix: false,
+        fit: 'fits',
+        fit_model: 'sw',
+        memory_gb: 3.8,
+        ...patch,
+      }) as Recipe
+    const leap = { id: 'leap', name: 'BS-RoFormer Leap Xe', bytes: 1, status: 'installed', stems: ['vocals'], fit: 'no', memory_gb: 7.2 } as unknown as Model
+    const best = recipe({ id: 'best', name: 'Best vocals', fit: 'no', fit_model: 'leap', memory_gb: 7.2 })
+    const bar = (recipes: Recipe[], onAddFiles = vi.fn()) =>
+      wrap(<QueueView recipes={recipes} models={[leap]} selectedJob={null} onSelect={vi.fn()} onAddFiles={onAddFiles} onPasteLink={vi.fn()} />)
+
+    beforeEach(() => {
+      system = { cuda_available: true, gpu_backend: 'cuda', memory_budget_gb: 6, memory_gb: 6, memory_overridden: false }
+    })
+
+    it('shows no mark when the recipe fits', () => {
+      bar([recipe({})])
+      expect(screen.queryByTestId('recipe-fit')).not.toBeInTheDocument()
+    })
+
+    it('marks a tight recipe without a warning colour', () => {
+      bar([recipe({ fit: 'tight' })])
+      const chip = screen.getByTestId('recipe-fit')
+      expect(chip).toHaveTextContent('tight fit')
+      expect(chip.className).not.toMatch(/warn|danger/)
+    })
+
+    it('marks a recipe that is too large, names the model in the list, and still takes files', async () => {
+      localStorage.setItem('openstems.selection.v1', JSON.stringify({ target: 'best' }))
+      const onAddFiles = vi.fn()
+      bar([best, recipe({})], onAddFiles)
+      expect(screen.getByTestId('recipe-fit')).toHaveTextContent('too large for this PC')
+      fireEvent.change(screen.getByTestId('file-input'), { target: { files: [new File(['x'], 'a.mp3')] } })
+      expect(onAddFiles).toHaveBeenCalledTimes(1)
+
+      await userEvent.click(screen.getByRole('combobox', { name: 'Recipe' }))
+      const option = await screen.findByRole('option', { name: /Best vocals/ })
+      const mark = within(option).getByTestId('fit-chip')
+      expect(mark).toHaveTextContent('too large')
+      expect(mark).toHaveAttribute(
+        'title',
+        'BS-RoFormer Leap Xe needs about 7.2 GB. This PC has about 6.0 GB of VRAM for a model. It may not fit. If it does not, it runs on the CPU, which is much slower.',
+      )
+      expect(within(await screen.findByRole('option', { name: /Full song/ })).queryByTestId('fit-chip')).not.toBeInTheDocument()
+      // The single model is in the list too, with its own mark.
+      expect(within(await screen.findByRole('option', { name: /BS-RoFormer Leap Xe/ })).getByTestId('fit-chip')).toHaveTextContent('too large')
+    })
+
+    it('starts on a recipe that fits when the default does not', () => {
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <TooltipProvider>
+            <ToastProvider>
+              <SelectionProvider settings={{ ...settings, default_recipe: 'best' }} recipes={[best, recipe({})]}>
+                <QueueView recipes={[best, recipe({})]} models={[leap]} selectedJob={null} onSelect={vi.fn()} onAddFiles={vi.fn()} onPasteLink={vi.fn()} />
+              </SelectionProvider>
+            </ToastProvider>
+          </TooltipProvider>
+        </QueryClientProvider>,
+      )
+      expect(screen.getByRole('combobox', { name: 'Recipe' })).toHaveTextContent('Full song')
+      expect(screen.queryByTestId('recipe-fit')).not.toBeInTheDocument()
+    })
+  })
+
   it('reorders queued jobs by dragging one onto another', () => {
     jobs = [job({ id: 'a' }), job({ id: 'b', track_name: 'Second' }), job({ id: 'c', track_name: 'Third' })]
     view()
@@ -233,6 +323,14 @@ describe('StemsPanel', () => {
     wrap(
       <StemsPanel title="Song" subtitle="Full song" directory="D:\\out\\Song\\full-song" stems={stems} analysis={{ bpm: 127.6, key: 'A minor' }} onClose={vi.fn()} />,
     )
+
+  it('says under the title when a model ran on the CPU, and nothing otherwise', () => {
+    panel()
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+    cleanup()
+    wrap(<StemsPanel title="Song" subtitle="Full song" directory="D:\\out" stems={stems} notes={['BS-RoFormer SW ran on the CPU: not enough GPU memory']} onClose={vi.fn()} />)
+    expect(screen.getByRole('note')).toHaveTextContent('BS-RoFormer SW ran on the CPU: not enough GPU memory')
+  })
 
   it('lists a row and waveform per stem, with tempo and key', () => {
     panel()
@@ -300,6 +398,62 @@ describe('StemsPanel: the mix you hear', () => {
     fireEvent.dragStart(screen.getByTestId('drag-mix'))
     expect(window.openstems.startDrag).toHaveBeenCalledWith([stems[2]!.path])
     expect(createMix.mutateAsync).not.toHaveBeenCalled()
+  })
+})
+
+describe('StemsPanel: a set with groups', () => {
+  const stems = [
+    { ...stem('lead vocals'), group: 'vocals' },
+    { ...stem('backing vocals'), group: 'vocals' },
+    { ...stem('kick'), group: 'drums' },
+    { ...stem('snare'), group: 'drums' },
+    { ...stem('other drums'), group: 'drums' },
+    stem('bass'),
+  ]
+  const panel = () =>
+    wrap(<StemsPanel title="Song" subtitle="Every stem" directory="D:\\out\\Song\\every-stem" stems={stems} onClose={vi.fn()} />)
+
+  it('puts a heading over the parts of each group and none over a stem on its own', () => {
+    panel()
+    expect(screen.getAllByTestId('stem-row')).toHaveLength(6)
+    const headings = screen.getAllByTestId('stem-group')
+    expect(headings.map((h) => h.getAttribute('data-group'))).toEqual(['vocals', 'drums'])
+    expect(headings[1]).toHaveTextContent('Drums')
+    expect(headings[1]).toHaveTextContent('3 parts')
+    // Under its heading a part goes by its short name; its full name stays for a screen reader.
+    const row = screen.getByRole('button', { name: 'Drag other drums' })
+    expect(row).toHaveTextContent(/^other$/)
+  })
+
+  it('solos and mutes every part of a group from its heading', async () => {
+    panel()
+    await userEvent.click(screen.getByRole('button', { name: 'Solo drums' }))
+    for (const name of ['kick', 'snare', 'other drums']) {
+      expect(screen.getByRole('button', { name: `Solo ${name}` })).toHaveAttribute('aria-pressed', 'true')
+    }
+    expect(screen.getByRole('button', { name: 'Solo bass' })).toHaveAttribute('aria-pressed', 'false')
+    // What is heard is the whole kit, and the mix says so.
+    expect(screen.getByTestId('drag-mix')).toHaveAccessibleName('Drag the mix: Drums')
+    await userEvent.click(screen.getByRole('button', { name: 'Solo drums' }))
+    expect(screen.getByRole('button', { name: 'Solo kick' })).toHaveAttribute('aria-pressed', 'false')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Mute vocals' }))
+    expect(screen.getByRole('button', { name: 'Mute lead vocals' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Mute vocals' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('writes a group as one file when the pointer comes near, then drags it', async () => {
+    panel()
+    const handle = screen.getByRole('button', { name: 'Drag the drums as one file' })
+    // Nothing is written for a group nobody reached for, and a drag before the file exists does nothing.
+    expect(createMix.mutateAsync).not.toHaveBeenCalled()
+    fireEvent.dragStart(handle)
+    expect(window.openstems.startDrag).not.toHaveBeenCalled()
+    fireEvent.pointerEnter(handle)
+    await waitFor(() => expect(createMix.mutateAsync).toHaveBeenCalledWith([stems[2]!.path, stems[3]!.path, stems[4]!.path]))
+    await waitFor(() => expect(handle).toHaveAttribute('data-path', MIX_PATH))
+    fireEvent.dragStart(handle)
+    expect(window.openstems.startDrag).toHaveBeenCalledWith([MIX_PATH])
   })
 })
 

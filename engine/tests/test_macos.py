@@ -335,10 +335,11 @@ def test_the_doctor_on_a_mac(mac: pytest.MonkeyPatch) -> None:
     assert report.vram_gb == 16.0
     assert report.ok and not report.problems and not report.notes
     lines = report.lines()
-    assert len(lines) == 8
+    assert len(lines) == 9
     assert ("GPU backend", "MPS macOS 14.5") in lines
     assert ("GPU available", "yes") in lines
     assert ("Memory (shared)", "16.0 GB") in lines
+    assert ("Memory for one model", "10.5 GB") in lines
 
     result = CliRunner().invoke(app, ["doctor"])
     assert result.exit_code == 0
@@ -588,7 +589,11 @@ def test_the_machines_memory_is_read_where_the_system_offers_it(
 
     monkeypatch.setattr(procutil.os, "sysconf", unknown, raising=False)
     assert procutil.physical_memory_bytes() is None
-    monkeypatch.delattr(procutil.os, "sysconf")  # Windows has no such call
+    monkeypatch.delattr(procutil.os, "sysconf")  # Windows has no such call: it has its own
+    monkeypatch.setattr(procutil, "_windows_memory_bytes", lambda: 32 * 1024**3)
+    monkeypatch.setattr(procutil.os, "name", "nt")
+    assert procutil.physical_memory_bytes() == 32 * 1024**3
+    monkeypatch.setattr(procutil.os, "name", "posix")
     assert procutil.physical_memory_bytes() is None
 
 

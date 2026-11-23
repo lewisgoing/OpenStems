@@ -41,6 +41,7 @@ class Stem:
     peaks: str | None = None
     midi: str | None = None
     offset: int = 0  # samples trimmed from the start (0 unless silence trim is on)
+    group: str = ""  # the larger stem this one is a part of, if any
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -55,6 +56,7 @@ class Stem:
             "pass": self.pass_id,
             "models": list(self.models),
             "settings": self.settings,
+            **({"group": self.group} if self.group else {}),
         }
 
 

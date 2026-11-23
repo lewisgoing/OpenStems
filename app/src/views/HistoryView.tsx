@@ -2,6 +2,7 @@ import { Layers, RotateCw, Search } from 'lucide-react'
 import { useDeferredValue, useState } from 'react'
 import type { Recipe, StemSet } from '@/api/client'
 import { useStemSets } from '@/api/queries'
+import { FitChip } from '@/components/Fit'
 import { Button, Select, Tooltip } from '@/components/ui'
 import { cn, stemColor } from '@/lib/format'
 
@@ -72,7 +73,7 @@ export function HistoryView({ recipes, selected, onSelect, onRerun }: HistoryVie
                   <Select
                     label="Run another recipe"
                     value=""
-                    options={recipes.filter((r) => !r.selectable_outputs).map((r) => ({ value: r.id, label: r.name, description: r.outputs.join(', ') }))}
+                    options={recipes.filter((r) => !r.selectable_outputs).map((r) => ({ value: r.id, label: r.name, description: r.outputs.join(', '), trailing: <FitChip fit={r.fit} short /> }))}
                     onChange={(recipeId) => onRerun(set.track_path, recipeId)}
                     className="btn-sm"
                     minWidth={320}

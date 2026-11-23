@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.3.1 (2026-11-23)
+
+- **Every stem.** A new recipe, `every-stem`, chains four models into the deepest split
+  in one run: lead and backing vocals, the drum kit piece by piece (kick, snare, toms, hh,
+  ride, crash and what is left of the drums), bass, guitar, piano and other. Thirteen
+  files, and each sample of the song is in exactly one of them, so they can all go into
+  a DAW together. In the stems panel the parts sit under Vocals, Drums and Melody: solo
+  or mute a whole group from its heading, or drag it out as one file. On Windows and on
+  a Mac alike (not run on a Mac by us). `docs/adr/0017-every-stem.md`.
+- Recipes of your own can put stems in a group with `group = "drums"` on an output.
+- **Tempo-synced stems for FL Studio.** A new setting, off by default, writes the detected
+  tempo into WAV stems and mixes, so FL Studio stretches them to the project's tempo when
+  they are dropped in. Tried in FL Studio 2026 on Windows. It is as accurate as the detected
+  tempo; FLAC and MP3 cannot carry it. `docs/adr/0016-tempo-sync.md`.
+- **Machines with little memory.** The app now knows how much memory each model needs and
+  how much the machine has for one run, and marks every model and recipe as fitting, tight
+  or too large. Think of a Mac with 8 GB, or a card with 4 to 6 GB. Nothing is blocked. The
+  README has a table of what fits where; `docs/adr/0015-low-memory.md` has the rules.
+- **A job that runs out of graphics memory no longer fails.** The engine frees its other
+  loaded models and tries again, then runs that one model on the CPU for that job. The job
+  finishes, slower, and says "ran on the CPU: not enough GPU memory". The note is also in
+  the manifest. Out-of-memory errors from the Apple GPU are now recognised here too.
+- **The first download fits the machine.** Where a recommended model is too large, a lighter
+  model for the same use is offered in its place. `openstems models pull --set recommended`
+  does the same from the terminal.
+- A machine with a budget under 8 GB keeps one model loaded at most and frees it after one
+  minute without a job, not ten.
+- Checkpoints are loaded without holding the weights in memory twice.
+- `OPENSTEMS_MEMORY_GB=<number>` makes the engine plan as if the machine had that much
+  memory, so a large machine can act as a small one. It is for testing and support, and
+  does not take memory away.
+- `openstems doctor` prints the memory one model run may use, and `doctor --json` prints
+  the whole report as JSON.
+- The engine's API process no longer imports PyTorch for the system check: it runs the
+  doctor in a process of its own and keeps the report between starts, so it holds no
+  graphics memory and the app does not wait for the check each time it starts.
+- The memory figures for Macs, for the CPU and for the GTX 900 and 10 series are estimates,
+  and none of this has run on a small machine yet. On a card with 16 GB everything fits and
+  nothing changes.
+- **Run on a Mac.** The 0.3.0 Mac build was installed from the dmg on an M1 Max on
+  2026-11-23: first-run setup, a separation on the Apple GPU and the menu bar item all
+  worked. Speed is not measured yet, and no Mac with 8 or 16 GB has been tried.
+- First-run setup says what is wrong when the system refuses its folder, and how to fix it,
+  where it used to show "EACCES". On a Mac the usual cause is an `Application Support`
+  folder that belongs to root.
+- Two tests that depended on timing no longer fail on the Mac runner.
+
 ## 0.3.0 (2026-11-23)
 
 - **macOS on Apple Silicon (preview, not yet run on a Mac by us).** OpenStems can be built

@@ -92,3 +92,34 @@ export function macBundlePath(exe: string): string {
 export function devGroupArgs(platform: string): string[] {
   return platform === 'darwin' ? ['--no-default-groups', '--group', 'dev', '--group', 'mps'] : []
 }
+
+/** What a failed file operation says about itself (Node's `ErrnoException`). */
+export interface FileError {
+  code?: string
+  path?: string
+  message: string
+}
+
+/**
+ * A setup failure in words the user can act on. Only a refused write gets its own text: the
+ * raw message ("EACCES: permission denied, mkdir ...") names no cause and no way out.
+ *
+ * On a Mac the usual cause is a `~/Library/Application Support` that belongs to root, after
+ * a migration or an installer run with sudo. It was seen on the first Mac this app ran on.
+ */
+export function explainSetupError(error: FileError, platform: string): string {
+  if (error.code !== 'EACCES' && error.code !== 'EPERM') return error.message
+  const folder = error.path ?? 'its data folder'
+  if (platform === 'darwin') {
+    const parent = error.path ? error.path.slice(0, error.path.lastIndexOf('/')) || '/' : null
+    const fix = parent ? ` To fix it, open Terminal and run: sudo chown "$(id -un)" "${parent}"` : ''
+    return (
+      `macOS did not let OpenStems create ${folder}. The folder it belongs in is not writable by your account, ` +
+      `which is a fault on this Mac and stops other new apps too.${fix} Then try again.`
+    )
+  }
+  return (
+    `Windows did not let OpenStems write to ${folder}. Check that your account may write there and that ` +
+    'security software is not blocking it, then try again.'
+  )
+}

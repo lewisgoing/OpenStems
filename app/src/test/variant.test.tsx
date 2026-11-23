@@ -180,11 +180,11 @@ describe('the builds on a Mac', () => {
     expect(VARIANT_DOWNLOAD.mps).toMatch(/^about \d+ MB$/)
   })
 
-  it('is recommended without looking at the adapters, and says it has not been run on a Mac', () => {
+  it('is recommended without looking at the adapters, and says how far it has been tried', () => {
     const choice = recommendVariant([{ name: 'NVIDIA GeForce RTX 3060', vendor: 'nvidia' }], mac)
     expect(choice.variant).toBe('mps')
     expect(choice.gpu).toBe('Apple Silicon')
-    expect(choice.note).toMatch(/has not been run on a Mac by OpenStems/)
+    expect(choice.note).toMatch(/has been run on one Mac so far, an M1 Max/)
     expect(recommendVariant([], mac)).toEqual(choice)
   })
 
@@ -309,8 +309,9 @@ describe('the engine build row', () => {
     const build = await screen.findByRole('combobox', { name: 'Engine build' })
     expect(build).toHaveTextContent('NVIDIA')
     await user.click(build)
-    expect(screen.getByRole('option', { name: /NVIDIA \(older\)/ })).toBeInTheDocument()
-    await user.click(screen.getByRole('option', { name: /AMD Radeon/ }))
+    // The list opens a moment after the click: wait for it instead of expecting it at once.
+    expect(await screen.findByRole('option', { name: /NVIDIA \(older\)/ })).toBeInTheDocument()
+    await user.click(await screen.findByRole('option', { name: /AMD Radeon/ }))
     expect(bridge.switchBuild).not.toHaveBeenCalled()
     expect(await screen.findByText(/Your models, stems and settings are not touched/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Switch and download' }))
