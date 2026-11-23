@@ -13,6 +13,11 @@ export interface SetupStatus {
   state: 'ready' | 'needed' | 'running' | 'failed'
   log: string[]
   error?: string
+  /**
+   * The running setup is the short one after an app update: the environment exists and only
+   * what changed is installed. It starts by itself and needs nothing from the user.
+   */
+  updating?: boolean
   /** False in development, where the engine runs from the source tree and is never set up here. */
   managed: boolean
   /** The build setup installs next: the installed one, else the recommended one. */

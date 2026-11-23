@@ -123,6 +123,12 @@ records the build beside the app version; a marker from before this change reads
 - Whether half precision behaves; the RoFormer and MDX23C presets use it on the GPU, and the
   self-test compares it with the CPU.
 
+## First report from a Radeon
+
+On 2026-11-22 a user with a Radeon installed 0.2.0 and reported that it works well. The card
+model, the speed and the self-test result were not recorded, so the questions above are
+answered only as far as "separation runs and sounds right on at least one supported card".
+
 ## For whoever tests on a Radeon
 
 1. Install the app; setup should offer the AMD build. Let it finish.

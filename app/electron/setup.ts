@@ -68,7 +68,8 @@ export async function detectAdapters(): Promise<GpuAdapter[]> {
  * install the pinned requirements for this machine's GPU vendor, then run the doctor check.
  *
  * The environment lives in the user's profile, outside the install folder, next to the
- * models folder. An update rebuilds it only when the app version changes.
+ * models folder. After an app update it is not rebuilt: `refresh` installs what changed
+ * (usually only the app's own small package) into the environment that is there.
  */
 export class EngineSetup {
   status: SetupStatus
@@ -166,6 +167,62 @@ export class EngineSetup {
     })
   }
 
+  /** Install the pinned requirements of a build into the environment. uv skips what is already there. */
+  private install(variant: TorchVariant): Promise<void> {
+    const source = engineSourceDir()
+    const spec = VARIANTS[variant]
+    return this.run(
+      bundledUv(),
+      [
+        'pip',
+        'install',
+        '--python',
+        join(engineEnvDir(), 'Scripts', 'python.exe'),
+        '--no-deps',
+        '--requirement',
+        join(source, spec.requirements),
+        '--find-links',
+        join(source, 'wheels'),
+        ...spec.indexArgs,
+      ],
+      { UV_LINK_MODE: 'copy' },
+    )
+  }
+
+  /**
+   * After an app update: the environment was built by an earlier version, for a known build.
+   * Then nothing has to be rebuilt and the user has nothing to decide.
+   */
+  canRefresh(): boolean {
+    return (
+      this.status.managed &&
+      this.status.state === 'needed' &&
+      this.installedVariant() !== null &&
+      existsSync(join(engineEnvDir(), 'Scripts', 'python.exe')) &&
+      existsSync(join(engineSourceDir(), VARIANTS[this.installedVariant() ?? 'cuda'].requirements))
+    )
+  }
+
+  /**
+   * Bring the existing environment up to this app version: install the pinned requirements
+   * over it. Every pin that is already satisfied is skipped, so this is seconds, not the
+   * minutes and gigabytes of a first setup. If it fails, the full setup is offered instead.
+   */
+  async refresh(): Promise<void> {
+    const variant = this.installedVariant()
+    if (!variant || this.status.state === 'running') return
+    this.set({ state: 'running', updating: true, log: [], error: undefined, variant })
+    try {
+      this.log(`Updating the engine for OpenStems ${app.getVersion()}`)
+      await this.install(variant)
+      writeFileSync(this.marker(), formatMarker(app.getVersion(), variant), 'utf8')
+      this.set({ state: 'ready', updating: false, installed: variant })
+    } catch (error) {
+      this.log(`The quick update did not work: ${error instanceof Error ? error.message : String(error)}`)
+      this.set({ state: 'needed', updating: false })
+    }
+  }
+
   /** Build the environment for `variant` (default: the current selection). */
   async runSetup(variant?: TorchVariant): Promise<void> {
     if (this.status.state === 'running') return
@@ -188,22 +245,7 @@ export class EngineSetup {
 
       // Every dependency is pinned; nothing is resolved on the user's machine.
       this.log(`Installing ${spec.what} and the model code`)
-      await this.run(
-        uv,
-        [
-          'pip',
-          'install',
-          '--python',
-          join(envDir, 'Scripts', 'python.exe'),
-          '--no-deps',
-          '--requirement',
-          requirements,
-          '--find-links',
-          join(source, 'wheels'),
-          ...spec.indexArgs,
-        ],
-        { UV_LINK_MODE: 'copy' },
-      )
+      await this.install(chosen)
 
       this.log('Checking the GPU')
       try {

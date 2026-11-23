@@ -93,8 +93,11 @@ test('packaged app: first-run setup, then the first separation, with no terminal
     await page.getByRole('button', { name: 'Queue' }).click()
 
     await page.getByRole('radio', { name: 'Fast' }).click()
+    // A profile that was used before already has jobs in its list: wait for the new row,
+    // so an older finished job is not mistaken for this one.
+    const before = await page.getByTestId('job-row').count()
     await page.getByTestId('file-input').setInputFiles([song ?? ''])
-    // An installed copy shares the real job list, so look at the job just added: the last row.
+    await expect(page.getByTestId('job-row')).toHaveCount(before + 1)
     const row = page.getByTestId('job-row').last()
     await expect(row).toHaveAttribute('data-state', 'done', { timeout: 10 * 60_000 })
     await row.click()

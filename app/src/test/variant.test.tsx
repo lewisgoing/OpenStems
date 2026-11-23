@@ -166,6 +166,13 @@ describe('the setup screen', () => {
     expect(bridge.runSetup).toHaveBeenLastCalledWith('rocm')
   })
 
+  it('only says the engine is updating after an app update: nothing to choose or click', () => {
+    render(<SetupScreen status={status({ state: 'running', updating: true, variant: 'rocm' })} />)
+    expect(screen.getByRole('status')).toHaveTextContent('Updating the audio engine')
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+  })
+
   it('shows the build as text while setup runs', () => {
     render(<SetupScreen status={status({ state: 'running', variant: 'rocm' })} />)
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()

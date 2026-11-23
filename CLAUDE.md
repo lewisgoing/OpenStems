@@ -54,6 +54,9 @@ App (run from `app/`):
   draft or pre-release: installed apps would not see it
 - `OPENSTEMS_E2E_UPDATE=<version>` (end-to-end tests only): self-update with a stand-in that
   offers that version and never touches the network
+- After an app update the environment is refreshed, not rebuilt (`EngineSetup.refresh` in
+  `electron/setup.ts`): running the packaged test on a profile set up by an older version
+  exercises it
 - `PACKAGED_PROFILE=<empty folder> REAL_SONG=<file> REAL_MODELS=<folder> pnpm e2e -g packaged`:
   first-run setup and a separation in the packaged app, on a clean profile. Add
   `PACKAGED_VARIANT=rocm` to force the AMD build; `PACKAGED_SWITCH=cuda|rocm ... -g "switch the
@@ -83,8 +86,8 @@ the FakeEngine; the API process itself never imports torch.
 GPU vendors: PyTorch comes from one of two conflicting dependency groups, `cuda` (default) and
 `rocm` (AMD). Both answer through `torch.cuda`, so engine code never branches on the vendor;
 `doctor.torch_backend` is the one place that tells them apart. `app/electron/variant.ts`
-decides which build first-run setup installs. AMD support has never run on a Radeon:
-`docs/adr/0007-amd-rocm.md`.
+decides which build first-run setup installs. A user reported AMD support working on a
+Radeon on 2026-11-22; it has not been run on one by us: `docs/adr/0007-amd-rocm.md`.
 
 Tray: `electron/tray.ts` owns the icon and the quick-drop window; `electron/traylogic.ts` is
 the part with no Electron in it (window placement, icon state, the `shell.json` preferences)

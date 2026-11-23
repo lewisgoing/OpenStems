@@ -75,6 +75,16 @@ function TrayGate() {
   const toast = useToast()
   const { engine, setup, connection } = useEngineStatus()
 
+  if (setup.state !== 'ready' && setup.updating) {
+    return (
+      <Centered>
+        <div className="flex items-center gap-3 text-muted" role="status">
+          <span className="spinner" />
+          Updating the audio engine
+        </div>
+      </Centered>
+    )
+  }
   if (setup.state !== 'ready') {
     return (
       <Centered>

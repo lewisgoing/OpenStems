@@ -277,10 +277,24 @@ if (!app.requestSingleInstanceLock()) {
     updater.schedule(() => prefs.value.checkForUpdates)
     tray.create()
     // Started in the tray, the app shows no window, unless first-run setup needs the user.
-    if (inTray && tray.tray && setup.status.state === 'ready') tray.prewarm()
+    const refresh = setup.canRefresh() // after an app update: seconds, and nothing to click
+    if (inTray && tray.tray && (setup.status.state === 'ready' || refresh)) tray.prewarm()
     else createWindow()
-    if (setup.status.state === 'ready') engine.start()
-    else void setup.detect() // the setup screen shows what was found
+    if (setup.status.state === 'ready') {
+      engine.start()
+    } else if (refresh) {
+      void setup.refresh().then(() => {
+        if (setup.status.state === 'ready') {
+          engine.start()
+        } else {
+          // The quick way failed: offer the full setup, which needs the window.
+          void setup.detect()
+          showMain()
+        }
+      })
+    } else {
+      void setup.detect() // the setup screen shows what was found
+    }
   })
 
   // The quick-drop window exists while the app runs, so this fires only without a tray.

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2 (2026-11-22)
+
+- After an app update the Python environment is no longer rebuilt. The app installs what
+  changed into the environment that is there, by itself, in seconds: no click, no download of
+  Python or PyTorch. A first install, and switching the engine build, set up as before.
+- AMD Radeon support has now been reported working on a Radeon by a user.
+
 ## 0.2.1 (2026-11-22)
 
 - The output format (WAV 32-bit float, WAV 24-bit, FLAC, MP3 320 kbps) can be picked where

@@ -70,10 +70,13 @@ The tag must be `v` plus the version in `package.json`.
 
 ## What a new version does after the restart
 
-The Python environment belongs to a version: after an update the app asks to set it up again,
-and the user clicks once. Python and PyTorch come from uv's cache, so it is minutes, not a new
-3 GB download. Making that step skip what did not change is left for a later version; it can
-ship in any update, since the new version is the one that runs it.
+Up to 0.2.1 the Python environment belonged to a version: after an update the app asked to
+set it up again, which took a click and several minutes. From 0.2.2 the new version brings
+the existing environment up to date by itself (`EngineSetup.refresh`): it runs the same pinned
+install over the environment, and uv skips every requirement that is already satisfied, so
+normally only the app's own small package is installed. The window shows "Updating the audio
+engine" for the seconds it takes. If that fails, the full setup is offered as before. A first
+install and a switch of the engine build still create the environment from scratch.
 
 ## Not signed
 
@@ -113,6 +116,15 @@ test stops there.
 
 The packaged 0.2.0 itself ran first-run setup and a separation on a clean profile with the
 NVIDIA build, and first-run setup with the AMD build forced.
+
+## The quick engine update, checked
+
+On 2026-11-22 the packaged 0.2.2 was started on two profiles whose environments were built by
+older versions: NVIDIA by 0.2.1 and AMD by 0.2.0. Each time the app replaced one package (its
+own) in 0.8 seconds, wrote the new version to the marker and started the engine, with no
+click. The first setup of the same profile had taken 75 seconds. A separation then ran on the
+updated NVIDIA environment, and the updated AMD environment imports the new package beside
+AMD's PyTorch.
 
 ## What automation cannot check
 

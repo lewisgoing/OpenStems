@@ -108,6 +108,17 @@ export function SetupScreen({ status }: { status: SetupStatus }) {
   const [picked, setPicked] = useState<TorchVariant | null>(null)
   const variant = picked ?? status.variant
   const offRecommendation = status.recommended !== undefined && variant !== status.recommended
+  // After an app update the engine is brought up to date by itself: nothing to choose.
+  if (status.updating) {
+    return (
+      <CenteredMessage>
+        <div className="flex items-center gap-3 text-muted" role="status">
+          <span className="spinner" />
+          Updating the audio engine
+        </div>
+      </CenteredMessage>
+    )
+  }
   return (
     <CenteredMessage>
       <div className="w-full max-w-[560px] text-left">

@@ -172,8 +172,8 @@ An installed OpenStems updates itself. When a newer version is out, an **Update*
 appears in the title bar and in the quick-drop window. One click downloads the new version; a
 second click restarts into it. Nothing is downloaded until you click, and a restart asks first
 while jobs are running. Settings > Updates can check on request and can turn the automatic
-check off. After an update the app sets up its Python environment again, with one click; that
-takes a few minutes and downloads little.
+check off. After an update the app brings its Python environment up to date by itself, in a
+few seconds.
 
 How a release is published: [`docs/adr/0010-self-update.md`](docs/adr/0010-self-update.md).
 
