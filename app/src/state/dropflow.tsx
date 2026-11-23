@@ -85,11 +85,14 @@ export function useDropFlow(recipes: Recipe[], models: Model[], onQueued?: () =>
   const addFiles = useCallback((files: File[]) => addPaths(window.openstems.pathsForFiles(files)), [addPaths])
 
   const pasteLink = useCallback(() => {
-    void window.openstems.clipboardText().then((text) => {
-      const link = linkFrom(text)
-      if (link) addLinks([link])
-      else toast.show("Copy a song's link first, then paste it here.")
-    })
+    window.openstems
+      .clipboardText()
+      .then((text) => {
+        const link = linkFrom(text)
+        if (link) addLinks([link])
+        else toast.show("Copy a song's link first, then paste it here.")
+      })
+      .catch(toast.error)
   }, [addLinks, toast])
 
   // Once the models a pending drop needs are installed, queue it.
