@@ -203,8 +203,10 @@ while jobs are running. Settings > Updates can check on request and can turn the
 check off. After an update the app brings its Python environment up to date by itself, in a
 few seconds.
 
-On a Mac this needs an app signed with an Apple Developer ID. The Mac build has none yet, so
-there the button opens the release page and you install the new version yourself.
+On a Mac the app updates itself the same way once it is a build signed with the project's
+own certificate. The builds up to 0.3.1 are not: there the button opens the release page and
+you install the new version yourself, once. A self-signed app updating itself has been seen
+on a CI Mac, not yet on a Mac with a person at it.
 
 How a release is published: [`docs/adr/0010-self-update.md`](docs/adr/0010-self-update.md).
 
@@ -316,8 +318,9 @@ There is one engine build on a Mac and nothing to choose.
 <summary><strong>Opening it the first time</strong> (macOS blocks it on a double click)</summary>
 <br>
 
-The app is not signed with an Apple Developer ID and not notarized (its signature is ad hoc,
-which names nobody), so macOS will not open it on a double click.
+The app is not signed with an Apple Developer ID and not notarized (the project signs it
+with a certificate of its own, which Apple does not know), so macOS will not open it on a
+double click.
 
 1. Double-click OpenStems. macOS says it could not verify the app. Click Done.
 2. Open the Apple menu > System Settings, and click Privacy & Security in the sidebar.
@@ -361,9 +364,10 @@ this repository's releases or built yourself.
   [Memory](#memory).
 - **Notifications** are the system's. macOS shows them only for an app with a valid
   signature, which is one reason the build is signed ad hoc. Not yet seen on a Mac.
-- **Updates are manual while the app has no Developer ID.** The app says when a new version
-  is out, and its button ("Get 0.3.0") opens the release page; download the new dmg and
-  replace the app.
+- **Updates.** A build signed with the project's own certificate updates itself, as on
+  Windows. The builds up to 0.3.1 are signed ad hoc and cannot: the app says when a new
+  version is out, and its button ("Get 0.3.2") opens the release page; download the new dmg
+  and replace the app. That is needed once. `docs/adr/0018-mac-self-signed.md`.
 - Folders: settings, models and the Python environment are in
   `~/Library/Application Support/OpenStems`, logs in `~/Library/Logs/OpenStems`, and stems in
   `~/Music/OpenStems`. The window's own small preferences are in

@@ -87,7 +87,15 @@ App (run from `app/`):
   its Mac state: run `pnpm package:prepare` afterwards to put the Windows one back
 - Signing the Mac build: ad hoc (`app/mac-build.cjs`, the configuration the Mac commands
   read) unless `CSC_LINK` and `CSC_KEY_PASSWORD` are set where `pnpm dist:mac` runs; notarized when `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and
-  `APPLE_TEAM_ID` are set as well. Never commit any of them
+  `APPLE_TEAM_ID` are set as well. Never commit any of them. There is no Developer ID: the
+  certificate is one the project makes itself (`bash scripts/make-mac-cert.sh NAME FOLDER
+  PASSWORD`, once, with the folder outside the repository), which lets an installed Mac app
+  update itself. `release-mac.yml` sees that it is self-signed, trusts it on the runner and
+  sets `OPENSTEMS_SELF_SIGNED=1` (no hardened runtime, no notarization). Every release must
+  use the same certificate: `docs/adr/0018-mac-self-signed.md`
+- `bash scripts/mac-update-test.sh ENGINE` in `app/` (Mac CI runner only: it trusts a
+  throwaway certificate with sudo): two self-signed builds, and the older one installs the
+  newer one through the real updater (`e2e/mac-update.spec.ts`). The Mac app job in CI runs it
 - Releasing: set the version in `app/package.json`, `engine/pyproject.toml` and
   `engine/src/openstems/__init__.py`, `uv lock`, changelog heading, merge, tag `v<version>` on
   `main`, `pnpm dist`, then `gh release create v<version>` with those three files. Never a
@@ -217,9 +225,10 @@ Self-update: `electron/updatelogic.ts` is the state machine with no Electron in 
 `src/test/update.test.tsx`); `electron/updater.ts` is the thin part on `electron-updater`.
 Both steps, download and restart, wait for the user. The repository is public because
 installed apps read its releases: `docs/adr/0010-self-update.md`. A Mac app updates itself
-only when it is signed with a Developer ID (`updater.updateBackend` asks `codesign` once at
-start). An unsigned one takes the manual path: the offer is marked `manual`, "download" opens
-the release page, and the state stays `available`.
+only when it is signed with a certificate, a Developer ID or the project's own
+(`updater.updateBackend` asks `codesign` once at start; `updatelogic.canInstallUpdates`
+decides). One signed ad hoc takes the manual path: the offer is marked `manual`, "download"
+opens the release page, and the state stays `available`.
 
 Names: `OpenStems` where people read it and for folders, `openstems` for the command, the
 Python package and keys, `OPENSTEMS_*` for environment variables. The app was lew-stems before

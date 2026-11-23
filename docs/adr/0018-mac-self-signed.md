@@ -1,0 +1,80 @@
+# 0018: Mac self-update with a certificate of our own
+
+Date: 2026-11-23. Status: accepted. Adds to ADR 0010 and ADR 0014.
+
+## The problem
+
+There is no Apple Developer ID for this project. The Mac build was therefore signed ad hoc,
+and an installed Mac app could not update itself: it showed "Get 0.3.1" and opened the
+release page (ADR 0010, "On a Mac"). The reason is in the installer inside Electron
+(Squirrel): it puts a new version in place only if that version satisfies the running app's
+*designated requirement*, which is what its signature says about who made it. An ad hoc
+signature names nobody and its requirement is the hash of that one build, so no other build
+can ever satisfy it.
+
+## Decision
+
+Sign the Mac build with a certificate the project makes itself. It costs nothing and asks
+nothing of Apple.
+
+- **What it changes.** With a self-signed certificate the designated requirement is "this
+  bundle identifier, signed by this certificate" (`identifier "ing.lewisgo.openstems" and
+  certificate leaf = H"..."`). Every release signed with the same certificate satisfies it,
+  so the app's own updater works exactly as on Windows.
+- **What it does not change.** Apple does not know the certificate. macOS still asks the
+  user to allow the app before the first open, and there is no notarization. Only a
+  Developer ID removes that. The hardened runtime stays off, as for the ad hoc build:
+  without an Apple team it would refuse to load the app's own libraries.
+- **The certificate.** `scripts/make-mac-cert.sh` makes it with openssl: an RSA 2048 key and
+  a certificate for code signing only, valid for 20 years, as a `.p12`. It is stored as the
+  repository secrets `CSC_LINK` (the `.p12` as base64) and `CSC_KEY_PASSWORD`, the same two
+  names a Developer ID would use.
+- **The release workflow** (`release-mac.yml`) tells the two kinds apart by the certificate
+  itself: one that is its own issuer is self-signed. For that one it tells the runner to
+  trust the certificate for code signing (electron-builder lists only certificates the
+  system trusts), sets `OPENSTEMS_SELF_SIGNED=1` and skips notarization.
+- **The build configuration** (`app/mac-build.cjs`): with `CSC_LINK` and
+  `OPENSTEMS_SELF_SIGNED=1` the app is signed with the certificate, without the hardened
+  runtime and without notarization.
+- **The app** (`canInstallUpdates` in `electron/updatelogic.ts`) reads `codesign`'s
+  description of its own bundle at start. It updates itself when the first authority is a
+  Developer ID, or when there is exactly one authority and it is not one of Apple's. Ad hoc
+  (`Signature=adhoc`), unsigned and Apple development certificates keep the manual path.
+
+## What was seen
+
+On the Mac CI runner (macos-15, Apple Silicon), 2026-11-23, in the step "A self-signed Mac
+app updates itself" (`app/scripts/mac-update-test.sh`, `app/e2e/mac-update.spec.ts`):
+
+- A certificate made by the script signed the app through electron-builder once the runner
+  trusted it. Before that `security find-identity -v` listed no valid identity.
+- Two builds, 0.0.1 and 9.9.9, had the same designated requirement.
+- The 0.0.1 app, started from a folder, found 9.9.9 on a local server, downloaded it, and
+  after "restart" the installer replaced the bundle and started the new version. The
+  bundle then read 9.9.9. This is the real updater, not a stand-in.
+
+That step runs on every pull request, so a change that breaks it is caught.
+
+## Not seen yet
+
+- **A real release.** The first release signed this way has not been made: the secrets are
+  not set yet. Until then releases are ad hoc as before.
+- **On a Mac with a person at it.** The CI app was built there and never downloaded, so it
+  carries no quarantine mark, and it ran from a folder, not from `/Applications`. An app
+  from a dmg, allowed through System Settings, moved to Applications and then updated has
+  not been tried. The owner's M1 Max is where to try it.
+- **Whether Gatekeeper asks again after an update.** Not known.
+
+## Consequences
+
+- **One more manual update.** Apps on 0.3.0 and 0.3.1 are ad hoc builds. They take the
+  first self-signed release by hand, from the release page, and update themselves from the
+  one after.
+- **The key must be kept, and kept secret.** Lose it and a new certificate is needed, which
+  no installed app accepts: everyone updates by hand once more. Anyone who has it can sign
+  an update that installed apps accept, though they would also need to publish it on the
+  project's releases. It lives in the repository secrets and in the owner's own safe copy,
+  never in the repository.
+- **A Developer ID later.** Moving to one is the same kind of change of signer: one manual
+  update for everyone, then updates work again, with no warning at first open.
+- **Windows is unchanged.**

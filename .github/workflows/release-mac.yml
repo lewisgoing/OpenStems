@@ -7,11 +7,14 @@ name: release-mac
 # It runs when a release is published (the Windows files are uploaded by hand with
 # `gh release create`, which publishes it), and by hand for a tag that already has a release.
 #
-# Signing is optional. With the repository secrets CSC_LINK and CSC_KEY_PASSWORD (a Developer
-# ID Application certificate as base64 .p12, and its password) the app is signed; with
-# APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID as well it is notarized. Without
-# them the app is signed ad hoc (app/mac-build.cjs): macOS asks the user to allow it, and
-# the app offers updates as a link to the release page.
+# Signing is optional. With the repository secrets CSC_LINK and CSC_KEY_PASSWORD (a
+# certificate as base64 .p12, and its password) the app is signed. The certificate is either
+# a Developer ID Application certificate from Apple, notarized when APPLE_ID,
+# APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID are set as well, or one the project made
+# itself (scripts/make-mac-cert.sh), which costs nothing: macOS still asks the user to
+# allow the app, and the app updates itself. Without a certificate the app is signed ad hoc
+# (app/mac-build.cjs): macOS asks the user to allow it, and the app offers updates as a
+# link to the release page.
 #
 # Who sees what. The build job can only read the repository. The signing secrets go to the
 # one step that runs electron-builder, after everything that fetches and runs other people's
@@ -104,10 +107,30 @@ jobs:
           for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
             if [ -z "${!name}" ]; then unset "$name"; fi
           done
+          # Whether the certificate in CSC_LINK is one the project made itself
+          # (scripts/make-mac-cert.sh): it is its own issuer. Leaves the certificate, without
+          # its key, in signing.pem.
+          self_signed() {
+            printf '%s' "$CSC_LINK" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+            openssl pkcs12 -in "$RUNNER_TEMP/signing.p12" -passin env:CSC_KEY_PASSWORD -nokeys -clcerts 2>/dev/null \
+              | openssl x509 -out "$RUNNER_TEMP/signing.pem"
+            rm -f "$RUNNER_TEMP/signing.p12"
+            local subject issuer
+            subject=$(openssl x509 -in "$RUNNER_TEMP/signing.pem" -noout -subject_hash) || return 1
+            issuer=$(openssl x509 -in "$RUNNER_TEMP/signing.pem" -noout -issuer_hash) || return 1
+            [ -n "$subject" ] && [ "$subject" = "$issuer" ]
+          }
           if [ -z "${CSC_LINK:-}" ] || [ -z "${CSC_KEY_PASSWORD:-}" ]; then
             unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
             export CSC_IDENTITY_AUTO_DISCOVERY=false
             echo "::notice::No signing certificate: the Mac build is signed ad hoc."
+          elif self_signed; then
+            # Apple knows nothing of this certificate, so there is nothing to notarize.
+            # electron-builder lists only certificates the system trusts for code signing.
+            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+            sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/signing.pem"
+            export OPENSTEMS_SELF_SIGNED=1
+            echo "::notice::Signed with the project's own certificate: the app can update itself, and macOS asks before the first open."
           elif [ -z "${APPLE_ID:-}" ] || [ -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] || [ -z "${APPLE_TEAM_ID:-}" ]; then
             unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
             echo "::notice::Signed, but not notarized: the notarization secrets are not all set."
@@ -119,8 +142,12 @@ jobs:
         working-directory: app/release
         run: |
           ls -l
-          # The authority for a Developer ID signature, "Signature=adhoc" without one.
+          # The authority for a Developer ID or the project's own certificate,
+          # "Signature=adhoc" without one.
           codesign --display --verbose=2 mac-arm64/OpenStems.app 2>&1 | grep -E '^(Authority|TeamIdentifier|Signature)=' || echo "not signed"
+          # What an update must satisfy to replace this app: the same in every release
+          # signed with the same certificate.
+          codesign --display -r- mac-arm64/OpenStems.app 2>/dev/null | grep '^designated' || true
           # Whether the signature holds for the whole bundle. Reported, not required.
           if codesign --verify --deep --strict mac-arm64/OpenStems.app; then
             echo "the signature is valid"

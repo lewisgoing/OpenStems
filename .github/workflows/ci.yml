@@ -130,6 +130,14 @@ jobs:
           else
             echo "::warning::the app's signature does not verify"
           fi
+      # A release signed with a certificate of our own (no Apple Developer ID) can update
+      # itself: two versions are built and signed with a throwaway certificate, and the
+      # older one installs the newer one through the real updater. The runner is thrown
+      # away afterwards, so the certificate it is told to trust goes with it.
+      - name: A self-signed Mac app updates itself
+        if: runner.os == 'macOS'
+        working-directory: app
+        run: bash scripts/mac-update-test.sh "$GITHUB_WORKSPACE/engine/.venv/bin/openstems"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

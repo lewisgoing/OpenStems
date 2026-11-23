@@ -9,6 +9,12 @@
   follow. The audio is not rewritten and the song is not separated again. What detection
   found is kept in the manifest. `docs/adr/0019-edit-tempo-key.md`.
 - The stems panel shows the tempo to two decimals, not rounded to a whole number.
+- **A Mac app can update itself without an Apple Developer ID.** The Mac build can now be
+  signed with a certificate the project makes itself, and an app signed that way installs
+  new versions as on Windows. Seen on a CI Mac, where one build installed a newer one; not
+  yet on a Mac with a person at it, and no release has been signed this way yet. macOS
+  still asks before the first open. Apps on 0.3.0 and 0.3.1 take the first such release by
+  hand, once. `docs/adr/0018-mac-self-signed.md`.
 
 ## 0.3.1 (2026-11-23)
 
