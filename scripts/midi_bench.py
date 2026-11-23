@@ -127,9 +127,121 @@ def load_vocadito(bench: Path, ids: list[str] | None) -> list[Item]:
     return items
 
 
+# Slakh2100: the app's separated stems scored against Slakh's MIDI, next to Slakh's own clean
+# stems ("oracle"). Slakh's instruments are grouped the way the app's recipes split them.
+SLAKH_CLASS = {"Bass": "bass", "Guitar": "guitar", "Piano": "piano"}  # the rest: "other"
+DRUM_PARTS = {  # General MIDI drum notes per DrumSep part
+    "kick": {35, 36},
+    "snare": {37, 38, 40},
+    "toms": {41, 43, 45, 47, 48, 50},
+    "hh": {42, 44, 46},
+    "ride": {51, 53, 59},
+    "crash": {49, 52, 55, 57},
+}
+DRUM_KINDS = {"drums", *DRUM_PARTS}
+RECIPE_FOR = {
+    **{kind: "full-song" for kind in ("drums", "bass", "guitar", "piano", "other")},
+    **{part: "drum-kit" for part in DRUM_PARTS},
+}
+SLAKH_CONDITIONS = ["separated", "oracle"]
+
+
+def slakh_songs(bench: Path) -> list[Path]:
+    from midi_bench_data import slakh_complete
+
+    folder = bench / "slakh"
+    return sorted(p for p in folder.glob("Track*") if slakh_complete(p)) if folder.is_dir() else []
+
+
+def _slakh_class(stem: dict) -> str:
+    return "drums" if stem.get("is_drum") else SLAKH_CLASS.get(stem.get("inst_class", ""), "other")
+
+
+def _slakh_meta(song: Path) -> dict:
+    import yaml
+
+    return yaml.safe_load((song / "metadata.yaml").read_text("utf-8"))
+
+
+def slakh_reference(song: Path, meta: dict) -> dict[str, list[Note]]:
+    refs: dict[str, list[Note]] = {}
+    for sid, stem in sorted(meta["stems"].items()):
+        if not stem.get("audio_rendered"):
+            continue
+        notes = read_midi(song / "MIDI" / f"{sid}.mid")
+        kind = _slakh_class(stem)
+        refs.setdefault(kind, []).extend(notes)
+        if kind == "drums":
+            for part, keys in DRUM_PARTS.items():
+                refs.setdefault(part, []).extend(n for n in notes if int(n[2]) in keys)
+    return {kind: sorted(notes) for kind, notes in refs.items() if notes}
+
+
+def _oracle_audio(bench: Path, song: Path, meta: dict, kind: str) -> Path | None:
+    """Slakh's own stems of one class, summed once and kept. None for drum parts: Slakh renders
+    the kit as one stem."""
+    target = bench / "slakh-oracle" / song.name / f"{kind}.wav"
+    if target.is_file():
+        return target
+    if kind in DRUM_PARTS:
+        return None
+    import soundfile as sf
+
+    total: np.ndarray | None = None
+    rate = 44100
+    for sid, stem in meta["stems"].items():
+        path = song / "stems" / f"{sid}.flac"
+        if not stem.get("audio_rendered") or _slakh_class(stem) != kind or not path.is_file():
+            continue
+        audio, rate = sf.read(path, dtype="float32", always_2d=True)
+        if total is None:
+            total = audio
+        else:
+            length = max(total.shape[0], audio.shape[0])
+            total = np.pad(total, ((0, length - total.shape[0]), (0, 0)))
+            total[: audio.shape[0]] += audio
+    if total is None:
+        return None
+    target.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(target, total, rate, subtype="FLOAT")
+    return target
+
+
+def _separated_audio(bench: Path, song: Path, kind: str) -> Path | None:
+    from openstems.pipeline.run import read_manifest
+
+    folder = bench / "runs" / "slakh" / song.name / RECIPE_FOR.get(kind, "full-song")
+    manifest = read_manifest(folder)
+    if not manifest or not manifest.get("complete"):
+        return None
+    for stem in manifest.get("stems", []):
+        if stem["name"] == kind:
+            return folder / stem["file"]
+    return None
+
+
+def load_slakh(bench: Path, ids: list[str] | None) -> list[Item]:
+    items = []
+    for song in slakh_songs(bench):
+        if ids is not None and song.name not in ids:
+            continue
+        meta = _slakh_meta(song)
+        for kind, notes in slakh_reference(song, meta).items():
+            for condition in SLAKH_CONDITIONS:
+                if condition == "separated":
+                    audio = _separated_audio(bench, song, kind)
+                else:
+                    audio = _oracle_audio(bench, song, meta, kind)
+                if audio is not None:
+                    item_id = f"{song.name}/{kind}/{condition}"
+                    items.append(Item("slakh", item_id, kind, audio, notes))
+    return items
+
+
 LOADERS: dict[str, Callable[[Path, list[str] | None], list[Item]]] = {
     "guitarset": load_guitarset,
     "vocadito": load_vocadito,
+    "slakh": load_slakh,
 }
 
 
@@ -148,6 +260,101 @@ def method_yin(item: Item, bench: Path) -> list[Note] | None:
 
 def method_annotator2(item: Item, bench: Path) -> list[Note] | None:
     return item.extra.get("annotator2")
+
+
+# Pitch trackers compared on equal terms: each one's pitch and voicing go through the same
+# note segmentation as today's engine (semitone runs, a 5-frame median, 80 ms minimum), so
+# only the tracker differs. ``swiftf0-notes`` instead uses SwiftF0's own segmenter (MIT).
+
+
+def notes_from_f0(times: np.ndarray, hz: np.ndarray, voiced: np.ndarray) -> list[Note]:
+    if times.size < 3:
+        return []
+    hop = float(np.median(np.diff(times)))
+    safe = np.where(voiced & (hz > 0), hz, 1.0)
+    midi = np.where(voiced & (hz > 0), np.round(69 + 12 * np.log2(safe / 440.0)), -1).astype(int)
+    padded = np.pad(midi, 2, mode="edge")
+    midi = np.median(np.lib.stride_tricks.sliding_window_view(padded, 5), axis=1).astype(int)
+    min_frames = max(1, round(0.08 / hop))
+    notes: list[Note] = []
+    start = 0
+    for i in range(1, midi.size + 1):
+        if i == midi.size or midi[i] != midi[start]:
+            if midi[start] >= 0 and i - start >= min_frames:
+                notes.append(
+                    (float(times[start]), float(times[i - 1] + hop), float(midi[start]), 0)
+                )
+            start = i
+    merged: list[Note] = []
+    for note in notes:
+        if merged and merged[-1][2] == note[2] and note[0] - merged[-1][1] <= 2 * hop:
+            prev = merged.pop()
+            merged.append((prev[0], note[1], prev[2], 0))
+        else:
+            merged.append(note)
+    return merged
+
+
+def _mono(item: Item, rate: int) -> np.ndarray:
+    from openstems.audio.decode import decode
+
+    return decode(item.audio, sample_rate=rate).mean(axis=0)
+
+
+def method_pyin(item: Item, bench: Path) -> list[Note] | None:
+    import librosa
+
+    from openstems.pipeline.extras import _RANGES
+
+    low, high = _RANGES.get(item.kind, (55.0, 1600.0))
+    rate, hop = 22050, 256
+    f0, voiced, _ = librosa.pyin(_mono(item, rate), fmin=low, fmax=high, sr=rate, hop_length=hop)
+    times = np.arange(f0.size) * hop / rate
+    return notes_from_f0(times, np.nan_to_num(f0), voiced)
+
+
+def _swiftf0(item: Item):
+    from swift_f0 import SwiftF0
+
+    return SwiftF0().detect(_mono(item, 16000), 16000)
+
+
+def method_swiftf0(item: Item, bench: Path) -> list[Note] | None:
+    result = _swiftf0(item)
+    return notes_from_f0(result.timestamps, result.pitch_hz, result.confidence >= 0.5)
+
+
+def method_swiftf0_notes(item: Item, bench: Path) -> list[Note] | None:
+    from swift_f0 import segment_notes
+
+    notes = segment_notes(_swiftf0(item))
+    return [(n.start, n.end, 69 + 12 * float(np.log2(n.pitch_hz / 440.0)), 0) for n in notes]
+
+
+def method_crepe(item: Item, bench: Path) -> list[Note] | None:
+    import torch
+    import torchcrepe
+
+    from openstems.pipeline.extras import _RANGES
+
+    low, high = _RANGES.get(item.kind, (55.0, 1600.0))
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    audio = torch.from_numpy(_mono(item, 16000)).unsqueeze(0)
+    hop = 160  # 10 ms
+    pitch, periodicity = torchcrepe.predict(
+        audio,
+        16000,
+        hop,
+        low,
+        high,
+        "full",
+        return_periodicity=True,
+        batch_size=512,
+        device=device,
+    )
+    hz = pitch[0].cpu().numpy()
+    voiced = periodicity[0].cpu().numpy() >= 0.5
+    return notes_from_f0(np.arange(hz.size) * hop / 16000, hz, voiced)
 
 
 def read_midi(path: Path) -> list[Note]:
@@ -203,6 +410,10 @@ def external(tool: str) -> Callable[[Item, Path], list[Note] | None]:
 METHODS: dict[str, Callable[[Item, Path], list[Note] | None]] = {
     "yin": method_yin,
     "annotator2": method_annotator2,
+    "pyin": method_pyin,
+    "swiftf0": method_swiftf0,
+    "swiftf0-notes": method_swiftf0_notes,
+    "crepe": method_crepe,
     "melodyne": external("melodyne"),
     "neuralnote": external("neuralnote"),
 }
@@ -251,21 +462,35 @@ def score(reference: list[Note], estimate: list[Note]) -> dict[str, float]:
     return row
 
 
+PITCH_TRACKERS = {"yin", "pyin", "swiftf0", "swiftf0-notes", "crepe"}  # not for drum stems
+
+
 def cmd_score(args: argparse.Namespace) -> None:
     bench: Path = args.bench
     sets = [s for s in args.sets.split(",") if s]
     methods = [m for m in args.methods.split(",") if m]
+    SLAKH_CONDITIONS[:] = [c for c in args.conditions.split(",") if c]
     rows = []
     for set_name in sets:
-        ids = PACK[set_name] if args.pack_only else None
-        items = LOADERS[set_name](bench, ids)[: args.limit or None]
+        ids = PACK.get(set_name) if args.pack_only else None
+        items = [i for i in LOADERS[set_name](bench, ids) if args.match in i.id]
+        items = items[: args.limit or None]
         for item in items:
             for name in methods:
+                if name in PITCH_TRACKERS and item.kind in DRUM_KINDS:
+                    continue
                 started = time.time()
                 estimate = METHODS[name](item, bench)
                 if estimate is None:
                     continue
-                row = {"set": set_name, "item": item.id, "method": name}
+                condition = item.id.rsplit("/", 1)[-1] if set_name == "slakh" else "clean"
+                row = {
+                    "set": set_name,
+                    "item": item.id,
+                    "kind": item.kind,
+                    "condition": condition,
+                    "method": name,
+                }
                 row.update(score(item.reference, estimate))
                 row["seconds"] = round(time.time() - started, 2)
                 offset = item.extra.get(f"{name}-offset")
@@ -287,11 +512,20 @@ def cmd_score(args: argparse.Namespace) -> None:
         writer.writeheader()
         writer.writerows(rows)
     print(f"\nrows written to {path}\n")
-    print("| Set | Method | Items | Onset P | Onset R | Onset F1 | +Offset F1 | Octave errors |")
-    print("| --- | --- | --- | --- | --- | --- | --- | --- |")
-    for set_name in sets:
+    print(
+        "| Set | Stem | Condition | Method | Items | Onset P | Onset R | Onset F1 | +Offset F1 "
+        "| Octave errors |"
+    )
+    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    keys = sorted({(r["set"], r["kind"], r["condition"]) for r in rows})
+    for set_name, kind, condition in keys:
         for name in methods:
-            group = [r for r in rows if r["set"] == set_name and r["method"] == name]
+            group = [
+                r
+                for r in rows
+                if (r["set"], r["kind"], r["condition"], r["method"])
+                == (set_name, kind, condition, name)
+            ]
             if not group:
                 continue
 
@@ -299,10 +533,45 @@ def cmd_score(args: argparse.Namespace) -> None:
                 return float(np.mean([r[key] for r in group]))
 
             print(
-                f"| {set_name} | {name} | {len(group)} | {mean('onset_p'):.3f} | "
-                f"{mean('onset_r'):.3f} | {mean('onset_f'):.3f} | {mean('offset_f'):.3f} | "
-                f"{sum(r['octave_errors'] for r in group)} |"
+                f"| {set_name} | {kind} | {condition} | {name} | {len(group)} | "
+                f"{mean('onset_p'):.3f} | {mean('onset_r'):.3f} | {mean('onset_f'):.3f} | "
+                f"{mean('offset_f'):.3f} | {sum(r['octave_errors'] for r in group)} |"
             )
+
+
+def cmd_separate(args: argparse.Namespace) -> None:
+    """Run the app's recipes on the Slakh mixes through its real CLI, a batch at a time with a
+    pause between batches. Songs already separated (a complete manifest) are skipped."""
+    import os
+    import subprocess
+
+    from openstems.pipeline.run import read_manifest
+
+    songs = slakh_songs(args.bench)
+    links = args.bench / "slakh-mixes"  # one name per song: the output folder is named after it
+    links.mkdir(parents=True, exist_ok=True)
+    out = args.bench / "runs" / "slakh"
+    engine = Path(__file__).resolve().parents[1] / "engine"
+    env = {**os.environ, "OMP_NUM_THREADS": "4", "MKL_NUM_THREADS": "4"}
+    for recipe in [r for r in args.recipes.split(",") if r]:
+        todo = []
+        for song in songs:
+            manifest = read_manifest(out / song.name / recipe)
+            if manifest and manifest.get("complete"):
+                continue
+            link = links / f"{song.name}.flac"
+            if not link.exists():
+                os.link(song / "mix.flac", link)
+            todo.append(link)
+        todo = todo[: args.limit or None]
+        print(f"{recipe}: {len(todo)} songs to separate", flush=True)
+        for start in range(0, len(todo), args.batch):
+            batch = todo[start : start + args.batch]
+            command = ["uv", "run", "--no-sync", "openstems", "separate", *map(str, batch)]
+            command += ["--recipe", recipe, "--out", str(out)]
+            subprocess.run(command, cwd=engine, env=env, check=True)
+            if start + args.batch < len(todo):
+                time.sleep(args.pause)
 
 
 # -- the baseline pack -------------------------------------------------------------------
@@ -355,9 +624,16 @@ def main() -> None:
     s.add_argument("--methods", default="yin,annotator2")
     s.add_argument("--limit", type=int, default=0, help="items per set (0: all)")
     s.add_argument("--pack-only", action="store_true", help="only the items in the pack")
+    s.add_argument("--match", default="", help="only items whose id contains this")
+    s.add_argument("--conditions", default="separated,oracle", help="Slakh: separated, oracle")
     sub.add_parser("pack", help="copy the pack's audio and write its instructions")
+    sep = sub.add_parser("separate", help="run the app's recipes on the Slakh mixes")
+    sep.add_argument("--recipes", default="full-song,drum-kit")
+    sep.add_argument("--limit", type=int, default=0, help="songs per recipe (0: all)")
+    sep.add_argument("--batch", type=int, default=5, help="songs per CLI run")
+    sep.add_argument("--pause", type=float, default=20.0, help="seconds between batches")
     args = parser.parse_args()
-    {"score": cmd_score, "pack": cmd_pack}[args.command](args)
+    {"score": cmd_score, "pack": cmd_pack, "separate": cmd_separate}[args.command](args)
 
 
 if __name__ == "__main__":
