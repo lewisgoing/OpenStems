@@ -47,6 +47,11 @@ App (run from `app/`):
   must be current
 - `SHOTS=1 SHOTS_DIR=<folder> pnpm e2e -g screenshots`: capture every view for design review,
   the quick-drop window included (`tray-on-screen.png` is the real screen around it)
+- `README_SHOTS=1 pnpm e2e -g "readme pictures"`: retake the README's pictures into
+  `docs/images/` at twice the pixels, with a synthetic demo song (`scripts/make_demo_song.py`)
+  whose parts are written over the FakeEngine's stems. `README_OUTPUT=<new folder>` and
+  `README_MODELS=<folder>` set the folders the pictures show; each run leaves a few GB of
+  demo stems in the output folder
 - `--tray` on the app's command line starts it in the tray with no window (the end-to-end
   suite passes it through Playwright's `args`)
 - `REAL_SONG=<file> REAL_MODELS=<folder> pnpm e2e -g "real engine"`: the app on the real GPU
