@@ -20,11 +20,20 @@ mkdir -p "$work"
 # A password made here and gone with the runner: the certificate signs nothing that ships.
 CSC_KEY_PASSWORD="$(openssl rand -hex 16)"
 bash ../scripts/make-mac-cert.sh "$name" "$work/cert" "$CSC_KEY_PASSWORD"
-# electron-builder lists only certificates the system trusts for code signing.
-sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$work/cert/cert.pem"
-
 CSC_LINK="$(cat "$work/cert/cert.p12.base64")"
-export CSC_LINK CSC_KEY_PASSWORD OPENSTEMS_SELF_SIGNED=1 CSC_FOR_PULL_REQUEST=true
+export CSC_LINK CSC_KEY_PASSWORD
+
+# The release workflow's own check, on this runner's openssl: it must call the
+# certificate self-signed, and hand back the certificate the system is told to trust.
+kind=$(bash ../scripts/mac-cert-kind.sh "$work/signing.pem")
+echo "certificate: $kind ($(openssl version))"
+test "$kind" = self-signed
+cmp <(openssl x509 -in "$work/signing.pem" -noout -fingerprint -sha256) \
+  <(openssl x509 -in "$work/cert/cert.pem" -noout -fingerprint -sha256)
+# electron-builder lists only certificates the system trusts for code signing.
+sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$work/signing.pem"
+
+export OPENSTEMS_SELF_SIGNED=1 CSC_FOR_PULL_REQUEST=true
 unset CSC_IDENTITY_AUTO_DISCOVERY
 export UPDATE_FEED="http://127.0.0.1:$port"
 

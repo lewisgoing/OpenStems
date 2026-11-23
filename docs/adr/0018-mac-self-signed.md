@@ -30,7 +30,11 @@ nothing of Apple.
   repository secrets `CSC_LINK` (the `.p12` as base64) and `CSC_KEY_PASSWORD`, the same two
   names a Developer ID would use.
 - **The release workflow** (`release-mac.yml`) tells the two kinds apart by the certificate
-  itself: one that is its own issuer is self-signed. For that one it tells the runner to
+  itself: one that is its own issuer is self-signed (`scripts/mac-cert-kind.sh`). A secret
+  that cannot be read with its password stops the release, rather than being taken for a
+  Developer ID. OpenSSL 3 reads the certificate in the `.p12` only with `-legacy`, OpenSSL 1.1
+  and LibreSSL only without it, so the script tries both; the CI test runs it on the Mac
+  runner's own OpenSSL. For that one it tells the runner to
   trust the certificate for code signing (electron-builder lists only certificates the
   system trusts), sets `OPENSTEMS_SELF_SIGNED=1` and skips notarization.
 - **The build configuration** (`app/mac-build.cjs`): with `CSC_LINK` and
@@ -55,10 +59,18 @@ app updates itself" (`app/scripts/mac-update-test.sh`, `app/e2e/mac-update.spec.
 
 That step runs on every pull request, so a change that breaks it is caught.
 
+## The certificate
+
+Made on 2026-11-23 with `scripts/make-mac-cert.sh` on the development PC: "OpenStems
+Self-Signed", valid until 2046-11-18, SHA-1 fingerprint
+`0B:19:66:C8:4A:D4:D3:82:18:AC:77:85:4F:EC:9C:5A:73:C9:FD:48`. The key, the `.p12` and its
+password are in `D:\keys\openstems-mac` on that PC and in the repository secrets
+`CSC_LINK` and `CSC_KEY_PASSWORD`. Never in the repository.
+
 ## Not seen yet
 
-- **A real release.** The first release signed this way has not been made: the secrets are
-  not set yet. Until then releases are ad hoc as before.
+- **A real release.** The first release signed this way has not been made. The secrets are
+  set, so the next release is the first, if this change is in it.
 - **On a Mac with a person at it.** The CI app was built there and never downloaded, so it
   carries no quarantine mark, and it ran from a folder, not from `/Applications`. An app
   from a dmg, allowed through System Settings, moved to Applications and then updated has
