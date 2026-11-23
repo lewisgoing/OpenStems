@@ -1,0 +1,5 @@
+# Only Electron (downloads its binary) and esbuild run install scripts.
+allowBuilds:
+  electron: true
+  esbuild: true
+  electron-winstaller: false

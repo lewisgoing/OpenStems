@@ -1,0 +1,43 @@
+id = "drum-kit"
+name = "Drum kit"
+version = 1
+use_case = "Drums"
+description = "SW on the mix, then DrumSep on the drums stem."
+
+[[passes]]
+id = "sw"
+model = "bs-roformer-sw"
+input = "mix"
+
+[[passes]]
+id = "kit"
+model = "mdx23c-drumsep"
+input = "sw.drums"
+
+[[outputs]]
+stem = "kick"
+from = "kit.kick"
+
+[[outputs]]
+stem = "snare"
+from = "kit.snare"
+
+[[outputs]]
+stem = "toms"
+from = "kit.toms"
+
+[[outputs]]
+stem = "hh"
+from = "kit.hh"
+
+[[outputs]]
+stem = "ride"
+from = "kit.ride"
+
+[[outputs]]
+stem = "crash"
+from = "kit.crash"
+
+[[outputs]]
+stem = "drums"
+from = "sw.drums"

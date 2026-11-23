@@ -1,0 +1,224 @@
+id = "mega-53"
+name = "Many instruments (53 stems)"
+version = 1
+use_case = "Many instruments"
+description = "The MVSep 53-stem model on the mix. Tick the stems you want; only those are computed."
+experimental = true
+selectable_outputs = true
+
+[[passes]]
+id = "mega"
+model = "bs-roformer-mega-53"
+input = "mix"
+
+[[outputs]]
+stem = "accordion"
+from = "mega.accordion"
+
+[[outputs]]
+stem = "acoustic-guitar"
+from = "mega.acoustic-guitar"
+
+[[outputs]]
+stem = "back-vocal"
+from = "mega.back-vocal"
+
+[[outputs]]
+stem = "banjo"
+from = "mega.banjo"
+
+[[outputs]]
+stem = "bass"
+from = "mega.bass"
+
+[[outputs]]
+stem = "bassoon"
+from = "mega.bassoon"
+
+[[outputs]]
+stem = "bells"
+from = "mega.bells"
+
+[[outputs]]
+stem = "bowed_strings"
+from = "mega.bowed_strings"
+
+[[outputs]]
+stem = "brass"
+from = "mega.brass"
+
+[[outputs]]
+stem = "cello"
+from = "mega.cello"
+
+[[outputs]]
+stem = "clarinet"
+from = "mega.clarinet"
+
+[[outputs]]
+stem = "congas"
+from = "mega.congas"
+
+[[outputs]]
+stem = "digital-piano"
+from = "mega.digital-piano"
+
+[[outputs]]
+stem = "dobro"
+from = "mega.dobro"
+
+[[outputs]]
+stem = "double-bass"
+from = "mega.double-bass"
+
+[[outputs]]
+stem = "drums"
+from = "mega.drums"
+
+[[outputs]]
+stem = "electric-guitar"
+from = "mega.electric-guitar"
+
+[[outputs]]
+stem = "flute"
+from = "mega.flute"
+
+[[outputs]]
+stem = "french-horn"
+from = "mega.french-horn"
+
+[[outputs]]
+stem = "glockenspiel"
+from = "mega.glockenspiel"
+
+[[outputs]]
+stem = "guitar"
+from = "mega.guitar"
+
+[[outputs]]
+stem = "harmonica"
+from = "mega.harmonica"
+
+[[outputs]]
+stem = "harp"
+from = "mega.harp"
+
+[[outputs]]
+stem = "harpsichord"
+from = "mega.harpsichord"
+
+[[outputs]]
+stem = "hh"
+from = "mega.hh"
+
+[[outputs]]
+stem = "keys"
+from = "mega.keys"
+
+[[outputs]]
+stem = "kick"
+from = "mega.kick"
+
+[[outputs]]
+stem = "lead-vocal"
+from = "mega.lead-vocal"
+
+[[outputs]]
+stem = "mandolin"
+from = "mega.mandolin"
+
+[[outputs]]
+stem = "marimba"
+from = "mega.marimba"
+
+[[outputs]]
+stem = "oboe"
+from = "mega.oboe"
+
+[[outputs]]
+stem = "organ"
+from = "mega.organ"
+
+[[outputs]]
+stem = "percussion"
+from = "mega.percussion"
+
+[[outputs]]
+stem = "piano"
+from = "mega.piano"
+
+[[outputs]]
+stem = "saxophone"
+from = "mega.saxophone"
+
+[[outputs]]
+stem = "sitar"
+from = "mega.sitar"
+
+[[outputs]]
+stem = "snare"
+from = "mega.snare"
+
+[[outputs]]
+stem = "strings"
+from = "mega.strings"
+
+[[outputs]]
+stem = "synth"
+from = "mega.synth"
+
+[[outputs]]
+stem = "tambourine"
+from = "mega.tambourine"
+
+[[outputs]]
+stem = "timpani"
+from = "mega.timpani"
+
+[[outputs]]
+stem = "toms"
+from = "mega.toms"
+
+[[outputs]]
+stem = "triangle"
+from = "mega.triangle"
+
+[[outputs]]
+stem = "trombone"
+from = "mega.trombone"
+
+[[outputs]]
+stem = "trumpet"
+from = "mega.trumpet"
+
+[[outputs]]
+stem = "tuba"
+from = "mega.tuba"
+
+[[outputs]]
+stem = "ukulele"
+from = "mega.ukulele"
+
+[[outputs]]
+stem = "viola"
+from = "mega.viola"
+
+[[outputs]]
+stem = "violin"
+from = "mega.violin"
+
+[[outputs]]
+stem = "vocal"
+from = "mega.vocal"
+
+[[outputs]]
+stem = "wind"
+from = "mega.wind"
+
+[[outputs]]
+stem = "wind-chimes"
+from = "mega.wind-chimes"
+
+[[outputs]]
+stem = "woodwind"
+from = "mega.woodwind"

@@ -1,0 +1,35 @@
+id = "full-song"
+name = "Full song"
+version = 1
+use_case = "Full song"
+description = "Six stems from one pass of BS-RoFormer SW."
+residual_into = "other"
+
+[[passes]]
+id = "sw"
+model = "bs-roformer-sw"
+input = "mix"
+
+[[outputs]]
+stem = "vocals"
+from = "sw.vocals"
+
+[[outputs]]
+stem = "drums"
+from = "sw.drums"
+
+[[outputs]]
+stem = "bass"
+from = "sw.bass"
+
+[[outputs]]
+stem = "guitar"
+from = "sw.guitar"
+
+[[outputs]]
+stem = "piano"
+from = "sw.piano"
+
+[[outputs]]
+stem = "other"
+from = "sw.other"

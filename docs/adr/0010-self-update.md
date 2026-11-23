@@ -1,0 +1,109 @@
+# 0010: The app updates itself
+
+Date: 2026-11-22. Status: accepted. First shipped in 0.2.0, so 0.2.0 is the oldest version
+that can update itself.
+
+This deviates from the plan, which stops at an installer.
+
+## Decision
+
+An installed OpenStems looks for a newer release on GitHub, says so, and on the user's word
+downloads it and restarts into it. Nobody has to go back to the repository for a new version.
+
+The work is done by `electron-updater` (6.8.11) against the releases of
+`lewisgoing/OpenStems`, which is why that repository is public.
+
+## What the user sees
+
+- Nothing, while there is nothing new.
+- When a newer version exists, a small button in the title bar: **Update to 0.3.0**. The
+  quick-drop window has the same button as one word.
+- One click downloads it. The button shows the progress.
+- Then the button reads **Restart to update**. A click stops the engine, runs the new
+  installer silently and starts the new version. The installer is per user, so Windows asks
+  nothing.
+- With jobs queued or running, the restart asks first, since it stops them.
+- Settings > Updates has the same steps, a "Check for updates" button, and a switch for the
+  automatic check (on by default).
+
+Nothing is downloaded and nothing is installed unless the user asked. The app checks 15
+seconds after it starts and every six hours after that. A check it made by itself says
+nothing when it fails (the usual reason is no network); a check the user asked for does.
+
+## Motion
+
+The rules of ADR 0005 hold. The offer is one button from "Update" to "Restart": it arrives
+once (a 200 ms fade from 0.96 scale; it is seen about once a month), and after that only what
+it says changes, so its entrance never replays. While downloading it fills from the left by
+`transform` alone, linear because it tracks real work, with tabular numerals and a fixed
+width so the title bar does not twitch. Full, it turns into the solid accent "Restart"
+button; background, border and text change together. The restart answers the press at once
+with "Restarting", since the engine takes a few seconds to stop. A check shows no spinner:
+it is over in a moment.
+
+## How it works
+
+- `electron-builder` is given the repository under `publish`. A build then writes, beside the
+  installer, `latest.yml` (the version and the installer's sha512) and a blockmap, and puts
+  `app-update.yml` (where to look) into the app.
+- A release on GitHub carries those three files. The app reads `latest.yml` from the latest
+  release, compares versions, and downloads the installer, which is checked against the
+  sha512 before it is run. With the blockmap, only the parts that changed are downloaded.
+- `electron/updatelogic.ts` is the state machine (idle, checking, available, downloading,
+  ready) with no Electron in it; `electron/updater.ts` is the thin part that talks to
+  `electron-updater`. The status goes to every window (`window.openstems.onUpdateStatus`).
+- `autoDownload` and `autoInstallOnAppQuit` are off: both steps belong to the user.
+- Before the installer takes over, the app destroys the tray and the quick-drop window and
+  stops the engine, so nothing of its own holds a file the installer replaces.
+
+## Releasing a version
+
+1. Set the version in `app/package.json`, `engine/pyproject.toml` and
+   `engine/src/openstems/__init__.py`; run `uv lock`; give the changelog its heading.
+2. Merge to `main`, tag `v<version>` there.
+3. `pnpm dist` in `app/`.
+4. `gh release create v<version>` with `OpenStems-Setup-<version>.exe`, its `.blockmap` and
+   `latest.yml` from `app/release/`.
+
+The release must be a normal one. A draft or a pre-release is invisible to installed apps.
+The tag must be `v` plus the version in `package.json`.
+
+## What a new version does after the restart
+
+The Python environment belongs to a version: after an update the app asks to set it up again,
+and the user clicks once. Python and PyTorch come from uv's cache, so it is minutes, not a new
+3 GB download. Making that step skip what did not change is left for a later version; it can
+ship in any update, since the new version is the one that runs it.
+
+## Not signed
+
+The installer is not code-signed. An update that the app downloads itself is not stopped by
+SmartScreen, because the file never passes through a browser. A first install from a browser
+download still gets the SmartScreen prompt. `electron-updater` verifies the sha512 from
+`latest.yml`; it cannot verify a publisher, since there is no signature.
+
+## Alternatives considered
+
+- **A notice that opens the download page.** Simpler, but the user asked for the app to
+  update itself.
+- **Download and install without asking.** Rejected: a restart stops running jobs, and an app
+  that fetches 140 MB by itself is not what "runs locally" suggests.
+- **A separate public repository for installers**, with the code private. Not needed once the
+  repository went public.
+
+## Testing
+
+- **Unit** (`src/test/update.test.tsx`): the state machine with a stand-in for the network:
+  a newer version, none, progress, a failed check by itself and on request, a failed
+  download, the order of stopping and installing, and an app that cannot update. The button
+  in each state, the question before a restart with jobs queued, the Settings rows.
+- **End-to-end** (`e2e/update.spec.ts`): with `OPENSTEMS_E2E_UPDATE=0.3.0` the app offers the
+  version in both windows, downloads on a click, and installs on a restart; with a job
+  running it asks first.
+- **Against the real release**: see "Checked against GitHub" below.
+
+## What automation cannot check
+
+The last step, the installer replacing the running app and starting the new version, needs
+two published versions and an installed app. It is `electron-updater`'s standard path for a
+per-user NSIS installer; the first real update (0.2.0 to the next) is its first run here.

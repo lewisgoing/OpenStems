@@ -1,0 +1,48 @@
+# models, outputs, caches
+models/
+outputs/
+*.ckpt
+*.pth
+*.pt
+*.onnx
+*.safetensors
+*.wav
+*.flac
+*.mp3
+*.m4a
+*.mp4
+*.mid
+!engine/tests/fixtures/**/*.wav
+.cache/
+*.sqlite
+*.sqlite3
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.pyright/
+dist/
+build/
+!app/build/
+*.egg-info/
+
+# node
+node_modules/
+app/out/
+app/dist/
+app/release/
+app/package/
+app/test-results/
+app/playwright-report/
+app/.vite/
+
+# misc
+.env
+.env.*
+*.log
+.DS_Store
+Thumbs.db
+.claude/settings.local.json

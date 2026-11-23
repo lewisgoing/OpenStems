@@ -1,0 +1,23 @@
+id = "vocals-instrumental"
+name = "Vocals and instrumental"
+version = 1
+use_case = "Vocals"
+description = "Leap Xe vocals and Leap Xe instrumental, each from its own model."
+
+[[passes]]
+id = "vox"
+model = "bs-roformer-leap-xe-vocals"
+input = "mix"
+
+[[passes]]
+id = "inst"
+model = "bs-roformer-leap-xe-instrumental"
+input = "mix"
+
+[[outputs]]
+stem = "vocals"
+from = "vox.vocals"
+
+[[outputs]]
+stem = "instrumental"
+from = "inst.instrumental"

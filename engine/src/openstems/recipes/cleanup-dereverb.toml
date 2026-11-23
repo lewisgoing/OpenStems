@@ -1,0 +1,14 @@
+id = "cleanup-dereverb"
+name = "Cleanup: de-reverb"
+version = 1
+use_case = "Cleanup"
+description = "One utility model on any file: removes reverb."
+
+[[passes]]
+id = "fx"
+model = "bs-roformer-dereverb-anvuew"
+input = "mix"
+
+[[outputs]]
+stem = "dry"
+from = "fx.dry"

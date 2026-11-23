@@ -1,0 +1,30 @@
+id = "melody"
+name = "Melody"
+version = 1
+use_case = "Melody"
+description = "Everything that is not vocals, drums or bass as one stem, plus guitar, piano and other on their own."
+
+[[passes]]
+id = "sw"
+model = "bs-roformer-sw"
+input = "mix"
+
+[[derived]]
+name = "melody-sum"
+add = ["sw.other", "sw.guitar", "sw.piano"]
+
+[[outputs]]
+stem = "melody"
+from = "melody-sum"
+
+[[outputs]]
+stem = "guitar"
+from = "sw.guitar"
+
+[[outputs]]
+stem = "piano"
+from = "sw.piano"
+
+[[outputs]]
+stem = "other"
+from = "sw.other"
