@@ -91,17 +91,17 @@ jobs:
           if [ -z "$requirement" ]; then echo "::error::the first build has no designated requirement"; exit 1; fi
           case "$requirement" in *"certificate leaf"*|*"anchor"*) ;; *) echo "::error::the requirement pins no certificate: $requirement"; exit 1;; esac
           # What Squirrel.Mac asks before it installs: does the new app satisfy the old one's requirement?
-          codesign --verify --deep --strict -R="=$requirement" "$b"
+          codesign --verify --deep --strict -R "=$requirement" "$b"
           echo "the second build satisfies the first build's requirement"
           # The same for the copy inside the zip, which is what the updater downloads.
           mkdir unzipped
           ditto -x -k release-0.3.99/OpenStems-0.3.99-arm64.zip unzipped
-          codesign --verify --deep --strict -R="=$requirement" unzipped/OpenStems.app
+          codesign --verify --deep --strict -R "=$requirement" unzipped/OpenStems.app
           echo "the zipped second build satisfies it too"
           # And an ad hoc build must not: that is why ad hoc builds cannot update.
           cp -R "$b" adhoc.app
           codesign --force --deep --sign - adhoc.app
-          if codesign --verify -R="=$requirement" adhoc.app 2>/dev/null; then
+          if codesign --verify -R "=$requirement" adhoc.app 2>/dev/null; then
             echo "::error::an ad hoc build passed the requirement"; exit 1
           fi
           echo "an ad hoc build fails it, as it should"
