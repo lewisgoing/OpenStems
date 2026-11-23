@@ -697,7 +697,9 @@ def test_a_small_machine_lets_go_of_its_model_sooner(monkeypatch: pytest.MonkeyP
 
 
 def test_the_warm_cap_never_exceeds_the_run_budget(monkeypatch: pytest.MonkeyPatch) -> None:
-    assert build_runtime().pipeline.host.budget == 12 * GB  # the setting, as before
+    # Off a Mac the setting stands. Said outright, since the test also runs on a Mac.
+    monkeypatch.setattr(settings, "_is_mac", lambda: False)
+    assert build_runtime().pipeline.host.budget == 12 * GB
     monkeypatch.setattr(settings, "_is_mac", lambda: True)
     monkeypatch.setenv("OPENSTEMS_MEMORY_GB", "8")
     assert build_runtime().pipeline.host.budget == 4 * GB
