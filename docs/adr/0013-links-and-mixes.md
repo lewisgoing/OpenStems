@@ -54,6 +54,17 @@ fail until OpenStems ships a newer pin. The self-update exists for this: bump
 `yt-dlp[default,deno]` in `engine/pyproject.toml`, `uv lock`, release. The quick refresh
 installs the new version on the user's machine without rebuilding anything.
 
+Added after 0.3.1: nothing told us when that moment had come. A scheduled workflow,
+`.github/workflows/links-check.yml`, now compares the pin with the newest yt-dlp on PyPI
+every day (`scripts/check_ytdlp.py`) and keeps one issue open while the pin is behind, so the
+owner gets an e-mail; it closes the issue once the pin is current. A new yt-dlp release is
+taken as the sign that a site changed. The workflow does not fetch a real song: sites turn
+away the addresses GitHub's runners use, so a failure there would say nothing about the app
+on a user's machine. Two limits: not every yt-dlp release fixes something OpenStems users
+would notice, and a site can break before yt-dlp has a fix out. `check_ytdlp.py --write`
+moves the pin; `uv lock` and a release follow by hand, because a new pin should be tried
+with a real link first. Installed apps are still updated only through a release.
+
 Sites also sign the addresses of their media for a short time, and now and then turn a
 download away (`HTTP Error 403`). That happened once in five real runs here. The fetcher asks
 the site again, up to three times in all, before it reports a failure (`links.retrying`).

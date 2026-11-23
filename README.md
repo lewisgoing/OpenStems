@@ -118,7 +118,8 @@ fetches the audio from YouTube, SoundCloud, Bandcamp and many other sites and qu
 file. Playlists and live streams are refused. Fetch only what you have the right to use.
 
 The fetcher is yt-dlp. Sites change, so a fetch that stops working usually needs a newer
-OpenStems ([`docs/adr/0013-links-and-mixes.md`](docs/adr/0013-links-and-mixes.md)).
+OpenStems ([`docs/adr/0013-links-and-mixes.md`](docs/adr/0013-links-and-mixes.md)). A daily
+check in this repository opens an issue when a newer yt-dlp is out.
 
 ### Quick drop, from the tray
 

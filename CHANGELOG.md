@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- For the project, nothing changes in the app: a daily check opens an issue in the
+  repository when a newer yt-dlp is out, the usual sign that pasted links need an update
+  (`.github/workflows/links-check.yml`, `scripts/check_ytdlp.py`).
+
 ## 0.3.1 (2026-11-23)
 
 - **Every stem.** A new recipe, `every-stem`, chains four models into the deepest split
