@@ -206,11 +206,13 @@ def test_retry_reorder_remove_and_clear(
     jobs_manager.supervisor.start()
     assert jobs_manager.supervisor.ready.wait(30)
 
-    ids = [
-        client.post("/v1/jobs", json={"path": str(p), "recipe": "full-song"}).json()["id"]
-        for p in songs[:4]
-    ]
-    wait_for(client, lambda jobs: jobs[0]["state"] in ("preparing", "running"))
+    # Every job waits for Start, so nothing below races the worker: the fake engine can
+    # finish a job between two polls on a slow machine.
+    body = {"recipe": "full-song", "start": False}
+    ids = [client.post("/v1/jobs", json={**body, "path": str(p)}).json()["id"] for p in songs[:4]]
+    # The first one starts; it is handed to the worker before the answer comes back.
+    started = client.post(f"/v1/jobs/{ids[0]}/start").json()
+    assert started["state"] != "queued"
 
     # Reorder the three queued jobs: last one first.
     queued = ids[1:]
@@ -221,9 +223,10 @@ def test_retry_reorder_remove_and_clear(
     assert response.status_code == 200
     assert [j["id"] for j in response.json()["jobs"]] == [ids[0], *new_order]
 
-    # Cancel a queued job, then retry it: it goes to the back.
+    # Cancel a queued job, start the rest, then retry it: it goes to the back.
     assert client.post(f"/v1/jobs/{new_order[1]}/cancel").json()["state"] == "cancelled"
     assert client.post(f"/v1/jobs/{ids[0]}/retry").status_code == 400  # not failed/cancelled
+    assert client.post("/v1/jobs/start").status_code == 200
     assert client.post(f"/v1/jobs/{new_order[1]}/retry").json()["state"] == "queued"
 
     jobs = wait_for(client, all_terminal)
