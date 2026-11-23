@@ -310,6 +310,16 @@ quick-drop window is one click away.
 
 ## For whoever tests on a Mac
 
+With the app installed and set up, one command gathers what is still unmeasured (the
+doctor, the self-tests, a timed `full-song` and `every-stem`, and the 8 GB view) into a text
+file on the Desktop:
+
+```
+bash scripts/mac_check.sh ~/Music/a-song.mp3
+```
+
+The report holds the song's length and format, not its name.
+
 In a development checkout (`cd engine` first):
 
 ```
