@@ -85,9 +85,18 @@ App (run from `app/`):
 - `PACKAGE_PLATFORM=darwin node scripts/prepare-package.mjs`: the Mac packaging steps on
   Windows (uv for `aarch64-apple-darwin`, `requirements-mps.txt`). It leaves `app/package` in
   its Mac state: run `pnpm package:prepare` afterwards to put the Windows one back
-- Signing the Mac build: ad hoc (`app/mac-build.cjs`, the configuration the Mac commands
-  read) unless `CSC_LINK` and `CSC_KEY_PASSWORD` are set where `pnpm dist:mac` runs; notarized when `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and
-  `APPLE_TEAM_ID` are set as well. Never commit any of them
+- Signing the Mac build (`app/mac-build.cjs`, the configuration the Mac commands read):
+  ad hoc with no certificate; a Developer ID (electron-builder, hardened runtime, notarized)
+  when `CSC_LINK`, `CSC_KEY_PASSWORD` and `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`,
+  `APPLE_TEAM_ID` are all set; and with only the first two, the project's own self-signed
+  certificate, which is what the repository secrets hold today. electron-builder cannot use
+  that one, so `release-mac.yml` sources `app/build/import-mac-cert.sh` and the `afterSign`
+  hook `app/build/resign-mac.cjs` signs the app again with it. Never commit the `.p12` or any
+  of these; every release must be signed with the same certificate or installed Mac apps
+  refuse the update
+- `mac-update-test.yml` (on the branch, or started by hand): two versions signed with the
+  project's certificate, checked against each other on the runner, left as an artifact for
+  the update test on a Mac (`OPENSTEMS_UPDATE_FEED=<url>` points the updater at a folder)
 - Releasing: set the version in `app/package.json`, `engine/pyproject.toml` and
   `engine/src/openstems/__init__.py`, `uv lock`, changelog heading, merge, tag `v<version>` on
   `main`, `pnpm dist`, then `gh release create v<version>` with those three files. Never a
@@ -217,9 +226,10 @@ Self-update: `electron/updatelogic.ts` is the state machine with no Electron in 
 `src/test/update.test.tsx`); `electron/updater.ts` is the thin part on `electron-updater`.
 Both steps, download and restart, wait for the user. The repository is public because
 installed apps read its releases: `docs/adr/0010-self-update.md`. A Mac app updates itself
-only when it is signed with a Developer ID (`updater.updateBackend` asks `codesign` once at
-start). An unsigned one takes the manual path: the offer is marked `manual`, "download" opens
-the release page, and the state stays `available`.
+when it is signed with a certificate, a Developer ID or the project's own
+(`updatelogic.canUpdateItself`; `updater.updateBackend` asks `codesign` once at start). One
+signed ad hoc takes the manual path: the offer is marked `manual`, "download" opens the
+release page, and the state stays `available`.
 
 Names: `OpenStems` where people read it and for folders, `openstems` for the command, the
 Python package and keys, `OPENSTEMS_*` for environment variables. The app was lew-stems before

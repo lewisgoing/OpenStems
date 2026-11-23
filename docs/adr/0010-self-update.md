@@ -139,9 +139,11 @@ signed with a Developer ID, so an unsigned Mac app cannot replace itself. It doe
 can. **Neither path below has been run on a Mac by us.**
 
 - **Which path.** At start, on a Mac, the app runs `codesign -dv --verbose=2` on its own
-  bundle once (`updater.macAppIsSigned`). With an `Authority=Developer ID Application:` line
-  it uses `electron-updater` exactly as on Windows, with the zip and `latest-mac.yml` in place
-  of the installer and `latest.yml`. Anything else gets the manual path.
+  bundle once (`updater.macAppIsSigned`). With an `Authority=` line and no `Signature=adhoc`
+  (`updatelogic.canUpdateItself`: a Developer ID, or since 2026-11-23 the project's own
+  self-signed certificate, ADR 0014) it uses `electron-updater` exactly as on Windows, with
+  the zip and `latest-mac.yml` in place of the installer and `latest.yml`. An ad hoc build
+  gets the manual path.
 - **The manual path.** The app checks as before: it reads `latest-mac.yml` from the latest
   release and compares versions. A newer version is offered with `manual: true` and the
   address of the release page (`https://github.com/lewisgoing/OpenStems/releases/latest`).

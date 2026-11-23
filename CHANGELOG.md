@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Mac: the app updates itself.** The Mac build is now signed with OpenStems's own
+  certificate in place of an ad hoc signature, so from the next version on it installs
+  updates by itself, as on Windows. Install that version once by hand; macOS still asks for
+  a confirmation the first time it opens, since the certificate is not Apple's. The update
+  was checked on the Mac runner, not yet on a Mac. `docs/adr/0014-macos.md`, "Signing".
 - **The tempo and key can be corrected.** A song that waits in the queue shows two small
   fields, "auto" until you type the tempo or the key yourself. Finished stems show the same
   fields in the stems panel: type over a wrong figure and the manifest, file names made

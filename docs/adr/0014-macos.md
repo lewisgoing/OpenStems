@@ -39,9 +39,12 @@ unproven, and "For whoever tests on a Mac" says how to find out.
   `PLAN.md`). Signing with one, and notarization, are wired to electron-builder's standard
   environment variables and happen only when those are set. Without them the app is signed
   ad hoc, which names nobody. See "Signing".
-- **A manual update without a Developer ID.** macOS installs an update only into an app
-  signed with a Developer ID. A build without one therefore says a new version exists and
-  opens the release page. ADR 0010 has the details.
+- **The project's own certificate in place of a Developer ID (2026-11-23).** macOS installs
+  an update only when the new app satisfies the running one's designated requirement. An ad
+  hoc signature pins only that one build, so such a build says a new version exists and
+  opens the release page (ADR 0010). A self-signed certificate is free and pins the signer,
+  so a build signed with it installs the next one by itself. macOS still asks before the
+  first open, as it does today. See "Signing".
 
 ## The loaders dropped MPS; OpenStems does not use that part
 
@@ -169,7 +172,51 @@ runs (as repository secrets for a CI job). Nothing else changes:
 
 With the first two the app is signed. With the last three as well it is notarized. A signed
 app updates itself through `electron-updater` as on Windows: the app asks `codesign` once at
-start whether it carries a Developer ID signature (`updater.macAppIsSigned`).
+start whether it carries a certificate signature (`updater.macAppIsSigned`,
+`updatelogic.canUpdateItself`).
+
+### The project's own certificate (2026-11-23)
+
+There is no Developer ID, but the repository holds a self-signed code-signing certificate,
+"OpenStems", made in Keychain Access on the owner's Mac: `CSC_LINK` and `CSC_KEY_PASSWORD`
+with no Apple variables. `release-mac.yml` reads that combination as "the project's own
+certificate":
+
+- **electron-builder cannot use it.** It lists identities with `security find-identity -v`,
+  which shows only certificates the machine trusts, and a runner does not trust a
+  self-signed one. Making it trusted on the runner (`sudo security add-trusted-cert`) was
+  refused. Both were seen on the Mac runner with a throwaway probe on 2026-11-23.
+- **`codesign` can.** Asked by the certificate's SHA-1, it signs, and the signature names
+  `Authority=OpenStems` with the requirement
+  `identifier "ing.lewisgo.openstems" and certificate leaf = H"86e0372e…2759"`.
+- **So the build signs twice.** `app/build/import-mac-cert.sh` puts the certificate in a
+  keychain of its own and exports `OPENSTEMS_SIGN_IDENTITY` and `OPENSTEMS_SIGN_KEYCHAIN`.
+  electron-builder signs ad hoc (`mac-build.cjs`, hardened runtime off), then its `afterSign`
+  hook, `app/build/resign-mac.cjs`, signs the app again with the certificate (`codesign
+  --force --deep`, entitlements kept, the requirement made anew) and verifies it. The hook
+  runs before the dmg and the zip are made, so both carry the certificate's signature.
+- **No hardened runtime.** It is only needed for notarization, and without a Team ID it
+  would refuse to load Electron's own frameworks.
+- **The updater's check.** The app updates itself when `codesign` shows an `Authority=` line
+  and no `Signature=adhoc` (`canUpdateItself`): a Developer ID and the project's certificate
+  alike.
+
+`.github/workflows/mac-update-test.yml` builds two versions, 0.3.98 and 0.3.99, signed this
+way, and never publishes them. On 2026-11-23 the runner checked that 0.3.99, and the copy in
+its zip, satisfy 0.3.98's designated requirement, which is what Squirrel.Mac asks before it
+installs an update, and that an ad hoc build does not. The run leaves the first dmg and the
+second's zip and `latest-mac.yml` as an artifact for the test on a Mac:
+`OPENSTEMS_UPDATE_FEED=http://localhost:8765/` (`updatelogic.testFeedUrl`) points the first
+build's updater at the folder served by `python3 -m http.server 8765`.
+
+What that does not show: Squirrel.Mac itself replacing the app on a real Mac. Until the owner
+has run it, the first release signed this way is the first real update.
+
+**Keep the certificate.** Every later version must be signed with the same one, or installed
+apps refuse the update and their users must reinstall by hand. The `.p12` and its password
+are kept off the repository, in the owner's own backup. Apps installed before the first
+signed release (0.3.0, 0.3.1) are signed ad hoc and stay on the manual path: each Mac user
+installs one signed version by hand, and from then on it updates itself.
 
 A Mac release carries `OpenStems-<version>-arm64.dmg`, `OpenStems-<version>-arm64.zip`, their
 blockmaps and `latest-mac.yml`. The check of an app without a Developer ID reads
