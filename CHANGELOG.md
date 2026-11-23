@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.3 (2026-11-22)
 
 - **Songs wait for Start.** Files you drop or add now wait in the queue until you press
   Start, so you can line up several and set their order first. Start runs every waiting song

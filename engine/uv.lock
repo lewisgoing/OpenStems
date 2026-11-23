@@ -982,7 +982,7 @@ wheels = [
 
 [[package]]
 name = "openstems"
-version = "0.2.2"
+version = "0.2.3"
 source = { editable = "." }
 default-groups = ["cuda", "dev"]
 dependencies = [
