@@ -2,8 +2,11 @@
  * Which PyTorch build the first-run setup installs, decided from the machine's video
  * adapters. Pure logic: no Node or Electron imports, so the unit tests can load it.
  *
- *   cuda  PyTorch for CUDA 13.0 (NVIDIA). Also the fastest build on a CPU.
- *   rocm  AMD's PyTorch-on-Windows build (ROCm), for the Radeon cards AMD supports.
+ *   cuda   PyTorch for CUDA 13.0 (NVIDIA, GTX 16 and RTX 20 series and later). Also the
+ *          fastest build on a CPU.
+ *   cu126  The same PyTorch for CUDA 12.6: the last build with GTX 900 and 10 series cards
+ *          in it. It cannot run a 50-series card.
+ *   rocm   AMD's PyTorch-on-Windows build (ROCm), for the Radeon cards AMD supports.
  */
 import type { TorchVariant } from './bridge'
 
@@ -24,14 +27,26 @@ export interface VariantChoice {
   note: string
 }
 
+/** Every build, in the order they are offered. */
+export const VARIANTS: TorchVariant[] = ['cuda', 'cu126', 'rocm']
+
 export const VARIANT_LABEL: Record<TorchVariant, string> = {
   cuda: 'NVIDIA',
+  cu126: 'NVIDIA (older)',
   rocm: 'AMD Radeon',
+}
+
+/** Which cards a build is for, in a few words. */
+export const VARIANT_CARDS: Record<TorchVariant, string> = {
+  cuda: 'GTX 16 series, RTX 20 series and later',
+  cu126: 'GTX 900 and 10 series, Titan V',
+  rocm: 'RX 9070, 9060 XT, 7900 XTX, 7700',
 }
 
 /** Download size shown before setup starts. */
 export const VARIANT_DOWNLOAD: Record<TorchVariant, string> = {
   cuda: 'about 3 GB',
+  cu126: 'about 3.5 GB',
   rocm: 'about 2.5 GB, 5 GB once unpacked',
 }
 
@@ -84,9 +99,34 @@ export function rocmSupport(name: string): 'listed' | 'family' | 'no' {
   return 'no'
 }
 
+/**
+ * Whether an NVIDIA card needs the build for older cards. PyTorch's CUDA 13 build starts at
+ * the GTX 16 and RTX 20 series; the generations before that (Maxwell, Pascal, Volta) are only
+ * in the CUDA 12.6 build. A name that says nothing is taken as a current card.
+ */
+export function nvidiaOlder(name: string): boolean {
+  const n = name.replace(/\(TM\)|\(R\)|™|®/gi, '').replace(/\s+/g, ' ')
+  return (
+    /GTX ?(7[45]0|9[5-8]0|10[5-8]0)/i.test(n) || // 750 (Ti), 900 series, 10 series
+    /GT ?10[13]0/i.test(n) ||
+    /TITAN ?(X|Xp|V)\b/i.test(n) || // not TITAN RTX
+    /Quadro ?[MP]\d{3,4}/i.test(n) ||
+    /MX ?(110|130|150|230|250|330|350)\b/i.test(n)
+  )
+}
+
 /** Pick the build for a machine. NVIDIA wins when both vendors are present. */
 export function recommendVariant(adapters: GpuAdapter[]): VariantChoice {
-  const nvidia = adapters.find((a) => a.vendor === 'nvidia')
+  const cards = adapters.filter((a) => a.vendor === 'nvidia')
+  // With two NVIDIA cards, a current one decides.
+  const nvidia = cards.find((a) => !nvidiaOlder(a.name)) ?? cards[0]
+  if (nvidia && nvidiaOlder(nvidia.name)) {
+    return {
+      variant: 'cu126',
+      gpu: nvidia.name,
+      note: `Found ${nvidia.name}. It gets the build for older NVIDIA cards, which has not been tested on such a card by OpenStems. It needs NVIDIA driver 560 or newer.`,
+    }
+  }
   if (nvidia) return { variant: 'cuda', gpu: nvidia.name, note: `Found ${nvidia.name}.` }
 
   const radeons = adapters.filter((a) => a.vendor === 'amd')
@@ -122,7 +162,7 @@ export function recommendVariant(adapters: GpuAdapter[]): VariantChoice {
 }
 
 export function isVariant(value: unknown): value is TorchVariant {
-  return value === 'cuda' || value === 'rocm'
+  return value === 'cuda' || value === 'cu126' || value === 'rocm'
 }
 
 /** The marker file written after setup: `<app version> <variant>`. Older markers hold only the version. */

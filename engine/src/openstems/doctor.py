@@ -84,6 +84,20 @@ def no_gpu_problem(backend: str | None) -> str:
     return "This PyTorch build has no GPU support. Separation runs on the CPU."
 
 
+def unsupported_card_problem(name: str, capability: tuple[int, int], cuda: str | None) -> str:
+    """The card is there, but this PyTorch build was not compiled for it."""
+    major, minor = capability
+    if major < 7:
+        fix = "Switch the engine build to 'NVIDIA (older)' in Settings > System."
+    else:
+        fix = "Switch the engine build to 'NVIDIA' in Settings > System."
+    return (
+        f"This PyTorch build (CUDA {cuda or 'unknown'}) does not support {name} "
+        f"(compute capability {major}.{minor}). {fix} "
+        "Until then separation runs on the CPU, which is much slower."
+    )
+
+
 def check_gpu_ops(torch: object) -> None:
     """Run the kinds of op every model needs on the GPU and compare with the CPU.
 
@@ -168,7 +182,18 @@ def run_doctor() -> DoctorReport:
         cuda_version = torch.version.cuda
         backend, backend_version = torch_backend(torch.version)
         cuda_available = bool(torch.cuda.is_available())
-        if cuda_available:
+        from openstems.engines.torch_common import card_supported
+
+        if cuda_available and backend == "cuda" and not card_supported():
+            gpu_name = torch.cuda.get_device_name(0)
+            vram_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
+            cuda_available = False
+            problems.append(
+                unsupported_card_problem(
+                    gpu_name, torch.cuda.get_device_capability(0), cuda_version
+                )
+            )
+        elif cuda_available:
             gpu_name = torch.cuda.get_device_name(0)
             vram_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
             try:

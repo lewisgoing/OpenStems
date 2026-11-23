@@ -5,8 +5,11 @@ export type EngineStatus =
   | { state: 'ready'; baseUrl: string; token: string }
   | { state: 'failed'; error: string }
 
-/** Which PyTorch build the engine environment holds: NVIDIA (CUDA) or AMD (ROCm). */
-export type TorchVariant = 'cuda' | 'rocm'
+/**
+ * Which PyTorch build the engine environment holds: NVIDIA (CUDA 13.0), NVIDIA for older
+ * cards (CUDA 12.6), or AMD (ROCm).
+ */
+export type TorchVariant = 'cuda' | 'cu126' | 'rocm'
 
 export interface SetupStatus {
   /** `ready` means the Python environment exists; `needed` means first-run setup must run. */

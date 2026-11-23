@@ -13,6 +13,9 @@ import { _electron as electron, expect, test } from '@playwright/test'
 // profile out:
 //   PACKAGED_EXE="%LOCALAPPDATA%\Programs\OpenStems\OpenStems.exe" REAL_SONG=... pnpm e2e -g packaged
 //
+// PACKAGED_VARIANT=cu126 forces the build for older NVIDIA cards. On a newer card the test
+// stops after setup, once Settings says the build does not support the card.
+//
 // PACKAGED_VARIANT=rocm forces the AMD build whatever card the machine has. Without a
 // supported Radeon the test stops after setup, once Settings shows the ROCm build and says
 // why the CPU is in use (REAL_SONG is then not needed). With one, it goes
@@ -23,7 +26,10 @@ const models = process.env.REAL_MODELS
 const installed = process.env.PACKAGED_EXE
 const exe = installed ?? resolve(import.meta.dirname, '..', 'release', 'win-unpacked', 'OpenStems.exe')
 const variant = process.env.PACKAGED_VARIANT
-const ready = variant === 'rocm' ? Boolean(profile && models) : Boolean(song && (installed || (profile && models)))
+// A forced build may find no card it can run here: then the test stops after setup and needs no song.
+const forced = variant === 'rocm' || variant === 'cu126'
+const ready = forced ? Boolean(profile && models) : Boolean(song && (installed || (profile && models)))
+const LABEL: Record<string, string> = { cuda: 'NVIDIA', cu126: 'NVIDIA (older)', rocm: 'AMD Radeon' }
 
 test('packaged app: first-run setup, then the first separation, with no terminal', async () => {
   test.skip(!ready, 'set REAL_SONG and either PACKAGED_EXE or PACKAGED_PROFILE + REAL_MODELS (PACKAGED_VARIANT=rocm needs no song unless a Radeon is present)')
@@ -61,8 +67,8 @@ test('packaged app: first-run setup, then the first separation, with no terminal
 
     if (await setup.isVisible()) {
       // Setup waits for the graphics card check, then offers the build that fits.
-      const fits = variant === 'rocm' ? 'AMD Radeon' : 'NVIDIA'
-      await expect(page.getByRole('radio', { name: fits })).toBeChecked({ timeout: 30_000 })
+      const fits = LABEL[variant ?? 'cuda'] ?? 'NVIDIA'
+      await expect(page.getByRole('radio', { name: fits, exact: true })).toBeChecked({ timeout: 30_000 })
       if (process.env.SHOTS_DIR) await page.screenshot({ path: join(process.env.SHOTS_DIR, `setup-${variant ?? 'cuda'}.png`) })
       await page.getByRole('button', { name: 'Set up' }).click()
       await expect(page.getByRole('button', { name: 'Setting up' })).toBeVisible()
@@ -85,6 +91,16 @@ test('packaged app: first-run setup, then the first separation, with no terminal
         return
       }
       await expect(page.getByText(/Radeon/).first()).toBeVisible()
+    } else if (variant === 'cu126') {
+      await expect(page.getByText(/PyTorch 2\.14\.1\+cu126.*CUDA 12\.6/)).toBeVisible({ timeout: 90_000 })
+      if (process.env.SHOTS_DIR) await page.screenshot({ path: join(process.env.SHOTS_DIR, 'settings-cu126.png') })
+      if ((await page.getByRole('alert').count()) > 0) {
+        // A card newer than this build knows: the app says which build to switch to and
+        // runs on the CPU. Nothing more to check here.
+        await expect(page.getByRole('alert').first()).toContainText('does not support')
+        await expect(page.getByRole('alert').first()).toContainText("Switch the engine build to 'NVIDIA'")
+        return
+      }
     } else {
       await expect(page.getByText(/RTX|GeForce|NVIDIA/).first()).toBeVisible({ timeout: 60_000 })
       await expect(page.getByText(/CUDA 13/)).toBeVisible()
@@ -146,14 +162,14 @@ test('packaged app: first-run setup, then the first separation, with no terminal
 // PACKAGED_SWITCH names the build to end up with. It downloads that build's PyTorch.
 const switchTo = process.env.PACKAGED_SWITCH
 test('packaged app: switch the engine build from Settings', async () => {
-  test.skip(!(switchTo === 'cuda' || switchTo === 'rocm') || !profile || !models, 'set PACKAGED_SWITCH, PACKAGED_PROFILE and REAL_MODELS')
+  test.skip(!(switchTo && switchTo in LABEL) || !profile || !models, 'set PACKAGED_SWITCH, PACKAGED_PROFILE and REAL_MODELS')
   test.setTimeout(45 * 60_000)
   const local = join(profile ?? '', 'Local')
   const roaming = join(profile ?? '', 'Roaming')
   const marker = join(local, 'OpenStems', 'engine-env', '.openstems-version')
   expect(existsSync(marker), 'run the first-run test on this profile first').toBe(true)
-  const from = switchTo === 'cuda' ? 'rocm' : 'cuda'
-  expect(readFileSync(marker, 'utf8')).toContain(from)
+  const from = readFileSync(marker, 'utf8').trim().split(/\s+/)[1] ?? 'cuda'
+  expect(from, 'the profile already holds that build').not.toBe(switchTo)
 
   const env = { ...(process.env as Record<string, string>) }
   for (const key of ['OPENSTEMS_ENGINE', 'OPENSTEMS_CONFIG_DIR', 'OPENSTEMS_CACHE_DIR', 'OPENSTEMS_E2E', 'OPENSTEMS_TORCH_VARIANT']) delete env[key]
@@ -165,11 +181,12 @@ test('packaged app: switch the engine build from Settings', async () => {
     // The installed build is kept: detection alone never swaps it.
     await expect(nav).toBeVisible({ timeout: 90_000 })
     await page.getByRole('button', { name: 'Settings' }).click()
-    const label = switchTo === 'cuda' ? 'NVIDIA' : 'AMD Radeon'
-    const button = page.getByRole('button', { name: `Switch to ${label}` })
-    await button.scrollIntoViewIfNeeded()
+    const build = page.getByRole('combobox', { name: 'Engine build' })
+    await build.scrollIntoViewIfNeeded()
+    await expect(build).toHaveText(LABEL[from] ?? '')
     if (process.env.SHOTS_DIR) await page.screenshot({ path: join(process.env.SHOTS_DIR, `settings-before-switch-to-${switchTo}.png`) })
-    await button.click()
+    await build.click()
+    await page.getByRole('option', { name: new RegExp(`^${(LABEL[switchTo ?? ''] ?? '').replace(/[()]/g, '\\$&')}`) }).click()
     await expect(page.getByRole('dialog')).toContainText('Your models, stems and settings are not touched')
     await page.getByRole('button', { name: 'Switch and download' }).click()
 
@@ -178,8 +195,8 @@ test('packaged app: switch the engine build from Settings', async () => {
     await expect(nav).toBeVisible({ timeout: 40 * 60_000 })
     expect(readFileSync(marker, 'utf8')).toContain(switchTo ?? '')
     await page.getByRole('button', { name: 'Settings' }).click()
-    await expect(page.getByText(switchTo === 'cuda' ? /CUDA 13/ : /ROCm 7/)).toBeVisible({ timeout: 90_000 })
-    await expect(page.getByRole('button', { name: `Switch to ${from === 'cuda' ? 'NVIDIA' : 'AMD Radeon'}` })).toBeVisible()
+    await expect(page.getByText(switchTo === 'cuda' ? /CUDA 13/ : switchTo === 'cu126' ? /CUDA 12\.6/ : /ROCm 7/)).toBeVisible({ timeout: 90_000 })
+    await expect(page.getByRole('combobox', { name: 'Engine build' })).toHaveText(LABEL[switchTo ?? ''] ?? '')
   } finally {
     await app.close()
   }

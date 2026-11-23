@@ -59,7 +59,7 @@ App (run from `app/`):
   exercises it
 - `PACKAGED_PROFILE=<empty folder> REAL_SONG=<file> REAL_MODELS=<folder> pnpm e2e -g packaged`:
   first-run setup and a separation in the packaged app, on a clean profile. Add
-  `PACKAGED_VARIANT=rocm` to force the AMD build; `PACKAGED_SWITCH=cuda|rocm ... -g "switch the
+  `PACKAGED_VARIANT=rocm` or `cu126` to force another build; `PACKAGED_SWITCH=cuda|rocm ... -g "switch the
   engine build"` switches the build from Settings on a profile that is already set up
 
 ## Layout
@@ -83,8 +83,9 @@ object), `api/jobs.py` (the queue and job states), `worker/supervisor.py` and `w
 (the GPU worker process), `api/db.py` (SQLite index). API tests use a real worker process with
 the FakeEngine; the API process itself never imports torch.
 
-GPU vendors: PyTorch comes from one of two conflicting dependency groups, `cuda` (default) and
-`rocm` (AMD). Both answer through `torch.cuda`, so engine code never branches on the vendor;
+GPU builds: PyTorch comes from one of three conflicting dependency groups: `cuda` (default,
+CUDA 13.0), `cu126` (the same PyTorch for CUDA 12.6, for GTX 900 and 10 series cards; never
+run on one: `docs/adr/0012-older-nvidia.md`) and `rocm` (AMD). Both answer through `torch.cuda`, so engine code never branches on the vendor;
 `doctor.torch_backend` is the one place that tells them apart. `app/electron/variant.ts`
 decides which build first-run setup installs. A user reported AMD support working on a
 Radeon on 2026-11-22; it has not been run on one by us: `docs/adr/0007-amd-rocm.md`.

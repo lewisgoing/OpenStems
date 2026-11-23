@@ -18,7 +18,9 @@ Electron + React desktop shell. See [`PLAN.md`](PLAN.md) for the full spec and b
 
 ## Requirements
 
-- Windows with an NVIDIA GPU (built and tested on an RTX 5070 Ti, 16 GB)
+- Windows with an NVIDIA GPU (built and tested on an RTX 5070 Ti, 16 GB). The GTX 16 and RTX
+  20 series and later use the standard build. The GTX 900 and 10 series get a build of their
+  own, as an untested preview: [`docs/adr/0012-older-nvidia.md`](docs/adr/0012-older-nvidia.md)
 - Or, as an untested preview, an AMD Radeon that AMD's PyTorch for Windows supports: RX 9070,
   RX 9070 XT, RX 9060 XT, RX 7900 XTX, RX 7700, PRO W7900 or AI PRO R9700, with AMD driver
   26.2.2 or newer. See [AMD Radeon](#amd-radeon).

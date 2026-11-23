@@ -1,8 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { SetupStatus } from '../../electron/bridge'
 import {
   adaptersFromVendorIds,
   formatMarker,
+  nvidiaOlder,
   parseAdapters,
   parseMarker,
   recommendVariant,
@@ -65,6 +67,44 @@ describe('AMD support', () => {
     ['AMD Radeon(TM) Graphics', 'no'],
   ])('%s is %s', (name, expected) => {
     expect(rocmSupport(name)).toBe(expected)
+  })
+})
+
+describe('older NVIDIA cards', () => {
+  it.each([
+    ['NVIDIA GeForce GTX 1060 6GB', true],
+    ['NVIDIA GeForce GTX 1080 Ti', true],
+    ['NVIDIA GeForce GTX 1050 Ti', true],
+    ['NVIDIA GeForce GTX 980', true],
+    ['NVIDIA GeForce GTX 750 Ti', true],
+    ['NVIDIA GeForce GT 1030', true],
+    ['NVIDIA TITAN Xp', true],
+    ['NVIDIA TITAN V', true],
+    ['NVIDIA Quadro P2000', true],
+    ['NVIDIA GeForce MX150', true],
+    ['NVIDIA GeForce GTX 1650', false],
+    ['NVIDIA GeForce GTX 1660 SUPER', false],
+    ['NVIDIA GeForce RTX 2060', false],
+    ['NVIDIA GeForce RTX 3080', false],
+    ['NVIDIA GeForce RTX 5070 Ti', false],
+    ['NVIDIA TITAN RTX', false],
+    ['NVIDIA RTX A2000', false],
+    ['NVIDIA GPU', false],
+  ])('%s older: %s', (name, expected) => {
+    expect(nvidiaOlder(name)).toBe(expected)
+  })
+
+  it('get the build for older cards, and a current card beside one decides', () => {
+    const nv = (name: string) => ({ name, vendor: 'nvidia' as const })
+    const choice = recommendVariant([nv('NVIDIA GeForce GTX 1060 6GB')])
+    expect(choice.variant).toBe('cu126')
+    expect(choice.note).toMatch(/older NVIDIA cards/)
+    expect(choice.note).toMatch(/not been tested/)
+    expect(recommendVariant([nv('NVIDIA GeForce GTX 1060 6GB'), nv('NVIDIA GeForce RTX 3060')])).toMatchObject({
+      variant: 'cuda',
+      gpu: 'NVIDIA GeForce RTX 3060',
+    })
+    expect(parseMarker(formatMarker('0.2.4', 'cu126'))).toEqual({ version: '0.2.4', variant: 'cu126' })
   })
 })
 
@@ -197,8 +237,13 @@ describe('the engine build row', () => {
 
   it('switches the build only after a confirmation', async () => {
     bridge.detectGpu.mockResolvedValueOnce(status({ state: 'ready', installed: 'cuda', recommended: 'cuda' }))
+    const user = userEvent.setup()
     renderRow()
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch to AMD Radeon' }))
+    const build = await screen.findByRole('combobox', { name: 'Engine build' })
+    expect(build).toHaveTextContent('NVIDIA')
+    await user.click(build)
+    expect(screen.getByRole('option', { name: /NVIDIA \(older\)/ })).toBeInTheDocument()
+    await user.click(screen.getByRole('option', { name: /AMD Radeon/ }))
     expect(bridge.switchBuild).not.toHaveBeenCalled()
     expect(await screen.findByText(/Your models, stems and settings are not touched/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Switch and download' }))

@@ -1,7 +1,7 @@
 import { FolderOpen } from 'lucide-react'
 import { type ReactNode, useEffect, useState } from 'react'
 import type { SetupStatus, ShellStatus, TorchVariant } from '../../electron/bridge'
-import { VARIANT_DOWNLOAD, VARIANT_LABEL } from '../../electron/variant'
+import { VARIANTS, VARIANT_CARDS, VARIANT_DOWNLOAD, VARIANT_LABEL } from '../../electron/variant'
 import type { Recipe, Settings, SettingsPatch } from '@/api/client'
 import { useMaintenance, usePatchSettings, useSettings, useSystem } from '@/api/queries'
 import { FORMATS } from '@/components/FormatSelect'
@@ -270,7 +270,8 @@ export function gpuHint(system: GpuFacts): string | undefined {
  */
 export function EngineBuildRow() {
   const [status, setStatus] = useState<SetupStatus | null>(null)
-  const [confirming, setConfirming] = useState(false)
+  // The build picked in the list, until the switch is confirmed or called off.
+  const [target, setTarget] = useState<TorchVariant | null>(null)
   useEffect(() => {
     let live = true
     void window.openstems.detectGpu().then((s) => {
@@ -282,28 +283,35 @@ export function EngineBuildRow() {
   }, [])
   if (!status?.managed || !status.installed) return null
   const installed = status.installed
-  const other: TorchVariant = installed === 'cuda' ? 'rocm' : 'cuda'
+  const other = target ?? installed
   const fits = status.recommended === undefined || status.recommended === installed
   const hint = `PyTorch for ${VARIANT_LABEL[installed]} graphics cards.${fits ? '' : ` ${status.note}`}`
   return (
     <>
       <Row label="Engine build" hint={hint}>
-        <Button onClick={() => setConfirming(true)}>Switch to {VARIANT_LABEL[other]}</Button>
+        <Select
+          label="Engine build"
+          value={installed}
+          options={VARIANTS.map((value) => ({ value, label: VARIANT_LABEL[value], description: VARIANT_CARDS[value] }))}
+          onChange={(value) => value !== installed && setTarget(value as TorchVariant)}
+          className="min-w-[170px]"
+          minWidth={300}
+        />
       </Row>
       <Dialog
-        open={confirming}
-        onOpenChange={setConfirming}
+        open={target !== null}
+        onOpenChange={(open) => !open && setTarget(null)}
         title={`Switch the engine to ${VARIANT_LABEL[other]}?`}
         description={`This rebuilds the engine's Python environment and downloads ${VARIANT_DOWNLOAD[other]}. Running jobs stop. Your models, stems and settings are not touched.`}
         footer={
           <>
-            <Button variant="ghost" onClick={() => setConfirming(false)}>
+            <Button variant="ghost" onClick={() => setTarget(null)}>
               Cancel
             </Button>
             <Button
               variant="primary"
               onClick={() => {
-                setConfirming(false)
+                setTarget(null)
                 void window.openstems.switchBuild(other)
               }}
             >
