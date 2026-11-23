@@ -194,6 +194,30 @@ export function usePatchSettings() {
   })
 }
 
+/** The tempo and key of a song, typed by the user over what detection found. */
+export function useSetAnalysis() {
+  const { api } = useEngine()
+  const queryClient = useQueryClient()
+  type Change = { bpm?: number | null; key?: string | null }
+  return {
+    /** A job: before it runs the figures are kept for the run, after it its stems are re-tagged. */
+    job: useMutation({
+      mutationFn: ({ id, ...change }: Change & { id: string }) =>
+        unwrap(api.POST('/v1/jobs/{job_id}/analysis', { params: { path: { job_id: id } }, body: change })),
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.jobs }),
+    }),
+    /** Stems that are written, by their folder. */
+    stemSet: useMutation({
+      mutationFn: ({ directory, ...change }: Change & { directory: string }) =>
+        unwrap(api.POST('/v1/stemsets/analysis', { body: { directory, ...change } })),
+      onSuccess: () => {
+        void queryClient.invalidateQueries({ queryKey: keys.jobs })
+        void queryClient.invalidateQueries({ queryKey: ['stemsets'] })
+      },
+    }),
+  }
+}
+
 export function useMaintenance() {
   const { api } = useEngine()
   const queryClient = useQueryClient()

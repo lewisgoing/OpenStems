@@ -165,6 +165,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/jobs/{job_id}/analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Job Analysis
+         * @description Set a job's tempo and key by hand: before it runs, or on its finished stems.
+         */
+        post: operations["set_job_analysis"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/jobs/{job_id}/cancel": {
         parameters: {
             query?: never;
@@ -494,6 +514,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/stemsets/analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Stem Set Analysis
+         * @description Set the tempo and key of a song's finished stems by hand.
+         */
+        post: operations["set_stem_set_analysis"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/stemsets/rebuild": {
         parameters: {
             query?: never;
@@ -760,8 +800,18 @@ export interface components {
         };
         /** JobOptions */
         JobOptions: {
+            /**
+             * Bpm
+             * @description The song's tempo, in place of the detected one.
+             */
+            bpm?: number | null;
             /** Force */
             force?: boolean | null;
+            /**
+             * Key
+             * @description The song's key, such as Am, in place of the detected one.
+             */
+            key?: string | null;
             /** Match Source Rate */
             match_source_rate?: boolean | null;
             /** Midi Stems */
@@ -1096,6 +1146,26 @@ export interface components {
             name: string;
             /** Ok */
             ok: boolean;
+        };
+        /**
+         * SetAnalysis
+         * @description The tempo and key the user gives a song. A field left out is not changed; null
+         *     means the song has none (for a job that has not run yet: detect it).
+         */
+        SetAnalysis: {
+            /** Bpm */
+            bpm?: number | null;
+            /** Key */
+            key?: string | null;
+        };
+        /** SetStemSetAnalysis */
+        SetStemSetAnalysis: {
+            /** Bpm */
+            bpm?: number | null;
+            /** Directory */
+            directory: string;
+            /** Key */
+            key?: string | null;
         };
         /** SettingsModel */
         SettingsModel: {
@@ -2008,6 +2078,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Removed"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_job_analysis: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAnalysis"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobInfo"];
                 };
             };
             /** @description Bad Request */
@@ -3166,6 +3298,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StemSetList"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_stem_set_analysis: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetStemSetAnalysis"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemSetInfo"];
                 };
             };
             /** @description Bad Request */

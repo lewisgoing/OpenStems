@@ -429,6 +429,9 @@ class Service:
         here, not later in the queue."""
         recipe = self.resolve_recipe(recipe_id, model_id)
         opts = {k: v for k, v in options.items() if v is not None}
+        from openstems.pipeline.retag import clean_changes
+
+        opts.update(clean_changes(opts))  # a tempo or key typed by the user
         self.runtime.pipeline.plan(recipe, self.runtime.options(quality=quality, **opts))
         return recipe, opts
 
@@ -551,6 +554,56 @@ class Service:
         for item in sets:
             item["source_exists"] = os.path.isfile(item["track_path"])
         return sets
+
+    def set_job_analysis(self, job_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+        """The tempo and key of a job, by the user. Before it runs they are kept for the
+        run; once it is done its stems are re-tagged."""
+        from openstems.pipeline.retag import clean_changes
+
+        changes = clean_changes(changes)
+        job = self.jobs.get(job_id)
+        if job["state"] == "done" and job.get("output_dir"):
+            self.set_analysis(job["output_dir"], changes)
+            return self.jobs.get(job_id)
+        return self.jobs.set_analysis(job_id, changes)
+
+    def set_analysis(self, directory: str, changes: dict[str, Any]) -> dict[str, Any]:
+        """The tempo and key of stems that are written, by the user: in the manifest, in
+        file names that hold them and in the tempo FL Studio reads."""
+        from openstems.pipeline.retag import set_analysis
+        from openstems.pipeline.run import stem_set_from_manifest
+
+        folder = Path(directory)
+        if not self.is_served(folder) or not folder.is_dir():
+            raise DomainError("that folder does not hold a set of stems")
+        where = os.path.normpath(str(folder))
+        if self.jobs.writing_to(where):
+            raise DomainError("this song is being separated again: wait until it is done")
+        manifest = set_analysis(folder, changes)
+        self.index.save_stem_set(where, manifest)
+        result = stem_set_from_manifest(folder, manifest)
+        if result is not None:
+            stems = [
+                {
+                    "name": s.name,
+                    "file": s.file,
+                    "path": os.path.join(where, s.file),
+                    "peaks": os.path.join(where, s.peaks) if s.peaks else None,
+                    "midi": os.path.join(where, s.midi) if s.midi else None,
+                    "offset": s.offset,
+                    "samples": s.samples,
+                    "sample_rate": s.sample_rate,
+                    "group": s.group or None,
+                }
+                for s in result.stems
+            ]
+            self.jobs.output_changed(where, stems, manifest.get("analysis") or {})
+        self.bus.publish("stemsets.changed")
+        found = self.index.stem_set(where)
+        if found is None:
+            raise DomainError("that folder does not hold a set of stems")
+        found["source_exists"] = os.path.isfile(found["track_path"])
+        return found
 
     def all_recipes_for(self, model_id: str) -> Recipe:
         spec = self.runtime.catalog.get(model_id)

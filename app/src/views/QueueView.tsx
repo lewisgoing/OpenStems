@@ -2,13 +2,15 @@ import { useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Check, GripVertical, Layers, Play, RotateCcw, Trash2, X, Zap } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { Job, Model, Recipe } from '@/api/client'
-import { keys, useJobActions, useJobs } from '@/api/queries'
+import { keys, useJobActions, useJobs, useSetAnalysis } from '@/api/queries'
 import { JobNotes } from '@/components/Fit'
 import { LinkRow, useOpenLinks } from '@/components/LinkRow'
 import { RecipeBar } from '@/components/RecipeBar'
+import { TempoKey } from '@/components/TempoKey'
 import { useToast } from '@/components/toast'
 import { Button, IconButton, ProgressBar, Tooltip } from '@/components/ui'
 import { cn, formatPercent } from '@/lib/format'
+import { tempoKeyOf } from '@/lib/tempokey'
 import { modKey, shortcut } from '@/platform'
 
 export const ACTIVE = new Set<Job['state']>(['preparing', 'running', 'writing'])
@@ -197,6 +199,10 @@ function JobRow({ job, index, selected, dropTarget, onSelect, onStart, onCancel,
   const done = job.state === 'done'
   const queued = job.state === 'queued'
   const stemPaths = job.stems.map((s) => s.path)
+  // The tempo and key the user gave this song ahead of its run, if any.
+  const given = tempoKeyOf(job.options)
+  const setAnalysis = useSetAnalysis()
+  const toast = useToast()
 
   return (
     <li
@@ -259,6 +265,17 @@ function JobRow({ job, index, selected, dropTarget, onSelect, onStart, onCancel,
         </div>
 
         {active && <span className="tabular flex-none font-mono text-[12px] text-muted">{formatPercent(job.progress)}</span>}
+
+        {queued && (
+          <TempoKey
+            bpm={given.bpm}
+            keyName={given.key}
+            empty="auto"
+            hint="Leave it empty to have it detected."
+            onChange={(change) => setAnalysis.job.mutateAsync({ id: job.id, ...change })}
+            onError={toast.error}
+          />
+        )}
 
         {done && job.stems.length > 0 && (
           <Tooltip label="Drag every stem into your DAW or a folder">

@@ -198,6 +198,45 @@ class JobManager:
             self._dispatch()
             return [self.to_dict(self._jobs[j]) for j in self._order]
 
+    def set_analysis(self, job_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+        """Give a job that has not started the song's tempo and key, in place of what
+        detection will find. A value of None takes the user's figure away again."""
+        with self._lock:
+            job = self._job(job_id)
+            if job.state is not JobState.QUEUED:
+                raise DomainError("this job has already started")
+            for name, value in changes.items():
+                if value is None:
+                    job.options.pop(name, None)
+                else:
+                    job.options[name] = value
+            self._changed(job)
+            return self.to_dict(job)
+
+    def output_changed(
+        self, directory: str, stems: list[dict[str, Any]], analysis: dict[str, Any]
+    ) -> None:
+        """The stems in ``directory`` were re-tagged: finished jobs that show them follow."""
+        with self._lock:
+            for job in self._jobs.values():
+                if job.state is not JobState.DONE or not job.output_dir:
+                    continue
+                if os.path.normcase(os.path.normpath(job.output_dir)) != os.path.normcase(
+                    directory
+                ):
+                    continue
+                self._extra[job.id]["stems"] = stems
+                self._extra[job.id]["analysis"] = analysis
+                self._changed(job)
+
+    def writing_to(self, directory: str) -> bool:
+        """Whether a job that is running now has, or last had, its output in ``directory``."""
+        with self._lock:
+            job = self._jobs.get(self._current or "")
+            if job is None or not job.output_dir:
+                return False
+            return os.path.normcase(os.path.normpath(job.output_dir)) == os.path.normcase(directory)
+
     def cancel(self, job_id: str) -> dict[str, Any]:
         with self._lock:
             job = self._job(job_id)

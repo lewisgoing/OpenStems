@@ -264,6 +264,17 @@ detected tempo to WAV stems and mixes (`audio/write.py`, `tempo_chunk`), which F
 reads to stretch them to the project's tempo. FL reads the tempo field only; the beat count
 stays 0. The option enters a run's cache key only when on. `docs/adr/0016-tempo-sync.md`.
 
+Tempo and key by hand: a job's `bpm` and `key` options replace what detection finds for
+that run (`pipeline/extras.py`); they are not in the cache key, and a cached result is
+re-tagged (`Pipeline._retagged`). `pipeline/retag.py` (`set_analysis`) re-tags stems that are
+written: the manifest (the detected figures stay under `analysis.detected`), names made with
+`{bpm}` or `{key}`, and with tempo sync the mark in each WAV and mix (`write.set_tempo`, in
+place). Routes: `POST /v1/jobs/{id}/analysis` (a waiting job keeps them for its run, a
+finished one is re-tagged) and `POST /v1/stemsets/analysis` (a folder). In the app
+`components/TempoKey.tsx` is the pair of fields, in the queue row of a waiting song and in
+the stems panel. What may be typed is decided in `retag.clean_bpm`/`clean_key` and in
+`app/src/lib/tempokey.ts`: change both together. `docs/adr/0019-edit-tempo-key.md`.
+
 Dependencies point inward: `domain` imports nothing from the other packages and never imports
 torch. `cli` and `api` are the only entry points.
 
