@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.4 (2026-11-22)
 
 - **Listen before you drag.** In the quick-drop window, click a stem to hear it and click
   again to stop. Another stem of the same song picks up at the same spot, so the same bar can
