@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.5 (2026-11-22)
 
 - **Paste a link.** A song can be queued from its web address: copy the link, then press
   Ctrl+V in either window, use Paste link, or drag the link in from a browser. OpenStems
