@@ -136,6 +136,7 @@ async function pin(groupArgs) {
 
 const builds = [
   ['requirements.txt', ['--no-dev']], // the default groups minus dev: the NVIDIA build
+  ['requirements-cu126.txt', ['--no-default-groups', '--group', 'cu126']], // older NVIDIA cards
   ['requirements-rocm.txt', ['--no-default-groups', '--group', 'rocm']],
 ]
 for (const [file, groupArgs] of builds) {

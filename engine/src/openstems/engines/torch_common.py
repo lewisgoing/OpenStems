@@ -66,10 +66,39 @@ def gpu_allowed() -> bool:
     return load_settings().use_gpu
 
 
+def arch_supported(capability: tuple[int, int], arch_list: list[str]) -> bool:
+    """Whether a CUDA build of PyTorch has kernels for a card.
+
+    ``capability`` is the card's compute capability, such as (6, 1) for a GTX 1060.
+    ``arch_list`` is what the build was compiled for, such as ``["sm_75", "sm_80"]``. A build
+    for sm_XY runs on a card of the same major version and the same or a later minor one.
+    A build that names no architectures (AMD's) is taken at its word.
+    """
+    built = []
+    for arch in arch_list:
+        digits = arch.removeprefix("sm_")
+        if arch.startswith("sm_") and digits.isdigit() and len(digits) >= 2:
+            built.append((int(digits[:-1]), int(digits[-1])))
+    if not built:
+        return True
+    major, minor = capability
+    return any(m == major and n <= minor for m, n in built)
+
+
+def card_supported() -> bool:
+    """The first GPU is one this PyTorch build can run. An old card on the standard build,
+    or a new card on the build for old cards, is present but unusable."""
+    try:
+        return arch_supported(torch.cuda.get_device_capability(0), torch.cuda.get_arch_list())
+    except Exception:
+        return True
+
+
 def pick_device() -> torch.device:
     """The first GPU, for NVIDIA (CUDA) and AMD (ROCm) builds alike: both answer through
-    ``torch.cuda``. The CPU when there is none or the GPU is switched off."""
-    if gpu_allowed() and torch.cuda.is_available():
+    ``torch.cuda``. The CPU when there is none, when the GPU is switched off, or when this
+    PyTorch build has no kernels for the card."""
+    if gpu_allowed() and torch.cuda.is_available() and card_supported():
         return torch.device("cuda:0")
     return torch.device("cpu")
 

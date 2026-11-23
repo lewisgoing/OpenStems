@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Boxes, Download, History, ListMusic, Settings as SettingsIcon } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import type { SetupStatus, TorchVariant } from '../electron/bridge'
-import { VARIANT_DOWNLOAD, VARIANT_LABEL } from '../electron/variant'
+import { VARIANTS, VARIANT_DOWNLOAD, VARIANT_LABEL } from '../electron/variant'
 import type { Job, Model, Recipe, StemSet } from './api/client'
 import { EngineProvider } from './api/engine'
 import { useJobs, useModelActions, useModels, useRecipes, useSettings } from './api/queries'
@@ -93,10 +93,7 @@ function CenteredMessage({ children }: { children: ReactNode }) {
   return <div className="grid flex-1 place-items-center p-8 text-center">{children}</div>
 }
 
-const BUILDS: { value: TorchVariant; label: string }[] = [
-  { value: 'cuda', label: VARIANT_LABEL.cuda },
-  { value: 'rocm', label: VARIANT_LABEL.rocm },
-]
+const BUILDS: { value: TorchVariant; label: string }[] = VARIANTS.map((value) => ({ value, label: VARIANT_LABEL[value] }))
 
 export function SetupScreen({ status }: { status: SetupStatus }) {
   const log = useRef<HTMLPreElement>(null)

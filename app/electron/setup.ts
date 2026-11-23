@@ -28,6 +28,12 @@ const VARIANTS: Record<TorchVariant, { requirements: string; indexArgs: string[]
     indexArgs: ['--extra-index-url', TORCH_INDEX, '--index-strategy', 'unsafe-best-match'],
     what: 'PyTorch for NVIDIA GPUs',
   },
+  cu126: {
+    // The same PyTorch for CUDA 12.6, the last build that carries GTX 900 and 10 series cards.
+    requirements: 'requirements-cu126.txt',
+    indexArgs: ['--extra-index-url', 'https://download.pytorch.org/whl/cu126', '--index-strategy', 'unsafe-best-match'],
+    what: 'PyTorch for older NVIDIA GPUs',
+  },
   rocm: {
     // AMD's build and its ROCm runtime are direct, hash-pinned links to repo.radeon.com.
     requirements: 'requirements-rocm.txt',

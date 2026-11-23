@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **Older NVIDIA cards (preview, not yet run on one).** A third engine build, PyTorch for
+  CUDA 12.6, for the GTX 900 and 10 series, the GTX 750 Ti, the GT 1030, the Titan X, Xp and V
+  and Quadro M and P cards. First-run setup picks it for such a card, and Settings > System
+  lists all three builds.
+- A card the installed build cannot run no longer fails jobs: the app runs on the CPU and
+  says which build to switch to.
+- On cards where half precision is slow (GTX 900 and 10 series), the engine uses full
+  precision.
+- `docs/adr/0012-older-nvidia.md` records the decision and what is unknown.
+
 ## 0.2.3 (2026-11-22)
 
 - **Songs wait for Start.** Files you drop or add now wait in the queue until you press

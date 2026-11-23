@@ -24,6 +24,24 @@ from openstems.domain.errors import Cancelled
 from openstems.domain.quality import RunSettings
 from openstems.engines.base import CancelToken, ProgressFn
 
+
+def fast_half_precision(capability: tuple[int, int]) -> bool:
+    """Half precision only pays on cards built for it: Volta (7.0) and later. On Maxwell and
+    Pascal cards (GTX 900 and 10 series) it runs, but many times slower than full precision."""
+    return capability[0] >= 7
+
+
+def use_half_precision(device: torch.device | str) -> bool:
+    """Whether a preset's fp16 should really be fp16 on this device."""
+    device = torch.device(device)
+    if device.type != "cuda":
+        return False
+    try:
+        return fast_half_precision(torch.cuda.get_device_capability(device))
+    except Exception:
+        return True
+
+
 # A model call: (batch, channels, chunk) -> (batch, stems, channels, chunk),
 # or (batch, channels, chunk) for a single stem.
 ModelFn = Callable[[torch.Tensor], torch.Tensor]
@@ -204,7 +222,8 @@ def run_model(
         num_overlap=settings.num_overlap,
         batch_size=settings.batch_size,
         device=device,
-        autocast=settings.precision == "fp16",
+        # fp16 is a speed-up on cards built for it; on older cards it is a slow-down.
+        autocast=settings.precision == "fp16" and use_half_precision(device),
         keep=wanted,
         cancel=cancel,
     )
