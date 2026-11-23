@@ -1,0 +1,785 @@
+# Stem to MIDI at Melodyne level: research and plan
+
+2026-11-23. The plan behind Phase 7 in `PLAN.md`; nothing here is built yet. The owner's
+decisions of 2026-11-23 are in section 10. Numbers marked *reported* were read from a paper or page by a research pass and were
+not re-checked against the original table; check them before quoting them elsewhere.
+
+## Summary
+
+- **The goal is to beat Melodyne, not to copy it** (the owner's direction, 2026-11-23).
+  - **What Melodyne does:** DNA finds notes in a single instrument's audio, grades each one
+    with a probability, and relies on the user to correct it. Its MIDI export is plain notes
+    with velocity taken from amplitude, and no pitch bend.
+  - **What the app matches:** that note quality, a confidence on every note, and a way to
+    correct them.
+  - **Where it goes further,** on points where Melodyne is silent or weak:
+    - drums on their own General MIDI notes; Melodyne exports percussive material all on one
+      pitch;
+    - each note's pitch curve as bends or MPE, and the piano's sustain pedal;
+    - fewer of Melodyne's known errors: octave slips, overtone ghosts, missed high notes, loose
+      timing on soft attacks;
+    - whole-song context: bleed between stems, the song's tuning and key.
+
+  No single model is "universal", so none of this comes from one model.
+- **The app is already in a better position than a generic transcriber.** It produces clean,
+  labelled stems: lead and backing vocals, bass, guitar, piano, other, a drum kit split into
+  kick, snare, toms, hi-hat, ride and crash, and 53 instrument stems in `mega-53`. Each stem can
+  go to the method that suits it, rather than one model guessing at a mix.
+- **The order that gives the most quality for the least work:**
+  1. Drums, from the drum parts the app already separates. Plain onset detection handles kick
+     and snare. A small model trained on CC BY drum data covers toms, hi-hats and cymbals.
+     Today drums get no MIDI at all.
+  2. Monophonic stems: vocals, bass and lead lines, with a neural pitch tracker, note
+     segmentation and per-note pitch curves.
+  3. Polyphonic stems: a piano model for piano and an instrument-agnostic model for the rest.
+     A refinement layer removes overtone ghosts and bleed.
+  4. A note editor with a confidence slider.
+  5. Last, training on the app's own separator output.
+- **Licenses are the hardest constraint, harder than accuracy.** Several of the strongest
+  models are non-commercial outright: the ADTOF drum model, the SOME vocal-note model,
+  MuScriptor, Guitab, and FCPE's published weights.
+  - The permissively licensed ones are nearly all trained partly on restricted data:
+    - every strong piano model on MAESTRO (CC BY-NC-SA 4.0), Basic Pitch included;
+    - nearly every pitch tracker on MIR-1K or MDB.
+  - Only two cleanly trained models were found:
+    - MR-MT3, trained on Slakh alone, which is weak;
+    - pYIN, which is plain signal processing.
+  - The plan sorts models into three tiers (section 4) and asks the owner one question: are
+    permissively licensed weights trained partly on restricted data acceptable? Every stage
+    has a fallback that is clean throughout, and later stages train clean replacements on CC
+    BY data.
+- **Stage M0 is measurement.** Before any model is chosen, build a benchmark that runs CC BY
+  multitracks (Slakh2100, GuitarSet, E-GMD) through the app's own separators and scores the
+  transcription of the separated stems. Nobody has published that measurement. The evidence
+  that stems help is mixed: one informal test found a multi-instrument model run on every stem
+  re-transcribes the bleed in each one.
+
+## 1. What "Melodyne-level" means
+
+What Melodyne does, from Celemony's patent and manuals:
+
+| Aspect | What Melodyne does | Source |
+| --- | --- | --- |
+| Detection | Polyphonic detection (DNA) is built for one instrument or a family of similar ones, not full mixes | [Sound On Sound review, 2009](https://www.soundonsound.com/reviews/celemony-melodyne-dna-editor) |
+| Method | Phase-derived instantaneous frequency on a cent grid, then harmonic-sum salience. The strongest note is found, part of its energy subtracted, and the search repeated. Onsets are found separately as "event objects" and attached to notes, and an energy rise inside a note splits it | [US 8,022,286](https://patents.google.com/patent/US8022286) |
+| Overtones | Shared harmonics are divided among notes by normalized per-bin weights, not given to one note, so each note gets its own audio | same patent |
+| Per-note data | A pitch center, a slow "drift" curve and a fast "modulation" (vibrato) curve, each scalable from 100% to 0% and inverted at -100% | [Celemony: modulation and drift](https://helpcenter.celemony.com/M5/doc/melodyneStudio5/en/M5tour_ToolModulationDrift_2) |
+| Confidence | Every detected note has a probability grade. A slider sets how many candidates are shown and used, and "hollow" potential notes can be switched on | Sound On Sound; [Note Assignment mode](https://helpcenter.celemony.com/M5/doc/melodyneEditor5/en/M5tour_NA_Mode_1) |
+| Correction | Expected. The reviewer never saw a polyphonic first pass with every note right | Sound On Sound |
+| MIDI export | One plain note per audio note, with velocity from amplitude. No pitch bend is documented. Breaths are not exported, and Universal/percussive material is exported all on one pitch | [Celemony: Audio to MIDI](https://helpcenter.celemony.com/M5/doc/melodyneAssistant5/en/M5tour_ExportMIDI_otherDAWs) |
+| Known weaknesses | Octave errors, extra notes, missed notes in high registers, smeared transients on piano, harp and acoustic guitar, weak on driven guitar, and loose MIDI timing on soft attacks | Sound On Sound; [Arranger For Hire comparison](https://arrangerforhire.com/we-compared-automatic-audio-to-midi-transcription-tools-to-aural-transcription-by-a-music-arranger/) |
+
+The target is better than Melodyne, measured in stage M0. Melodyne is the baseline to beat, not
+a design to copy.
+
+- **Notes.**
+  - For each stem class, note F1 (onset, and onset plus offset) is at or above Melodyne's own
+    MIDI export of the same stem.
+  - The baseline is Melodyne itself if the owner can run an editor or studio licence, or the
+    trial. Otherwise published figures stand in.
+- **Past Melodyne, each with a number:**
+  - drum onset F1 per kit part;
+  - pitch-curve error in cents;
+  - octave errors and overtone ghosts per minute;
+  - median onset error in milliseconds on soft attacks;
+  - how well the confidence scores are calibrated.
+- **Workflow.** Low-confidence notes are shown, not silently dropped. Correcting and
+  re-exporting needs no re-analysis.
+- **Method.** The app does not reuse Melodyne's method. Its output is MIDI, so it never needs
+  per-note audio. It therefore neither divides the spectrum among notes nor peels notes off one
+  at a time.
+
+## 2. Where the field is (late 2026)
+
+All figures are *reported*. "Onset F1" means mir_eval note F1: onset within 50 ms and pitch
+within 50 cents. "+Offset" also requires the offset within 20% of the note or 50 ms.
+
+| Class | Best published result found | Notes |
+| --- | --- | --- |
+| Piano (clean) | Transkun V2 on MAESTRO v3: onset 0.983, +offset 0.935, +velocity 0.930 ([repo](https://github.com/Yujia-Yan/Transkun)) | Out of domain on MAPS it falls to 0.885 and 0.646; with augmentation 0.922 and 0.698. Trained on MAESTRO |
+| Multi-instrument | YourMT3+ (45.8M params): Slakh onset about 84.6; MAESTRO 97.0; GuitarSet 91.7; URMP 81.8; ENST drums 89.5 ([arXiv 2407.04822](https://arxiv.org/abs/2407.04822); figures read by an extraction model) | On real pop (RWC), instruments other than piano, bass, vocals and drums score under 10%. Octave errors on non-piano instruments |
+| Multi-instrument, unseen | 2025 AMT Challenge, instrument-aware onset F1: MIROS 0.600, YourMT3+ 0.594, MT3 0.393, Basic Pitch 0.063 ([arXiv 2603.27528](https://arxiv.org/abs/2603.27528)) | F1 falls with polyphony: MIROS 0.72 (one instrument), 0.50 (two), 0.44 (three). The metric needs the instrument label, which penalizes instrument-agnostic models. The abstract says two entries beat MT3, the table shows four |
+| Instrument-agnostic | Basic Pitch (16,782 params): onset-only F1 0.71 MAESTRO, 0.42 Slakh, 0.52 Molina vocals, 0.79 to 0.84 GuitarSet; +offset only 0.11 on MAESTRO ([paper](https://arxiv.org/pdf/2203.09893)) | Best on solo guitar at the time. Far behind specialists on piano and vocals. Note creation is heuristic |
+| Vocals | Mel-RoFormer (separation-pretrained, 64.6M): MIR-ST500 COn 0.819, COnP 0.798, COnPOff 0.625 ([arXiv 2409.04702](https://arxiv.org/abs/2409.04702)) | Weights not released. Offsets are the weak point everywhere |
+| Drums | ADTOF: MDBDrums++ F 88.7 (PyTorch port 88.5) ([repo](https://github.com/MZehren/ADTOF)) | 5 classes. Code and weights CC BY-NC-SA 4.0 |
+| Drums via part separation | Demucs drums, then ADTOF, then a sub-stem separator for velocity and 7 to 8 classes: onset F1 0.89 MDB, 0.85 ENST ([arXiv 2509.24853](https://arxiv.org/abs/2509.24853)) | Separation neither clearly helped nor hurt onsets; its value is velocity and finer classes |
+| Monophonic pitch | FCPE (10.6M): MIR-1K raw pitch accuracy 96.8%, 5.3x faster than RMVPE; RMVPE keeps 43.6% at -20 dB SNR, where CREPE collapses to 1.1% ([arXiv 2509.15140](https://arxiv.org/html/2509.15140v1)) | All tested on voice. No instrument or separated-stem results |
+| Commercial | Vendor-run benchmark on full mixes (Songscription's own): piano 89.4 (Songscription) and 88.9 (Klangio); multi-instrument 40 to 52 for all tools ([blog](https://www.songscription.ai/blog/best-audio-to-midi-converters)) | Run by a vendor that ranks itself first. Dataset not named. Indicative only |
+
+What the evidence says about the methods:
+
+- **Specialists beat generalists by a wide margin on their own instrument.** Basic Pitch scores
+  0.71 on piano against 0.95 for Onsets and Frames. This supports routing by stem.
+- **Synthetic training data generalizes poorly to real recordings.** YourMT3+ falls under 10%
+  on non-main instruments of real pop. The challenge organizers name data, not architecture, as
+  the binding limit.
+- **Every stage that adds a note tracker or an acoustic check helps a little; none replaces
+  labels.**
+  - A calibrated HMM per pitch adds 5 to 8 points of frame F over a fixed threshold on MAPS. An
+    uncalibrated one adds almost nothing ([arXiv 1704.08729](https://arxiv.org/pdf/1704.08729)).
+  - A resynthesis loss added to supervised training raised MAPS F from 76.3 to 78.2. Resynthesis
+    alone reached 54.3, against 37.7 for NMF ([paper](https://boblsturm.github.io/aimusic2020/papers/CSMC__MuMe_2020_paper_31.pdf)).
+  - Gradient descent on oscillator frequency is non-convex. It refines a pitch that is already
+    close, but cannot find one or fix an octave error ([arXiv 2210.14476](https://arxiv.org/pdf/2210.14476v2)).
+- **Two failure modes dominate commercial and open tools alike:** overtones turned into ghost
+  notes, and wrong note lengths (Arranger For Hire; Futureproof roundup, secondary).
+
+## 3. Does transcribing a separated stem help?
+
+The direct question has no peer-reviewed answer for pitched instruments. What exists points
+both ways:
+
+- **For:** accuracy collapses as the number of instruments rises: MIROS 0.72, 0.50, 0.44 for one
+  to three instruments, and precision 0.91 to 0.46. Celemony itself limits DNA to single
+  instruments. YourMT3 without stem augmentation scored 3.6% on singing straight from the mix,
+  against 68 to 72% on Spleeter-separated vocals.
+- **Against:**
+  - A model trained for mixtures gains little from separation: YourMT3+ with augmentation
+    scored 64 to 71% on the mix, within about a point of separated input.
+  - For lyrics, zero-shot Whisper did *worse* on HTDemucs vocals than on the mix (WER 39.1
+    against 35.4), though better on a stronger separator ([arXiv 2506.02339](https://arxiv.org/abs/2506.02339)).
+  - In speech, processing artifacts, more than leftover interference, are what hurt
+    recognizers ([arXiv 2201.06685](https://arxiv.org/abs/2201.06685)).
+- **A trap:** an informal, non-peer-reviewed test ran a multi-instrument model naively on all
+  six Demucs stems. Notes rose from 386 to 2,820 and onset F1 fell from 83.4 to 22.5, because
+  bleed was transcribed again in every stem. MR-MT3 fell from 65.2 to 47.8 the same way.
+  Source: [PR 195 on JDeun/audio-score-tool](https://github.com/JDeun/audio-score-tool/pull/195),
+  checked; it ran on four synthetic examples from a training split, on the CPU.
+- **What fixes the mismatch:**
+  - Fine-tuning on the separator's own output gave the largest gain in the lyrics study (WER
+    33.5 to 29.7), and it also improved mixture input.
+  - Augmentation lifted Transkun out of domain.
+  - Stem augmentation added over 4 points to YourMT3+.
+- **Joint separation and transcription is a small win for transcription.** Jointist moved
+  instrument-wise F1 from 23.2 to 24.7, and only with a pretrained transcriber. The bigger
+  effect runs the other way: notes help separation. Separation SDR rose from 1.52 to 2.01 dB
+  with predicted rolls and to 4.06 dB with true rolls ([arXiv 2302.00286](https://arxiv.org/abs/2302.00286)).
+- **A separation network makes a good transcription encoder.** Mel-RoFormer fine-tuned from
+  vocal separation reached vocal-transcription state of the art in under 15K steps. Training
+  from scratch was "significantly inferior".
+
+What this means for the design:
+
+- Each stem goes to a model or method that expects one instrument.
+- Bleed is handled across stems, not per stem. The app knows every stem of a track, and in its
+  recipes the stems add up to the mix.
+- Stage M0 measures clean stems, separated stems and the mix side by side.
+- Stage M6 fine-tunes on separator output.
+
+## 4. What can ship
+
+Checked 2026-11-23 from LICENSE files, model cards and PyPI. Nearly every useful pitch or
+transcription model is trained partly on data with research-only or non-commercial terms
+(MIR-1K, MDB-stem-synth, MedleyDB, MAESTRO), even when its weights carry an MIT or Apache
+license. Candidates therefore fall into three tiers:
+
+- **A: clean weights and clean training data.** Ships by default. Few exist today; models the
+  app trains itself on CC BY data would join this tier.
+- **B: permissive weights, but training data that includes restricted sets.** Whether such
+  weights are bound by the data's terms is unsettled. This is an owner decision (section 10).
+- **C: non-commercial, ShareAlike or no license on the weights.** Never a default.
+
+### Pitch trackers (vocals, bass, lead lines)
+
+| Model | Code | Weights | Trained on | Runs on | Range | Reported | Tier and use |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| SwiftF0 0.3.0 (2026-09) | MIT | MIT, about 96K params, inside the wheel | NSynth, PTDB-TUG, MIR-1K, MDB-stem-synth, synthetic speech | ONNX Runtime on the CPU, no torch; declares Python 3.8 to 3.14 | 46.9 to 2,094 Hz | Voice and instruments at 10 dB SNR: raw pitch accuracy 89.9 (CREPE 79.0); about 42x faster than CREPE on the CPU | B. **Default for vocals and leads.** Its floor misses bass notes below about G1 |
+| torchcrepe 0.0.24 | MIT | MIT repo, inside the wheel (72 MB) | MIR-1K, Bach10, RWC-synth, MedleyDB, MDB-stem-synth, NSynth | PyTorch | CREPE's bins are believed to start at C1 (32.7 Hz); confirm | MIR-1K raw pitch 97.9 (secondary) | B. **Candidate for bass**, after a test |
+| librosa.pyin | ISC | none | — | numpy | any `fmin` | — | A. DSP fallback, for bass below SwiftF0's floor |
+| FCPE (torchfcpe 0.0.4) | MIT | The wheel's `fcpe_c_v001.pt` is MIT, training data not stated. The Hugging Face `DDSP_200k.pt` is CC BY-NC-SA 4.0 | Paper: resynthesized M4Singer (NC-SA) and VCTK | PyTorch (uses `torch.stft`) | C1 to about B6 | The paper's model has raw pitch 96.8 on MIR-1K. The wheel's model is unmeasured | B for the wheel's model, after measurement. C for the Hugging Face one |
+| RMVPE | Apache-2.0 (no weights in that repository) | The common `rmvpe.pt` has an MIT card, but its repository's license adds a research-only notice | Not stated for that file | PyTorch | — | MIR-1K raw pitch 95.4 | Unclear. Not a default until the license is settled |
+| PESTO 2.0.1 | LGPL-3.0 | Inside the LGPL package; MIR-1K only, so voice only | MIR-1K | PyTorch | — | MIR-1K raw pitch 96.1 | Not used (LGPL, voice only) |
+
+### Note segmentation and vocal note models
+
+- **No vocal note model with clean weights was found:**
+  - SOME and GAME (openvpi): weights CC BY-NC-SA 4.0.
+  - ROSVOT: weights unlicensed, trained on M4Singer (NC-SA).
+  - VOCANO: no license on its weights.
+- **Note-segmentation code is also off-limits:**
+  - The note HMM of Tony/pYIN is GPL, and pypYIN is AGPL-3.0.
+  - The app writes its own segmenter from the published method (Mauch et al., 2015, "Tony"),
+    on top of a clean pitch tracker. An algorithm described in a paper is free to reimplement;
+    the GPL code is not copied.
+
+### Drums
+
+| Model | License | Notes | Reported |
+| --- | --- | --- | --- |
+| Magenta Onsets and Frames Drums | Apache-2.0 code, archived 2026-01. Checkpoint license not stated | Trained on E-GMD only (clean). TensorFlow 1, no PyTorch port | E-GMD onset F 83.4, with velocity 61.7 |
+| ADTOF and its PyTorch port | CC BY-NC-SA 4.0 | 5 classes | MDBDrums++ F 88.7 |
+| ADT_STR (arXiv 2601.09520) | CC BY-SA 4.0 (ShareAlike) | PyTorch, safetensors, runs on Python 3.12 | MDB 0.79, ENST 0.73 |
+| Noise-to-Notes (Sony) | Not released | Shows that E-GMD-only training can reach the state of the art | E-GMD 89.7 (with velocity 82.8), MDB 87.9 |
+| Separate-and-Detect | Card says MIT, but it relies on madmom's onset models (CC BY-NC-SA) and trains on IDMT-SMT-Drums (CC BY-NC-ND) | — | MDB 0.71 |
+| madmom (models), LarsNet, omnizart drums | Models CC BY-NC-SA, CC BY-NC, and not stated | — | — |
+
+- **Plain onset detection on separated parts covers half the kit.** Separate-and-Detect ran a
+  tuned onset detector on LarsNet-separated parts, measured on MDB against ADTOF (a table the
+  research tool rebuilt from garbled text):
+
+  | Part | Onset detection | ADTOF |
+  | --- | --- | --- |
+  | Kick | 0.90 | 0.85 |
+  | Snare | 0.75 | 0.75 |
+  | Toms | 0.26 | 0.52 |
+  | Hi-hat | 0.41 | 0.77 |
+  | Cymbals | 0.22 | 0.85 |
+  | Overall | 0.61 | 0.80 |
+
+  Plain onset detection is enough for kick and snare, not for the rest.
+- **Two CC BY 4.0 training sets fit the app's input:**
+  - E-GMD: full-kit audio with velocity.
+  - StemGMD: 1,224 h of isolated per-piece drum stems, 9 instruments. This matches already-split
+    kit parts closely.
+
+  A small per-part onset model trained on these, passed through the app's own DrumSep, would be
+  tier A. No released drum model is.
+
+### Polyphonic models (piano, guitar, keys, other)
+
+Checkpoints were inspected without being loaded: their pickle globals were listed over HTTP
+range requests, to see whether `weights_only=True` would accept them.
+
+| Model | Code | Weights | Trained on | Checkpoint | MPS risk | Reported | Tier and use |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Basic Pitch | Apache-2.0 | Apache-2.0 (Spotify). The PyTorch port basic-pitch-torch has **no license**, so the app writes its own port and converts the official weights | GuitarSet, **MAESTRO (1,154 tracks)**, Slakh, iKala, MedleyDB (paper, Table 1) | Converted state dict; 16,782 params, 75 KB | Needs a CQT. nnAudio (MIT) or the app's own | GuitarSet onset .78, MAESTRO .58 (third-party) | B. **Default instrument-agnostic model** for guitar, keys and other; its pitch contour gives per-note bends |
+| Kong / ByteDance high-resolution piano | MIT (inference), Apache-2.0 (training, archived) | **CC BY 4.0** on [Zenodo 4034264](https://zenodo.org/record/4034264); md5 only, so the app computes the sha256 | MAESTRO v2 | Old `torch.save` dict, safe globals; 172 MB | Low: its STFT is a convolution | MAESTRO onset 96.7, pedal 91.9; MAPS 83.1 (secondary) | B. **Default for piano stems**, with pedal |
+| Edwards et al. 2024 (Kong retrained with augmentation) | as Kong | CC BY 4.0, [Zenodo 10610212](https://zenodo.org/records/10610212) | Augmented MAESTRO | Has numpy globals: needs a one-time re-save to load with `weights_only=True` | as Kong | MAESTRO 96.6; MAPS 88.4 | B. A better-generalizing piano alternative; also the starting point for a guitar model (see M6) |
+| Transkun 2.0.1 | MIT | No license statement of its own; ships inside the wheel | MAESTRO v3 | Safe state dict; 56 MB | Complex `rfft` and `angle` in its features | MAESTRO onset .983; GuitarSet .873 (third-party) | B, unclear: the checkpoint is covered only by the wheel's MIT license, with no statement of its own. Optional, after measurement |
+| Aria-AMT (EleutherAI) | Apache-2.0 | Hosted in a CC BY-NC-SA dataset repository, with no statement of its own | Not stated | safetensors, 447 MB; README requires Python 3.11 | `torch.stft` | MAESTRO onset 97.6, MAPS 90.6 | C until clarified |
+| MuScriptor (Kyutai, Mirelo) | MIT | **CC BY-NC 4.0**, gated; the gate bans transcribing music you lack rights to | Synthetic and "internal" recordings | safetensors | README says it runs on MPS | Own test onset 60.4. No velocity | C |
+| MR-MT3, trained from scratch | MIT | MIT tag on Hugging Face | **Slakh2100-redux only** (CC BY 4.0) | Lightning dict, safe globals; 583 MB | Not checked | Slakh flat onset 67.3. No real-recording results | **A, pending.** Which Hugging Face file is the from-scratch checkpoint is inferred from its name; confirm before relying on it. Lakh MIDI carries the caveat noted under Slakh. The only fully clean multi-instrument candidate; a baseline in M0 |
+| MT3 (PyTorch conversion of Google's checkpoint) | Apache-2.0 | No license stated for Google's checkpoint | Includes MAESTRO | Safe state dict | Not checked | Slakh .76, GuitarSet .90, MAESTRO .95 | Unclear. Not a default |
+| YourMT3+ | **GPL-3.0** | Apache-2.0 (Hugging Face card) | Includes MAESTRO, MIR-ST500 (restricted), ENST (research-only) | Lightning `.ckpt` | Not checked | see section 2 | B weights behind GPL code: an optional, separately installed component at most |
+| Guitar-specific (GAPS, Guitab, FretNet, TabCNN) | — | GAPS weights unreleased; Guitab CC BY-NC-SA; FretNet and TabCNN have none | — | — | — | GAPS: GuitarSet 88.1 zero-shot | None usable. Guitar goes through the general model until M6 |
+
+- **No MAESTRO-free, permissively licensed piano model exists.** Authors differ on MAESTRO:
+  - Kong and Edwards release MAESTRO-trained weights under CC BY 4.0 without comment.
+  - PTify licenses its fine-tuned weights CC BY-NC-SA, saying whether share-alike reaches
+    trained weights "is unsettled".
+- **Guitar:** the GAPS work shows the Kong architecture, trained on guitar data, reaches 88.1
+  onset F1 on GuitarSet zero-shot. Fine-tuning the CC BY 4.0 Edwards weights on GuitarSet (CC
+  BY 4.0) and separated Slakh guitar is the most direct route to a shippable guitar model (M6).
+
+Dataset licenses, read from the official pages unless marked otherwise:
+
+| Dataset | License | Usable for shipped weights? |
+| --- | --- | --- |
+| Slakh2100 (and Flakh) | CC BY 4.0 ([Zenodo 4599666](https://zenodo.org/records/4599666), checked) | Yes, with attribution. The underlying Lakh MIDI files are user transcriptions of copyrighted songs, which the audio's license does not resolve |
+| GuitarSet v1.1.0 | CC BY 4.0 ([Zenodo 3371780](https://zenodo.org/record/3371780)). Has pitch contours and hexaphonic audio with and without bleed | Yes |
+| E-GMD | CC BY 4.0 ([Magenta](https://magenta.tensorflow.org/datasets/e-gmd)). 444 h, 43 electronic kits, velocity | Yes. Electronic kits only, so there is a gap to recorded drums |
+| MusicNet (original labels) | CC BY 4.0 at record level; per-recording terms to check | Probably. The realigned MusicNet-EM labels are CC BY-NC-SA |
+| ChoraleBricks | CC BY 4.0 (secondary: [MIMuT data card](https://huggingface.co/datasets/J1mmymm/MIMuT_Data_v2)) | Yes |
+| MAESTRO v3 | CC BY-NC-SA 4.0 ([Magenta](https://magenta.tensorflow.org/datasets/maestro)) | No, under a strict reading |
+| RWC Pop | CC BY-NC 4.0 (secondary) | No |
+| ENST-Drums, URMP, MIR-1K, IDMT-SMT-Bass, MIR-ST500 | Research-only or restricted | No. Local evaluation only, if at all |
+
+## 5. Recommended architecture
+
+```
+stem audio ──► router (stem name → kind; polyphony check for ambiguous stems)
+                 │
+   ┌─────────────┼──────────────────┬──────────────────────┐
+   ▼             ▼                  ▼                      ▼
+ drum part    monophonic         polyphonic             full mix / unknown
+ onsets per   neural f0 +        note model posteriors   (not transcribed by
+ part, peak   note HMM + onset   (onset, frame, pitch    default; optional
+ velocity,    cues; pitch curve  contour) + note tracker multi-instrument
+ GM mapping   per note                                   model)
+   │             │                  │
+   └─────────────┴───────┬──────────┘
+                         ▼
+        note objects: start, end, pitch center (cents), pitch curve,
+        loudness curve, velocity, confidence, source
+                         ▼
+        cross-stem pass: bleed attribution, duplicate removal
+                         ▼
+        refinement: tuning offset, overtone and octave ghosts,
+        offsets, confidence calibration
+                         ▼
+        exports: <stem>.notes.json (all data)  ──►  <stem>.mid (plain)
+                                                    <stem>.mpe.mid or bends
+```
+
+### Routing by stem kind
+
+The recipes already name their stems. The router maps names to kinds, replacing the `_RANGES`
+table in `pipeline/extras.py`. For stems whose name says nothing about polyphony (`other`,
+`melody`, `synth`, `strings`, `keys`, `wind`), a polyphony check decides between the monophonic
+and polyphonic paths. It counts simultaneous peaks in a harmonic salience map, or the active
+notes in the polyphonic model's posterior.
+
+| Stems (names in the recipes) | Kind | Method | MIDI |
+| --- | --- | --- | --- |
+| `kick`, `snare`, `toms`, `hh`, `ride`, `crash` | drum part | Onset detection per part. Velocity from the peak level within about 50 ms. GM note per part. Toms split into high, mid and low by pitch clusters. Hi-hat open or closed by decay | Channel 10: 36, 38, 41-50, 42/46, 51, 49 |
+| `drums` (any recipe without the kit split) | drum mix | Run the DrumSep pass first (the `drum-kit` chain), then as above. Later, a drum transcriber trained on E-GMD | Channel 10 |
+| `other drums`, `percussion`, `congas`, `tambourine`, `triangle` | percussion | Onsets only, one GM percussion note | Channel 10 |
+| `vocals`, `lead vocals`, `lead`, `dry vocals`, `lead-vocal`, `vocal` | monophonic voice | SwiftF0, then the app's own note segmenter (no vocal note model has clean weights) | Plain, plus bends |
+| `bass`, `double-bass`, `tuba` | monophonic bass | f0 with a low range (torchcrepe or pYIN below about 47 Hz). Polyphonic path when chords are found | Plain, plus bends |
+| `backing vocals`, `back-vocal`, `backing` | polyphonic voice | Polyphonic path | Plain or MPE |
+| `piano`, `digital-piano`, `keys`, `organ`, `harpsichord` | polyphonic keys | Polyphonic path. Optional piano specialist | Plain (MPE optional) |
+| `guitar`, `acoustic-guitar`, `electric-guitar`, `banjo`, `mandolin`, `ukulele`, `dobro`, `sitar`, `harp` | polyphonic plucked | Polyphonic path. Bends matter | Plain or MPE |
+| `violin`, `viola`, `cello`, `strings`, `bowed_strings`, winds and brass in `mega-53` | depends | Polyphony check | Plain, plus bends or MPE |
+| `other`, `melody`, `synth`, `bells`, `glockenspiel`, `marimba`, `accordion` | unknown | Polyphony check, instrument-agnostic | Plain or MPE |
+| `instrumental`, `drumless`, `clean`, `dry` | mixture | Not transcribed by default | none |
+
+The stem name also gives the MIDI file a General MIDI program, and a pitch range prior: a
+violin plays no lower than G3, a flute no lower than about C4. That range prior removes octave
+errors cheaply.
+
+### The note object (sidecar file)
+
+The full result is kept in `<stem>.notes.json` beside the stem. The `.mid` files are derived
+from it, so changing the export, or later the user's corrections, never re-runs the analysis.
+Melodyne keeps this detail inside the program too.
+
+```json
+{
+  "version": 1, "stem": "lead vocals", "kind": "voice", "method": "mono-1",
+  "hop_seconds": 0.01, "tuning_cents": -12.0, "bpm": 121.9,
+  "notes": [
+    {"start": 12.345, "end": 12.901, "pitch": 64.07, "velocity": 88, "confidence": 0.93,
+     "curve_cents": [3.1, 2.4, -1.0], "loudness_db": [-18.2, -16.9, -17.4],
+     "source": "f0+hmm"}
+  ]
+}
+```
+
+- **Pitch center:** a robust average of the curve over the note's stable part, measured against
+  the song's tuning (`librosa.estimate_tuning`). This is Melodyne's pitch center.
+- **Drift and modulation:** split from `curve_cents` with a fixed filter. Drift is the part
+  below about 2.5 Hz; modulation is the rest. They are computed on read, not stored.
+- **Velocity:** from loudness at the attack, normalized per stem. Melodyne also takes velocity
+  from amplitude.
+- **Confidence:** a calibrated probability that the note is right (section 7).
+
+### Refinement, using published methods
+
+1. **Tuning first.** Estimate the song's offset from A440 once and round pitch centers against
+   it. A detuned recording otherwise produces notes that flip between neighbours.
+2. **Cross-stem bleed.** For each note, measure the energy at its harmonics in every stem of
+   the track. If another stem holds the same note much louder (beyond that stem pair's usual
+   bleed ratio), drop it or mark it low confidence. This uses the fact that the recipes' stems
+   add up to the mix.
+3. **Overtone and octave ghosts.** Fit the detected notes to the stem with non-negative least
+   squares over harmonic templates (score-informed NMF, a published method: Ewert and Müller,
+   2012). A note whose activation vanishes once lower notes' harmonics are accounted for is a
+   ghost. For octave pairs, compare odd-harmonic energy. The fit only decides which notes are
+   real; it does not split the audio among them.
+4. **Offsets.** End a note when its harmonic energy falls a set number of dB below its peak, or
+   reaches the stem's noise floor. Use the piano model's pedal output where it has one.
+5. **Pitch curves in polyphony:**
+   - The source is the model's own pitch contour; Basic Pitch resolves three bins per semitone.
+   - It is refined by instantaneous frequency at those of the note's harmonics that no other
+     sounding note shares.
+   - Shared bins are skipped, not divided.
+6. **Optional, later:** local gradient refinement of pitch and amplitude by resynthesis. Local
+   only, since it cannot fix large errors.
+
+None of these steps peels notes off one at a time or divides spectral bins among notes. Those
+are how Celemony's patent describes its method (section 10).
+
+## 6. Ideas beyond a single model, ranked
+
+Gain and cost are judgments, to be confirmed in stage M0.
+
+| # | Idea | Gain | Cost | Why |
+| --- | --- | --- | --- | --- |
+| 1 | Drum MIDI from the drum parts the app already separates | High | Low, then medium | Velocity and finer classes come from the parts (Riley and Dixon). Plain onsets are enough for kick and snare; a small model trained on CC BY StemGMD and E-GMD covers the rest. Today drums get no MIDI |
+| 2 | Cross-stem bleed attribution | High | Low | Avoids the bleed blow-up seen when every stem is transcribed (386 to 2,820 notes) |
+| 3 | Route by stem name, with instrument range priors and GM programs from `mega-53` labels | Medium-high | Low | Specialists beat generalists. Range priors kill octave errors |
+| 4 | Tuning offset and key-aware rounding | Medium | Trivial | Stops pitch-center flips on detuned recordings |
+| 5 | Confidence per note, with a sensitivity slider | High (user-facing) | Medium | This is how Melodyne gets to a usable result |
+| 6 | Score-informed harmonic NMF for ghosts and per-note curves | Medium-high | Medium | Targets the most common complaint about every tool |
+| 7 | Two transcribers voting | Medium | Low once both exist | Agreement raises confidence |
+| 8 | "Observation adding": transcribe the stem plus a little of the mix | Unknown | Trivial to test | Reduces artifact damage in speech recognition. Untested for music |
+| 9 | Separator-in-the-loop training data | High | High | Render CC BY multitracks, separate them with the app's own models, and train on the result with the original labels |
+| 10 | Reuse a RoFormer separator as the transcription encoder | High | High | Mel-RoFormer reached vocal state of the art this way. Depends on the separation weights' license |
+| 11 | Repetition prior: repeated sections should agree | Medium | Medium | Fills missed notes and rejects ghosts in choruses. Not found in the literature |
+| 12 | Notes back into separation, then transcribe again | Low-medium | High | Notes help separation more than separation helps notes. A research bet |
+| 13 | Resynthesis residual as a "missed notes" hint | Medium | Medium | Unexplained energy becomes hollow candidate notes in the editor, as Melodyne does |
+| 14 | Piano sustain pedal as CC64 | Medium | Low | Kong's piano model already predicts the pedal. Melodyne's export documents none |
+| 15 | Key signature in the file, and a tempo map from beat tracking | Medium | Low to medium | The app already detects key and tempo; beat tracking would be new. MIDI from a song whose tempo drifts then lines up with bars. Whether FL imports a tempo map goes in the M0 test files |
+| 16 | A chord track: chord names as markers or a separate track, from all pitched stems together | Medium | Medium | Only possible with the whole song in hand, which a single-track editor like Melodyne lacks |
+
+## 7. Measuring it: the benchmark (stage M0)
+
+- **Script:** `scripts/midi_bench.py`, a development tool like `scripts/benchmark.py`.
+  Datasets are downloaded by hand to `D:` and never committed.
+- **Sets,** fetched by `scripts/midi_bench_data.py` into `D:\lew-stems\bench`. All are CC BY 4.0
+  (Zenodo, checked 2026-11-23), and downloads are verified against Zenodo's md5.
+  - **25 Slakh2100 test songs:** stems, mix and MIDI. The archive is one 104 GB `.tar.gz` with
+    its splits interleaved, so it is streamed and stopped once 25 test songs are in. That costs
+    about 15 to 20 GB of download. Slakh has no vocals.
+  - **vocadito,** for vocals in M3: 40 solo vocal excerpts with f0 and note annotations, 58 MB.
+    Mixed over Slakh backing, it also gives separated vocals to test.
+  - **Later:** an E-GMD subset (one 96 GB zip; the server takes range requests, so single files
+    can be read) and StemGMD (six 31 GB parts, for M2b).
+  - **GuitarSet:** mono microphone audio, with pitch contours and notes (0.7 GB). The
+    hexaphonic audio, with and without bleed, can follow if needed.
+  - A synthetic expressive set made by a script: melodic lines and chords with known vibrato,
+    drift and bends, rendered by a simple harmonic synth so the true curves are exact. It is
+    public domain by construction, and mixed over Slakh backing to create bleed.
+- **Three conditions per song:**
+  1. The clean stem (oracle).
+  2. The app's separated stem, from `full-song` and `every-stem`.
+  3. The mix.
+
+  This produces the stems-versus-mix measurement the literature lacks.
+- **Metrics:**
+  - Note F1 from mir_eval at its defaults: onset only, onset plus offset, and with velocity
+    (`mir_eval.transcription_velocity`).
+  - Drum onset F1 per class.
+  - Cross-stem duplicate rate.
+  - Pitch-curve error: median absolute cents, and the share of frames within 25 and 50 cents,
+    on matched notes.
+  - Confidence calibration: reliability curve.
+  - Resynthesis distance: a diagnostic only, since magnitude spectra are a weak pitch signal.
+- **Baselines:**
+  - Today's YIN tracker.
+  - The section 4 candidates: SwiftF0, torchcrepe, pYIN, the Basic Pitch port, Kong's piano
+    model, MR-MT3.
+  - ADTOF and Transkun as references. Evaluation only; ADTOF is never shipped.
+  - Melodyne's exported MIDI for the same stems (the owner has Melodyne). This is the bar
+    to beat.
+  - NeuralNote's exported MIDI. It runs Basic Pitch inside, so it also checks that the app's
+    own port of Basic Pitch matches the original.
+- **Baseline pack, to keep the owner's manual work small:** for about 10 songs, the harness
+  writes:
+  - the separated stems, with exact file names;
+  - for each stem, which Melodyne algorithm to use (Melodic, Polyphonic or Percussive);
+  - a drop folder with fixed names: `<song> - <stem>.melodyne.mid` and
+    `<song> - <stem>.neuralnote.mid`.
+- **External MIDI is aligned before scoring:**
+  - Each file's ticks are converted with its own tempo map.
+  - Melodyne starts its export at the bar of the first note.
+  - NeuralNote is reported to export at 120 BPM.
+  - The harness finds one global offset per file by cross-correlating onsets within a bounded
+    window, and reports the offset it applied. Otherwise the baselines would score near zero
+    for the wrong reason.
+- **Machine:** separation runs go in batches, and the harness caps its CPU workers. Each run of
+  `openstems selftest` with models is still asked for first.
+
+## 8. MIDI export and DAWs
+
+Checked 2026-11-23 against each vendor's current release. "By omission" means the vendor's
+release notes and manual say nothing on the point.
+
+| DAW | Per-note pitch on import | Pitch-bend range | Source |
+| --- | --- | --- | --- |
+| FL Studio 2026 (2026.1.7; 2026.2 RC of 2026-11-20) | No native MPE (by omission in the 2026 release notes; a 2026 feature request has no staff reply). Import can create "one channel per track": each MIDI channel in the file becomes its own instrument, so an MPE file opens as up to 15 instruments. Bends arrive as channel pitch events, not note slides (forum, unverified) | An Image-Line staff post (2023) says FL "doesn't handle pitch bend range from MIDI files". Users report every bend read as +/-2 | [Import MIDI manual page](https://www.image-line.com/fl-studio-learning/fl-studio-online-manual/html/automation_midiimport.htm), [staff post](https://forum.image-line.com/viewtopic.php?p=1853428) |
+| Ableton Live 12.4 | The Note Expression tab edits per-note pitch "regardless of" how a clip was made. Whether member-channel bends in an imported file become note expression is undocumented | 48 for MPE (Ableton's advice; Auto Shift uses 48 since 12.1.5) | [Editing MPE](https://www.ableton.com/en/live-manual/12/editing-mpe/) |
+| Logic Pro 13.0 | MPE file import undocumented. 13.0 keeps the original order of controller events that share a position on import, which implies older versions reordered them | Instruments 0 to 96, default 48 | [Logic 13.0 notes](https://support.apple.com/en-us/109503) |
+| Bitwig 6.1 | Imports pitch bend (since 3.2.8). MPE import not documented | Micro-pitch +/-24 | [3.2.8 notes](https://downloads.bitwig.com/stable/3.2.8/Release-Notes-3.2.8.html) |
+| Cubase 15, Reaper | Cubase documents MPE only for input devices, plus a manual "Convert to Note Expression" command. Reaper asks whether to split channels onto tracks, and has no per-note editor | — | Steinberg help; Cockos wiki (secondary) |
+| Any DAW | None was found that reads the MIDI 2.0 Clip File (specified in 2023) | — | release notes, by omission |
+
+Melodyne 5's export carries no pitch bend in any edition. Several instances go into one file,
+one channel per instance ([Celemony](https://helpcenter.celemony.com/M5/doc/melodyneStudio5/en/M5tour_ExportMIDI_otherDAWs)).
+
+Three exports follow from this:
+
+1. **Plain notes (the default).** Format 1, one channel; drums on channel 10 with GM notes. It
+   is the only form every DAW documents, and it is what Melodyne writes.
+2. **Bends at +/-2 semitones, one voice per channel.** +/-2 is General MIDI's default and what
+   FL is reported to assume, so this is the most likely file to work everywhere.
+   - Pitch moves larger than 2 semitones become new notes, which the note segmenter does
+     anyway. Within a note, vibrato and drift rarely exceed 2 semitones.
+   - RPN 0 is still written, then RPN null.
+   - This suits monophonic stems (vocals, bass, leads).
+   - Overlapping notes in one voice are trimmed so each bend belongs to one note.
+3. **MPE (an option).** For Live, Bitwig, Logic and Cubase, labelled "untested on import" until
+   checked.
+   - Lower zone, with the MPE Configuration Message on channel 1. Checked against RP-053: RPN
+     00 06, sent as `B0 64 06, B0 65 00, B0 06 0F` for 15 member channels. A receiver then
+     resets members to +/-48 and the master to +/-2.
+   - RPN 0 = 48 on every member channel, with bends kept within +/-24 for Bitwig.
+   - CC74 and channel pressure.
+   - Each setup message on its own tick before the first note, since older Logic versions may
+     reorder controllers that share a tick.
+
+Test files for the owner (part of M0). Open each in FL Studio through File > Import, by
+dropping on the Channel Rack and by dropping on the Piano roll. Also open the MPE files in
+Logic on the Mac and in Live.
+
+1. **Bend at +/-2:** channel 1, one note, RPN 0 = 2, a bend ramping to +2 semitones. Where does
+   the bend land, and how large is it?
+2. **Bend at +/-12:** as 1, with RPN 0 = 12 and a +12 bend. Does FL read RPN 0?
+3. **Bend at +/-48:** as 1, with RPN 0 = 48 and a +7 bend. How does it scale at the MPE range?
+4. **MPE layout:** four overlapping notes on channels 2 to 5, each with its own bend, CC74 and
+   pressure, plus the configuration message. Make a type 0 and a type 1 version, and import
+   each with "one channel per track" on and off.
+5. **Two voices:** channels 1 and 2, saved as type 0 and as type 1. How does FL split them?
+6. **Tempo map and key:** a tempo change partway through, plus a key signature. Does FL import
+   the tempo map, and do the notes still land on the right bars?
+
+What the MPE specification fixes, from [RP-053](https://midimpe.neocities.org/rp53spec.pdf):
+
+- **Channels:** one note per member channel, so at most 15 notes can bend independently in a
+  zone.
+- **Bend range:** per-note pitch bend defaults to +/-48 semitones and the master channel to +/-2.
+  Either can be changed with RPN 0, and an exporter should write the range explicitly.
+- **Before Note On:** a note's starting pitch is the last bend sent on its channel, so the bend
+  and other per-note values go before the Note On. Nothing applies after Note Off.
+- **Per-note dimensions:** pitch bend, channel pressure and CC74.
+- **Resolution:** 14-bit bend at +/-48 is about 0.6 cent per step, ample for vibrato and drift.
+
+A monophonic stem has one voice, so it needs no MPE: ordinary pitch bend on one channel, with
+its range declared by RPN 0, is the most widely readable form.
+
+## 9. Build plan
+
+Stages are named M0 to M7 so they are not confused with the phases in `PLAN.md`. Ranked by
+expected quality gain for the effort; M0 and M1 come first because everything depends on them.
+Effort: S is days, M one to two weeks, L several weeks.
+
+### M0: benchmark (M)
+
+- **What:** section 7, plus a test MIDI set for the owner to open in FL Studio, Ableton and
+  Logic (section 8).
+- **Done when:** the baselines are scored on all three conditions. The report is added to
+  `docs/benchmarks.md`.
+- **Machine:** separating 20 to 30 songs is ordinary app use, but long unattended GPU runs on
+  this PC need the owner's go-ahead (the machine notes in `CLAUDE.md`).
+
+### M1: note objects and export (S to M)
+
+- **Domain code:** `domain/notes.py`, plain functions with no torch:
+  - the note object;
+  - drift and modulation split;
+  - velocity mapping;
+  - tuning-relative rounding;
+  - the polyphony check's decision rule.
+- **MIDI writer:** `audio/midi.py` grows a format 1 writer with:
+  - program change;
+  - channel 10 for drums;
+  - single-channel bends with the range declared by RPN 0;
+  - a key signature meta event, and room for a tempo map later (section 6, idea 15);
+  - an MPE writer: member channel allocation; bend, CC74 and pressure before each Note On; at
+    most 15 voices, with overflow notes falling back to plain notes.
+- **Unchanged:** `midi_bytes` keeps its current behavior for plain notes.
+- **Tests:**
+  - round trips;
+  - MPE invariants: bend before Note On, RPN 0 on every member channel, voice limit;
+  - the sidecar schema.
+- **Mac:** pure Python, no platform branch.
+
+### M2: drums from the drum parts (S to M for M2a; M for M2b; highest gain per effort)
+
+- **M2a, no weights:** `transcribe/drums.py`:
+  - spectral-flux onsets per part, with an adaptive threshold (librosa is ISC-licensed);
+  - cross-part bleed suppression: a hit counts in the part where it is loudest relative to
+    that part's usual bleed;
+  - velocity from peak level;
+  - GM mapping, with tom clustering and hi-hat open or closed.
+
+  Published numbers say this is enough for kick and snare and weak for toms, hi-hats and
+  cymbals. Those parts ship marked low confidence until M2b.
+- **M2b:** a small learned per-part onset model (a CNN or CRNN on mel frames, about the size of
+  ADTOF's), with:
+  - training data: StemGMD and E-GMD (both CC BY 4.0) passed through the app's DrumSep;
+  - shipped as a catalog model, tier A.
+
+  This is the first training job, and a small one. Ask before running it on the development PC.
+- **Recipes:** asking for drum MIDI on a recipe without the kit split adds the DrumSep pass. The
+  recipe and option wiring change, along with the cache key.
+- **Scored on:** separated Slakh drums, E-GMD, and StemGMD held-out kits.
+
+### M3: monophonic expressive (M)
+
+- **Replaces** `track_notes` (YIN) with:
+  - a neural f0 tracker: SwiftF0 for vocals and leads, with torchcrepe or pYIN for bass below
+    about 47 Hz (section 4). SwiftF0 runs on ONNX Runtime on the CPU, so it needs no GPU
+    memory and has no MPS path to verify; ONNX Runtime becomes a new dependency;
+  - tuning estimation;
+  - an HMM note segmenter written from the published Tony method (its GPL code is not
+    used), with onset cues from spectral flux;
+  - per-note curves;
+  - velocity from amplitude.
+- **Polyphony check:** routes ambiguous stems.
+- **Export:** single-channel pitch bend.
+- **Model rules:**
+  - Torch trackers are catalog models with a sha256, `weights_only=True`, a measured
+    `memory_gb`, a self-test entry and an "unverified on MPS" note until the owner runs them.
+  - SwiftF0's file is ONNX, so there is no pickle to load. Like torchcrepe's, it ships inside
+    its pip wheel, outside the catalog. Two options:
+    - copy the file to a pinned URL that the catalog downloads, per rule 6;
+    - rely on the lockfile's package hashes, recorded as an ADR deviation.
+
+### M4: polyphonic pitched (M to L)
+
+- **Engine:** the models chosen in section 4:
+  - piano stems: Kong's piano model (CC BY 4.0 weights), with pedal;
+  - keys and other: the app's own PyTorch port of Basic Pitch (Apache-2.0 weights, converted
+    once, then pinned by sha256). Its pitch contour is the reason to use it;
+  - guitar: chosen in M0 from the Basic Pitch port, Kong or Edwards, and Transkun. Third-party
+    GuitarSet figures put Basic Pitch (.78) below Transkun (.87), and the GAPS work took the
+    Kong architecture to 88.
+
+  Both are tier B, allowed by the owner's decision. Each runs with:
+  - a note tracker over its posteriors, calibrated per stem kind;
+  - per-note bends from its pitch contour plus instantaneous frequency;
+  - the cross-stem bleed pass;
+  - score-informed NMF ghost pruning.
+- **Optional, after measurement and the owner's decisions (section 10):**
+  - Transkun or the Edwards weights for piano.
+  - YourMT3+ as a separately installed component.
+- **Engine port:** a `Transcriber` protocol beside `Engine` in `engines/base.py`, with the same
+  device, out-of-memory and CPU-fallback path (`engines/device.is_oom`, the job note). The API
+  process never imports torch.
+
+### M5: confidence and the note editor (L)
+
+- **Confidence:** a calibrated score from model probability, unique explained energy, bleed
+  ratio and duration.
+- **Note view in `StemsPanel`:**
+  - notes over the waveform;
+  - a sensitivity slider (Melodyne's "how many candidates are used");
+  - hollow low-confidence notes;
+  - delete, split, join and add;
+  - re-export without re-analysis.
+- **Rules:** motion follows `docs/adr/0005-desktop-shell.md`. Words go through `src/platform.ts`.
+- **Tests:** the FakeEngine gets a fake transcriber with deterministic notes for the end-to-end
+  tests. Mac component tests go in `src/test/mac.test.tsx`.
+
+### M6: training on separator output (L, research)
+
+- **Data:** from CC BY sets only (Slakh2100, GuitarSet, E-GMD, MusicNet with original labels,
+  ChoraleBricks), plus the synthetic expressive set, all passed through the app's own
+  separators.
+- **Training:**
+  - Fine-tune the polyphonic model and the f0 tracker per stem kind.
+  - Guitar first: start from the CC BY 4.0 Edwards piano weights, as the GAPS work did.
+  - Train a drum transcriber on E-GMD through DrumSep, for when the kit is not split.
+  - Over time, replace tier B models with tier A ones trained only on CC BY data, where they
+    match the quality.
+- **Ask first:** before any training run on the development PC (power loss under sustained
+  load), or use a rented GPU.
+
+### M7: research bets
+
+- Local resynthesis refinement.
+- The repetition prior.
+- Test-time adaptation of thresholds per song.
+- Notes fed back into separation.
+
+### Changes every stage carries
+
+- **Cache key:**
+  - The MIDI method gets a version in `RunOptions.key_dict()`.
+  - It is added only when the new method is on, as `tempo_sync` does, so earlier cache keys
+    stay the same.
+  - The manifest records the method and the sidecar file.
+- **API:**
+  - Schema changes regenerate `engine/openapi.json` and `app/src/api/schema.d.ts`.
+  - The Settings hint for Write MIDI changes. Today it reads "Monophonic: one note at a time".
+- **Both platforms:**
+  - Each model gets a self-test entry.
+  - `scripts/mac_check.sh` gets a timed transcription of every stem, and the MIDI files go into
+    the report the owner sends back.
+  - Each Mac figure is marked as an estimate until measured.
+- **Attribution:** CC BY weights (Kong, Edwards) and every model trained on Slakh, GuitarSet,
+  StemGMD or E-GMD must be credited. The credit is shown with the model in the catalog and the
+  app.
+- **Docs:** each deviation from `PLAN.md` gets an ADR.
+
+## 10. Decisions
+
+The owner's answers of 2026-11-23:
+
+- **Tier B weights are allowed.**
+- **Melodyne and NeuralNote** are available for baselines.
+- **M0 may run** its separation runs on the development PC.
+- **The FL Studio test files** will be checked by hand.
+
+The rest are defaults until changed. The three that touch `PLAN.md` are in its Open decisions
+table.
+
+| Decision | Default | Alternative |
+| --- | --- | --- |
+| Tier B weights: a permissive license on the weights, but restricted data in training (SwiftF0, torchcrepe, Basic Pitch, Kong's piano model, Transkun, YourMT3+ weights; nearly every pitch tracker uses MIR-1K or MDB, and every strong piano model MAESTRO) | **Decided (owner, 2026-11-23): allowed**, with the training data and attribution recorded in the catalog and shown with the model. Tier A replacements trained by the app (M2b, M6) take over where they match the quality | Tier A only |
+| GPL code (YourMT3+) | Not in the app. Running it privately is unrestricted under the GPL, so M0 measures it locally, in an environment of its own on `D:`, outside the engine's `uv.lock`. Revisit in M4 only if it clearly beats every shippable model on guitar or "other", where it reports the highest GuitarSet score found | A separately installed component, or asking the author to relicense the inference code (the weights are already Apache-2.0). A clean-room rewrite is not proposed: it is large, and hard to defend once the code has been read |
+| Non-commercial weights (ADTOF, hFT-Transformer) | Never shipped | — |
+| Celemony's US 8,022,286. Google Patents shows it active, expiring 2029-06-15, with the last maintenance fee paid 2023-03-08. EP2099024 is shown active to about 2029-02-05 (secondary; the EPO Register is the authority) | Avoided by design, following the owner's direction not to copy Melodyne: no peeling notes off one at a time, no division of spectral bins among notes, no per-note audio. Legal advice only if per-note audio editing is ever added | — |
+| MIDI pitch format | Plain notes by default. Bends at +/-2 for monophonic stems as an option. MPE as a further option, marked untested on import | MPE by default |
+| Training compute | A rented GPU, or the development PC only with the owner present | — |
+
+## 11. Risks
+
+- **License:** see section 10.
+  - Every stage has a tier A fallback: pYIN, plain drum onsets, MR-MT3.
+  - The better tier B defaults wait on the owner.
+  - The fallbacks cost quality, by an amount M0 will show.
+- **Patent:** see section 10.
+- **Separation artifacts make a model worse,** as with Whisper on Demucs vocals. Measured in M0.
+  Mitigated by observation adding, then by separator-in-the-loop training.
+- **Bleed duplicates:** the cross-stem pass.
+- **Mac:** every new model is unverified on MPS until the owner runs `mac_check.sh`. Complex STFT
+  and CQT operations may need the CPU fallback (`engines/stft_fallback.py`).
+- **DAW import differs by DAW,** with FL Studio the hardest. Settled by the test files.
+- **Scope:** the editor (M5) is a large UI feature. M1 to M4 deliver value without it.
+- **Speed and memory:** each model gets a measured `memory_gb` and a fit. Transcribing 13 stems
+  adds time to a job, so MIDI stays opt-in per stem.
+
+## 12. Unsolved in research
+
+- **Dense polyphony of similar timbres:** string sections, pads, choirs. Even the best systems
+  fall to about 0.44 onset F1 with three instruments.
+- **Instruments beyond piano, bass, vocals and drums in real pop:** under 10% for YourMT3+.
+  Public data under-covers them.
+- **Note offsets:** best vocal COnPOff is about 0.63, and Basic Pitch's offset F1 on piano 0.11.
+- **Per-note pitch curves in polyphony:** no benchmark exists. M0's synthetic set would be a
+  first.
+- **Separated stems against the mix for pitched transcription:** no peer-reviewed measurement.
+- **Learning without labels:** resynthesis-only training still trails supervised training by a
+  wide margin.
+
+## Sources
+
+Primary unless marked. Figures are *reported* unless the source was re-read for this document.
+
+- YourMT3+: https://arxiv.org/abs/2407.04822; code https://github.com/mimbres/YourMT3 (GPL-3.0,
+  checked through the GitHub API); weights https://huggingface.co/mimbres/YourMT3 (model card
+  license Apache-2.0, checked; five Lightning `.ckpt` files)
+- 2025 AMT Challenge: https://arxiv.org/abs/2603.27528
+- Transkun: https://github.com/Yujia-Yan/Transkun
+- Basic Pitch: https://arxiv.org/pdf/2203.09893, https://github.com/spotify/basic-pitch. PyPI
+  0.4.0 classifiers list Python 3.8 to 3.11, and on Windows with Python 3.11 or later it
+  requires `tensorflow<2.15.1` (checked through the PyPI API)
+- ADTOF: https://github.com/MZehren/ADTOF; port https://github.com/xavriley/ADTOF-pytorch
+- Drum separation and transcription: https://arxiv.org/abs/2509.24853
+- Mel-RoFormer transcription: https://arxiv.org/abs/2409.04702
+- Jointist: https://arxiv.org/abs/2302.00286
+- Lyrics on separated vocals: https://arxiv.org/abs/2506.02339
+- Speech enhancement artifacts: https://arxiv.org/abs/2201.06685
+- Timbre-Trap: https://arxiv.org/html/2309.15717v2
+- Differentiable rendering for transcription: https://boblsturm.github.io/aimusic2020/papers/CSMC__MuMe_2020_paper_31.pdf
+- Sinusoidal frequency by gradient descent: https://arxiv.org/pdf/2210.14476v2
+- FCPE and pitch tracker comparison: https://arxiv.org/html/2509.15140v1
+- HMM note segmentation: https://arxiv.org/pdf/1704.08729
+- Celemony patent US 8,022,286: https://patents.google.com/patent/US8022286
+- Celemony manuals: MIDI export, modulation and drift, Note Assignment mode (links in section 1)
+- Sound On Sound, Melodyne DNA review (secondary, 2009)
+- MPE RP-053: https://midimpe.neocities.org/rp53spec.pdf
+- mir_eval transcription metrics: https://mir-eval.readthedocs.io/latest/api/transcription.html
+- Datasets: MAESTRO, E-GMD (Magenta pages), Slakh2100 (slakh.com), GuitarSet and MusicNet
+  (Zenodo), MIMuT data card (secondary)
+- Songscription benchmark (vendor blog), Futureproof roundup (blog), Arranger For Hire (blog),
+  informal stems test (JDeun/audio-score-tool PR 195, not peer reviewed)
+- License sweep, read 2026-11-23:
+  - Pitch trackers: github.com/lars76/swift-f0 and arXiv 2508.18440; github.com/maxrmorrison/torchcrepe;
+    github.com/CNChTu/FCPE and huggingface.co/ChiTu/FCPE; github.com/Dream-High/RMVPE and
+    huggingface.co/lj1995/VoiceConversionWebUI; github.com/SonyCSLParis/pesto.
+  - Vocal note models: github.com/openvpi/SOME (releases); github.com/RickyL-2000/ROSVOT;
+    github.com/c4dm/pyin; github.com/ronggong/pypYIN.
+  - Drums: magenta onsets_frames_transcription README; arXiv 2509.21739 (Noise-to-Notes);
+    arXiv 2608.01093 (Separate-and-Detect); arXiv 2601.09520 (ADT_STR);
+    github.com/polimi-ispl/larsnet; StemGMD, zenodo.org/records/7860223.
+  - Polyphonic models: github.com/gudgud96/basic-pitch-torch; Zenodo 4034264 (Kong) and
+    10610212 (Edwards); github.com/EleutherAI/aria-amt; huggingface.co/MuScriptor/muscriptor-large;
+    github.com/gudgud96/MR-MT3 and huggingface.co/gudgud1014/MR-MT3; github.com/kunato/mt3-pytorch;
+    arXiv 2408.08653 (GAPS); huggingface.co/danmor/guitab; github.com/ImSe4n/PTify.
+  - Third-party cross-evaluation: arXiv 2609.04640 (Harmonica).
+- DAW import: Image-Line manual and forum (links in section 8); Ableton Live 12 manual; Logic Pro
+  13.0 release notes; Bitwig 3.2.8 release notes; Steinberg Cubase 15 help; Cockos wiki.
+  Patent status from Google Patents (US8022286B2, EP2099024B1), secondary.

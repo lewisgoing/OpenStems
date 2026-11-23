@@ -120,7 +120,9 @@ App (run from `app/`):
 - `app/`: Electron + React shell. `electron/` (main process, preload, engine launcher, first-run
   setup, tray), `src/` (React UI: `api/`, `components/`, `views/`, `audio/`, `state/`, `tray/`),
   `e2e/`
-- `docs/adr/`: decision records; `docs/benchmarks.md`: speed and VRAM per model
+- `docs/adr/`: decision records; `docs/benchmarks.md`: speed and VRAM per model;
+  `docs/research/`: research and plans for features not yet built (`stem-to-midi.md`, the plan
+  behind Phase 7)
 - `scripts/`: dev start, benchmarks
 
 Engine structure: `runtime.build_runtime()` wires settings, catalog, `ModelStore`, recipes and

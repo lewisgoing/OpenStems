@@ -348,6 +348,36 @@ Acceptance:
     shortcut and the registry entry were gone; all 51 model files (9.28 GB) and the settings
     file were byte-for-byte the same, and no output file was removed.
 
+### Phase 7: stem to MIDI
+
+Goal: MIDI from every kind of stem that beats Melodyne's export of the same stem, with
+per-note pitch curves, drum parts on their own notes and a confidence on every note. The
+design does not copy Melodyne's method. The research and the full plan are in
+`docs/research/stem-to-midi.md`. Its stages, M0 to M7, are this phase's steps, each its own
+pull request.
+
+- M0: a benchmark. CC BY multitracks go through the app's own separators and are scored with
+  mir_eval, with Melodyne's and NeuralNote's MIDI of the same stems as baselines. Plus test MIDI
+  files for FL Studio, Logic and Live.
+- M1: a note file beside each stem, and a MIDI writer for plain notes, pitch bends and MPE.
+- M2: drums from the drum-kit parts.
+- M3: monophonic stems (vocals, bass, lead lines), with a pitch curve per note.
+- M4: polyphonic stems (piano, guitar, keys, other), with bleed and ghost-note filtering.
+- M5: confidence and a note editor.
+- M6 and M7: training on separator output, and research bets.
+
+Acceptance:
+
+- [ ] M0's report is in `docs/benchmarks.md`: the app, Melodyne and NeuralNote scored on the
+      same separated stems.
+- [ ] For each stem class, the app's note F1 is at or above Melodyne's on that benchmark, or
+      the gap is recorded with its cause.
+- [ ] Drum parts, per-note pitch curves and per-note confidence are written and measured.
+- [ ] Every default model may be redistributed, with its training data and attribution shown
+      in the catalog.
+- [ ] The MIDI files open in FL Studio, Logic and Live as the test files showed they would.
+- [ ] Windows and Mac pass alike (ground rule 9).
+
 ## Open decisions
 
 Every decision has a default, so the build never blocks. Change any of them before the phase named.
@@ -365,6 +395,9 @@ Every decision has a default, so the build never blocks. Change any of them befo
 | Apple Developer ID for the Mac build (the owner's to make) | Not bought: the Mac build is unsigned, macOS asks before the first open, and updates are manual | Buy a Developer ID (Apple Developer Program) and set the signing secrets, so the app is signed, notarized and updates itself (`docs/adr/0014-macos.md`) | Before the first release with a Mac build |
 | Recipes on a small machine (the owner's to make) | The built-in recipes name fixed models. On an 8 GB Mac `full-song` is tight and the Leap Xe recipes are marked as not fitting; lighter models are offered for download and run as single models | Light variants of the recipes, or recipes that pick a lighter model by fit (`docs/adr/0015-low-memory.md`) | Before the first release with a Mac build |
 | Who tests on a Mac (the owner's to make) | The owner, on an M1 Max with 32 GB (first run 2026-11-23). Smaller Macs wait for user reports | The owner or a named tester runs the doctor, the self-test and a separation on an Apple Silicon Mac | Before the label is dropped |
+| Training data behind shipped transcription weights | Decided by the owner on 2026-11-23. Weights under a permissive license are allowed even when trained partly on restricted data ("tier B"), with the training data and attribution shown with the model | Only weights trained entirely on openly licensed data ("tier A") | Settled |
+| GPL transcription code (YourMT3+) | Not in the app. Measured locally in M0 as a reference only | A separately installed optional component, or asking the author to relicense the inference code (the weights are already Apache-2.0) | Phase 7, M4, after M0's numbers |
+| MIDI pitch format | Plain notes by default. Pitch bends at +/-2 for monophonic stems and MPE as options | MPE by default | Phase 7, M1, after the FL Studio test files |
 
 ## Kickoff prompt
 
