@@ -332,7 +332,7 @@ export function TraySettings() {
     }
   }, [])
   if (!status) return null
-  const change = (patch: Partial<Pick<ShellStatus, 'closeToTray' | 'startAtLogin' | 'checkForUpdates'>>) => {
+  const change = (patch: Partial<Pick<ShellStatus, 'closeToTray' | 'startAtLogin' | 'checkForUpdates' | 'notifyReady'>>) => {
     // The switch moves at once; the main process then says what was actually set.
     setStatus({ ...status, ...patch })
     void window.openstems.setShell(patch).then(setStatus)
@@ -344,6 +344,9 @@ export function TraySettings() {
         hint="Closing the window leaves OpenStems by the clock with the engine ready. Click its icon to drop a song, right-click it to quit."
       >
         <Switch label="Keep running in the tray" checked={status.closeToTray} onChange={(v) => change({ closeToTray: v })} />
+      </Row>
+      <Row label="Tell me when stems are ready" hint="A Windows notification when songs finish while OpenStems is out of sight. Clicking it opens the quick-drop window.">
+        <Switch label="Tell me when stems are ready" checked={status.notifyReady} onChange={(v) => change({ notifyReady: v })} />
       </Row>
       {status.canStartAtLogin && (
         <Row label="Start with Windows" hint="Starts in the tray, without opening a window.">

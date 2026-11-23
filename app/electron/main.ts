@@ -28,6 +28,7 @@ const tray = new TrayController({
   openMain: () => showMain(),
   quit: () => app.quit(),
   mainFocused: () => Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()),
+  notifyReady: () => prefs.value.notifyReady,
   recordNotice: E2E ? (title) => e2eState.notices.push(title) : undefined,
 })
 
@@ -148,6 +149,7 @@ function shellStatus(): ShellStatus {
   return {
     closeToTray: prefs.value.closeToTray,
     checkForUpdates: prefs.value.checkForUpdates,
+    notifyReady: prefs.value.notifyReady,
     startAtLogin: startsAtLogin(),
     canStartAtLogin,
   }
@@ -229,6 +231,7 @@ function registerIpc(): void {
     const changes = (patch && typeof patch === 'object' ? patch : {}) as Record<string, unknown>
     if (typeof changes.closeToTray === 'boolean') prefs.update({ closeToTray: changes.closeToTray })
     if (typeof changes.checkForUpdates === 'boolean') prefs.update({ checkForUpdates: changes.checkForUpdates })
+    if (typeof changes.notifyReady === 'boolean') prefs.update({ notifyReady: changes.notifyReady })
     if (typeof changes.startAtLogin === 'boolean' && canStartAtLogin) setStartAtLogin(changes.startAtLogin)
     return shellStatus()
   })

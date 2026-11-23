@@ -9,6 +9,7 @@ import {
   isTrayActivity,
   parsePrefs,
   popupPlacement,
+  readyNotice,
   taskbarEdge,
   trayPresentation,
 } from '../../electron/traylogic'
@@ -54,6 +55,32 @@ vi.mock('@/api/queries', () => ({
   useRecipes: () => ({ data: recipes }),
   useModels: () => ({ data: { models } }),
 }))
+// Stands in for Web Audio, which jsdom does not have: records what was asked to play.
+const audition = vi.hoisted(() => {
+  type State = { path: string | null; status: 'idle' | 'loading' | 'playing'; error?: string }
+  const listeners = new Set<() => void>()
+  const player = {
+    state: { path: null, status: 'idle' } as State,
+    toggle: vi.fn(async (_stem: { path: string; url: string; group: string }) => undefined),
+    stop: vi.fn(),
+    dispose: vi.fn(),
+    subscribe: (listener: () => void) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    set(state: State) {
+      player.state = state
+      for (const listener of listeners) listener()
+    },
+  }
+  return player
+})
+vi.mock('@/audio/audition', () => ({
+  Audition: vi.fn(function Audition() {
+    return audition
+  }),
+}))
+
 vi.mock('@/api/engine', () => ({
   useEngine: () => ({ api: {}, connection: { baseUrl: 'http://127.0.0.1:1', token: 't' } }),
   EngineProvider: ({ children }: { children: ReactNode }) => children,
@@ -127,6 +154,7 @@ const lastActivity = () => bridge.reportActivity.mock.calls.at(-1)?.[0]
 
 beforeEach(() => {
   vi.clearAllMocks()
+  audition.state = { path: null, status: 'idle' }
   jobs = []
   recipes = [recipe({})]
   models = []
@@ -233,6 +261,18 @@ describe('the tray icon', () => {
     expect(ready.tooltip).toMatch(/6 stems$/)
   })
 
+  it('words the notification for one song or for several', () => {
+    expect(readyNotice({ name: 'First Song', stems: 6 }, 1)).toEqual({
+      title: 'First Song is ready',
+      content: '6 stems. Click to drag them out.',
+    })
+    expect(readyNotice({ name: 'First Song', stems: 1 }, 0).content).toBe('1 stem. Click to drag them out.')
+    expect(readyNotice({ name: 'Third Song', stems: 6 }, 3)).toEqual({
+      title: '3 songs are ready',
+      content: 'Click to drag their stems out.',
+    })
+  })
+
   it('only accepts a well-formed report from the window', () => {
     expect(isTrayActivity({ active: 0, current: null, done: null })).toBe(true)
     expect(isTrayActivity({ active: 1, current: { name: 'a', progress: 0.5 }, done: { id: 'j', name: 'a', stems: 2 } })).toBe(true)
@@ -275,10 +315,11 @@ describe('the shell preferences', () => {
   })
 
   it('keep what was saved and ignore what is not a switch', () => {
-    expect(parsePrefs('{"closeToTray": false, "trayNoticeShown": true}')).toEqual({
+    expect(parsePrefs('{"closeToTray": false, "trayNoticeShown": true, "notifyReady": false}')).toEqual({
       closeToTray: false,
       trayNoticeShown: true,
       checkForUpdates: true,
+      notifyReady: false,
     })
     expect(parsePrefs('{"closeToTray": "no", "extra": 1}')).toEqual(DEFAULT_PREFS)
   })
@@ -317,7 +358,7 @@ describe('the quick-drop window', () => {
     expect(within(rows()[0]!).queryAllByTestId('quick-stem')).toHaveLength(0)
   })
 
-  it('drags one stem or all of them as real file paths, and shows a stem in Explorer from the keyboard', () => {
+  it('drags one stem or all of them as real file paths', () => {
     jobs = [doneJob('a', 'First', 10)]
     render(quickDrop())
     const pills = screen.getAllByTestId('quick-stem')
@@ -325,8 +366,47 @@ describe('the quick-drop window', () => {
     expect(bridge.startDrag).toHaveBeenLastCalledWith(['D:\\out\\First\\full-song\\First - drums.wav'])
     fireEvent.dragStart(screen.getByTestId('quick-drag-all'))
     expect(bridge.startDrag.mock.calls.at(-1)?.[0]).toHaveLength(6)
+    // A drag is not a click: nothing starts playing.
+    expect(audition.toggle).not.toHaveBeenCalled()
+  })
+
+  it('plays a stem when its pill is clicked, by pointer or keyboard, and shows which one plays', () => {
+    jobs = [doneJob('a', 'First', 10)]
+    render(quickDrop())
+    const pills = screen.getAllByTestId('quick-stem')
+    fireEvent.click(pills[1]!)
+    expect(audition.toggle).toHaveBeenLastCalledWith({
+      path: 'D:\\out\\First\\full-song\\First - drums.wav',
+      url: expect.stringContaining('/v1/files?path='),
+      group: 'a',
+    })
     fireEvent.keyDown(pills[0]!, { key: 'Enter' })
-    expect(bridge.revealInExplorer).toHaveBeenCalledWith('D:\\out\\First\\full-song\\First - vocals.wav')
+    fireEvent.keyDown(pills[0]!, { key: ' ' })
+    expect(audition.toggle).toHaveBeenCalledTimes(3)
+
+    expect(pills[1]).toHaveAccessibleName('Play drums')
+    act(() => audition.set({ path: 'D:\\out\\First\\full-song\\First - drums.wav', status: 'loading' }))
+    expect(pills[1]).toHaveAttribute('data-audition', 'loading')
+    act(() => audition.set({ path: 'D:\\out\\First\\full-song\\First - drums.wav', status: 'playing' }))
+    expect(pills[1]).toHaveAttribute('data-audition', 'playing')
+    expect(pills[1]).toHaveAttribute('aria-pressed', 'true')
+    expect(pills[1]).toHaveAccessibleName('Stop drums')
+    expect(pills[1]!.querySelector('.audition-bars')).not.toBeNull()
+    expect(pills[0]).not.toHaveAttribute('data-audition')
+  })
+
+  it('stops playing when another song is laid out, and when the window is put away', () => {
+    jobs = [doneJob('a', 'First', 10), doneJob('b', 'Second', 20)]
+    render(quickDrop())
+    act(() => audition.set({ path: 'D:\\out\\Second\\full-song\\Second - bass.wav', status: 'playing' }))
+    expect(audition.stop).not.toHaveBeenCalled()
+    fireEvent.click(rows()[1]!) // lay out First: Second's stems are gone from view
+    expect(audition.stop).toHaveBeenCalledTimes(1)
+
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+    fireEvent(document, new Event('visibilitychange'))
+    expect(audition.stop).toHaveBeenCalledTimes(2)
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false })
   })
 
   it('shows twelve stems and sends the rest to the full app', () => {
@@ -491,10 +571,20 @@ describe('the tray settings', () => {
       fireEvent.click(screen.getByRole('switch', { name: 'Start with Windows' }))
     })
     expect(bridge.setShell).toHaveBeenLastCalledWith({ startAtLogin: true })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('switch', { name: 'Tell me when stems are ready' }))
+    })
+    expect(bridge.setShell).toHaveBeenLastCalledWith({ notifyReady: false })
   })
 
   it('leaves out "Start with Windows" where the app cannot register itself', async () => {
-    bridge.shellStatus.mockResolvedValueOnce({ closeToTray: true, checkForUpdates: true, startAtLogin: false, canStartAtLogin: false })
+    bridge.shellStatus.mockResolvedValueOnce({
+      closeToTray: true,
+      checkForUpdates: true,
+      notifyReady: true,
+      startAtLogin: false,
+      canStartAtLogin: false,
+    })
     render(tree(<TraySettings />))
     await screen.findByRole('switch', { name: 'Keep running in the tray' })
     expect(screen.queryByRole('switch', { name: 'Start with Windows' })).not.toBeInTheDocument()

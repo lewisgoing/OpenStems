@@ -38,6 +38,8 @@ export interface ShellStatus {
   closeToTray: boolean
   /** Look for a new version by itself, a few times a day. */
   checkForUpdates: boolean
+  /** A Windows notification when songs finish while the app is out of sight. */
+  notifyReady: boolean
   /** The app starts with Windows, in the tray. */
   startAtLogin: boolean
   /** False in development: only an installed app can register itself to start with Windows. */
@@ -96,7 +98,7 @@ export interface OpenStemsBridge {
   /** The quick-drop window tells the tray icon what the queue is doing. */
   reportActivity(activity: import('./traylogic').TrayActivity): void
   shellStatus(): Promise<ShellStatus>
-  setShell(patch: Partial<Pick<ShellStatus, 'closeToTray' | 'startAtLogin' | 'checkForUpdates'>>): Promise<ShellStatus>
+  setShell(patch: Partial<Pick<ShellStatus, 'closeToTray' | 'startAtLogin' | 'checkForUpdates' | 'notifyReady'>>): Promise<ShellStatus>
   /** Self-update. */
   updates(): Promise<UpdateStatus>
   onUpdateStatus(listener: (status: UpdateStatus) => void): () => void

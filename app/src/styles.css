@@ -645,6 +645,56 @@
 .stem-pill:active {
   transform: scale(0.97);
 }
+.stem-mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 9px;
+  height: 9px;
+}
+.stem-dot {
+  background: var(--stem, var(--color-accent));
+}
+/* Being fetched: the dot breathes. Playing: the pill takes its stem's color and the dot
+   becomes three small level bars. The border changes at once, like every toggle. */
+.stem-pill[data-audition='loading'] .stem-dot {
+  animation: pulse 0.9s ease-in-out infinite;
+}
+.stem-pill[data-audition='playing'] {
+  border-color: var(--stem, var(--color-accent));
+  background: color-mix(in srgb, var(--stem, var(--color-accent)) 14%, var(--color-surface));
+}
+.audition-bars {
+  display: inline-flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 1.5px;
+  width: 9px;
+  height: 9px;
+}
+.audition-bars > span {
+  flex: 1;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--stem, var(--color-accent));
+  transform-origin: bottom;
+  /* Constant motion, by transform only. */
+  animation: level 640ms ease-in-out infinite alternate;
+}
+.audition-bars > span:nth-child(1) {
+  animation-delay: -420ms;
+}
+.audition-bars > span:nth-child(3) {
+  animation-delay: -210ms;
+}
+@keyframes level {
+  from {
+    transform: scaleY(0.3);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
 /* Stems that have just arrived rise in one after another: the moment the window is for.
    Picking another job shows its stems at once. */
 .stem-pills[data-fresh='true'] .stem-pill {
@@ -681,6 +731,16 @@
     @starting-style {
       transform: none;
     }
+  }
+  /* The level bars stand still at uneven heights: playing is still visible. */
+  .audition-bars > span {
+    animation: none;
+  }
+  .audition-bars > span:nth-child(1) {
+    transform: scaleY(0.55);
+  }
+  .audition-bars > span:nth-child(3) {
+    transform: scaleY(0.75);
   }
   .row-enter,
   .panel,

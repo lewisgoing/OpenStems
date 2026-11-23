@@ -7,6 +7,7 @@ import {
   type TrayIcon,
   type TrayPresentation,
   popupPlacement,
+  readyNotice,
   trayPresentation,
 } from './traylogic'
 import { BACKGROUND, iconPath, loadRenderer, webPreferences } from './windows'
@@ -18,6 +19,8 @@ interface TrayHost {
   quit: () => void
   /** The full window has the user's attention, so a finished job counts as seen. */
   mainFocused: () => boolean
+  /** The user wants to be told when songs finish out of sight. */
+  notifyReady: () => boolean
   /** In tests, record the notice instead of raising a real Windows notification. */
   recordNotice?: (title: string) => void
 }
@@ -38,6 +41,8 @@ export class TrayController {
   private closing = false
   private activity: TrayActivity | null = null
   private seenDone: string | null = null
+  /** Songs that finished since the user last looked. */
+  private unseen = 0
 
   constructor(private readonly host: TrayHost) {}
 
@@ -163,13 +168,21 @@ export class TrayController {
 
   /** The quick-drop window reports the queue; the icon and tooltip follow. */
   setActivity(activity: TrayActivity): void {
+    const before = this.activity?.done?.id
     this.activity = activity
-    if (this.visible || this.host.mainFocused()) this.seenDone = activity.done?.id ?? this.seenDone
+    const done = activity.done?.id
+    if (this.visible || this.host.mainFocused()) {
+      this.seenDone = done ?? this.seenDone
+      this.unseen = 0
+    } else if (done && done !== before) {
+      this.unseen += 1
+    }
     this.render()
   }
 
   /** The user is looking at the results: the "stems are ready" mark has done its job. */
   markSeen(): void {
+    this.unseen = 0
     const done = this.activity?.done?.id
     if (!done || done === this.seenDone) return
     this.seenDone = done
@@ -180,9 +193,25 @@ export class TrayController {
     const next = trayPresentation(this.activity, this.seenDone)
     const previous = this.presentation
     this.presentation = next
-    if (!this.tray || this.tray.isDestroyed()) return
+    if (!this.tray || this.tray.isDestroyed()) {
+      if (next.icon === 'ready' && previous.icon !== 'ready') this.notifyReady()
+      return
+    }
     if (next.icon !== previous.icon) this.tray.setImage(iconPath(ICON_FILE[next.icon]))
     if (next.tooltip !== previous.tooltip) this.tray.setToolTip(next.tooltip)
+    // Said once, when the queue has run dry out of sight: not once per song.
+    if (next.icon === 'ready' && previous.icon !== 'ready') this.notifyReady()
+  }
+
+  private notifyReady(): void {
+    const done = this.activity?.done
+    if (!done || !this.host.notifyReady()) return
+    const notice = readyNotice(done, this.unseen)
+    if (this.host.recordNotice) {
+      this.host.recordNotice(notice.title)
+      return
+    }
+    this.tray?.displayBalloon({ iconType: 'custom', icon: iconPath('icon.png'), ...notice, respectQuietTime: true })
   }
 
   /** Said once, the first time closing the window leaves the app in the tray. */
