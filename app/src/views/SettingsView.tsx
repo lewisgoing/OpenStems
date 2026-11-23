@@ -1,7 +1,7 @@
 import { FolderOpen } from 'lucide-react'
 import { type ReactNode, useEffect, useState } from 'react'
 import type { SetupStatus, ShellStatus, TorchVariant } from '../../electron/bridge'
-import { VARIANTS, VARIANT_CARDS, VARIANT_DOWNLOAD, VARIANT_LABEL } from '../../electron/variant'
+import { VARIANT_CARDS, VARIANT_DOWNLOAD, VARIANT_LABEL, variantsFor } from '../../electron/variant'
 import type { Recipe, Settings, SettingsPatch } from '@/api/client'
 import { useMaintenance, usePatchSettings, useSettings, useSystem } from '@/api/queries'
 import { FORMATS } from '@/components/FormatSelect'
@@ -9,6 +9,7 @@ import { useToast } from '@/components/toast'
 import { UpdateSettings } from '@/components/Update'
 import { Button, CommitInput, Dialog, IconButton, Segmented, Select, Switch } from '@/components/ui'
 import { cn, previewName } from '@/lib/format'
+import { isMac, words } from '@/platform'
 
 const QUALITY = [
   { value: 'fast' as const, label: 'Fast' },
@@ -127,12 +128,12 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
             <Row label="GPU" hint={system ? gpuHint(system) : undefined}>
               <span className="text-muted">
                 {system ? (system.gpu_name ?? 'None found') : 'Checking'}
-                {system?.vram_gb ? ` · ${system.vram_gb.toFixed(1)} GB` : ''}
+                {system?.vram_gb ? ` · ${gpuMemory(system)}` : ''}
               </span>
             </Row>
             <Row
               label="Use the GPU"
-              hint="Off runs separation on the CPU: much slower, but a way through when the graphics card or its driver misbehaves."
+              hint={`Off runs separation on the CPU: much slower, but a way through when ${isMac() ? 'the GPU misbehaves' : 'the graphics card or its driver misbehaves'}.`}
             >
               <Switch label="Use the GPU" checked={settings.use_gpu} onChange={(v) => save({ use_gpu: v })} />
             </Row>
@@ -150,6 +151,12 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
             {system?.problems.map((problem) => (
               <p key={problem} className="m-0 rounded-[8px] border border-danger/30 bg-danger/10 px-3 py-2 text-danger" role="alert">
                 {problem}
+              </p>
+            ))}
+            {/* Things worth knowing that are not faults, such as an operation that runs on the CPU. */}
+            {system?.notes?.map((note) => (
+              <p key={note} className="m-0 rounded-[8px] border border-line px-3 py-2 text-muted" role="note">
+                {note}
               </p>
             ))}
             <Row label="Diagnostics" hint="A zip with system info, settings and logs. No audio, no weights.">
@@ -201,6 +208,8 @@ interface SelfTestReport {
   ops?: { name: string; ok: boolean; detail?: string }[]
   models?: { id: string; ok: boolean; detail?: string; gpu_seconds?: number | null; cpu_seconds?: number | null }[]
   problems?: string[]
+  /** Not faults: for example that an operation runs on the CPU. */
+  notes?: string[]
 }
 
 /** The self-test in a few lines: what passed, and each thing that did not, by name. */
@@ -227,6 +236,7 @@ export function selfTestLines(report: SelfTestReport): string[] {
       lines.push(`${model.id} matches the CPU.`)
     }
   }
+  lines.push(...(report.notes ?? []))
   return lines
 }
 
@@ -249,19 +259,40 @@ function SelfTestResult({ report }: { report: SelfTestReport }) {
 
 interface GpuFacts {
   torch?: string | null
+  /** A GPU works, whichever backend it is. The name is from before there were others. */
   cuda_available: boolean
   gpu_backend?: string | null
   gpu_backend_version?: string | null
   fake_engine: boolean
 }
 
-/** What the GPU row says under the card's name: the PyTorch build, or that the CPU is in use. */
+/**
+ * What the GPU row says under the card's name: the PyTorch build, or that the CPU is in use.
+ * On a Mac the backend is Metal and its version is the system's: "Metal on macOS 14.5".
+ */
 export function gpuHint(system: GpuFacts): string | undefined {
   if (system.fake_engine) return undefined
-  const backend = system.gpu_backend === 'rocm' ? 'ROCm' : system.gpu_backend === 'cuda' ? 'CUDA' : null
-  const version = system.gpu_backend_version ? ` ${system.gpu_backend_version}` : ''
-  const build = `PyTorch ${system.torch ?? 'missing'}${backend ? `, ${backend}${version}` : ''}`
+  const version = system.gpu_backend_version
+  const backend =
+    system.gpu_backend === 'rocm'
+      ? `ROCm${version ? ` ${version}` : ''}`
+      : system.gpu_backend === 'cuda'
+        ? `CUDA${version ? ` ${version}` : ''}`
+        : system.gpu_backend === 'mps'
+          ? `Metal${version ? ` on ${version}` : ''}`
+          : null
+  const build = `PyTorch ${system.torch ?? 'missing'}${backend ? `, ${backend}` : ''}`
   return system.cuda_available ? build : `${build}. Running on the CPU.`
+}
+
+/**
+ * The memory beside the GPU's name. A graphics card has its own; an Apple GPU shares the
+ * Mac's memory with everything else, and the number is all of it.
+ */
+export function gpuMemory(system: { vram_gb?: number | null; gpu_backend?: string | null }): string {
+  if (!system.vram_gb) return ''
+  const size = `${system.vram_gb.toFixed(1)} GB`
+  return system.gpu_backend === 'mps' ? `${size} shared with the Mac` : size
 }
 
 /**
@@ -283,6 +314,15 @@ export function EngineBuildRow() {
   }, [])
   if (!status?.managed || !status.installed) return null
   const installed = status.installed
+  const builds = status.variants ?? variantsFor(window.openstems.info.platform)
+  // One build (a Mac): it is named, with what is known about it, and there is nothing to switch.
+  if (builds.length === 1) {
+    return (
+      <Row label="Engine build" hint={`PyTorch for ${VARIANT_LABEL[installed]} (${VARIANT_CARDS[installed]}). ${status.note}`.trim()}>
+        <span className="text-muted">{VARIANT_LABEL[installed]}</span>
+      </Row>
+    )
+  }
   const other = target ?? installed
   const fits = status.recommended === undefined || status.recommended === installed
   const hint = `PyTorch for ${VARIANT_LABEL[installed]} graphics cards.${fits ? '' : ` ${status.note}`}`
@@ -292,7 +332,7 @@ export function EngineBuildRow() {
         <Select
           label="Engine build"
           value={installed}
-          options={VARIANTS.map((value) => ({ value, label: VARIANT_LABEL[value], description: VARIANT_CARDS[value] }))}
+          options={builds.map((value) => ({ value, label: VARIANT_LABEL[value], description: VARIANT_CARDS[value] }))}
           onChange={(value) => value !== installed && setTarget(value as TorchVariant)}
           className="min-w-[170px]"
           minWidth={300}
@@ -325,7 +365,7 @@ export function EngineBuildRow() {
 }
 
 /**
- * How the app lives in the tray. These belong to the shell, not to the engine, so they are
+ * How the app lives in the tray (on a Mac, the menu bar). These belong to the shell, not to the engine, so they are
  * read from and saved by the main process.
  */
 export function TraySettings() {
@@ -345,20 +385,28 @@ export function TraySettings() {
     setStatus({ ...status, ...patch })
     void window.openstems.setShell(patch).then(setStatus)
   }
+  const mac = isMac()
+  const { tray, trayTitle, loginItem } = words()
   return (
-    <Group title="Tray">
+    <Group title={trayTitle}>
+      {/* A Mac app stays open without its window anyway: there the switch would do nothing. */}
+      {!mac && (
+        <Row
+          label="Keep running in the tray"
+          hint="Closing the window leaves OpenStems by the clock with the engine ready. Click its icon to drop a song, right-click it to quit."
+        >
+          <Switch label="Keep running in the tray" checked={status.closeToTray} onChange={(v) => change({ closeToTray: v })} />
+        </Row>
+      )}
       <Row
-        label="Keep running in the tray"
-        hint="Closing the window leaves OpenStems by the clock with the engine ready. Click its icon to drop a song, right-click it to quit."
+        label="Tell me when stems are ready"
+        hint={`A ${mac ? '' : 'Windows '}notification when songs finish while OpenStems is out of sight. Clicking it opens the quick-drop window.`}
       >
-        <Switch label="Keep running in the tray" checked={status.closeToTray} onChange={(v) => change({ closeToTray: v })} />
-      </Row>
-      <Row label="Tell me when stems are ready" hint="A Windows notification when songs finish while OpenStems is out of sight. Clicking it opens the quick-drop window.">
         <Switch label="Tell me when stems are ready" checked={status.notifyReady} onChange={(v) => change({ notifyReady: v })} />
       </Row>
       {status.canStartAtLogin && (
-        <Row label="Start with Windows" hint="Starts in the tray, without opening a window.">
-          <Switch label="Start with Windows" checked={status.startAtLogin} onChange={(v) => change({ startAtLogin: v })} />
+        <Row label={loginItem} hint={`Starts in the ${tray}, without opening a window.`}>
+          <Switch label={loginItem} checked={status.startAtLogin} onChange={(v) => change({ startAtLogin: v })} />
         </Row>
       )}
     </Group>

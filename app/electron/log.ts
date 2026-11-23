@@ -1,13 +1,13 @@
 import { appendFileSync, mkdirSync, renameSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { logsDir as logsDirFor } from './platform'
 
 const MAX_BYTES = 1_000_000
 
 /** The logs folder, shared with the engine (engine.log) and read by Export diagnostics. */
 export function logsDir(): string {
-  const local = process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local')
-  return join(local, 'OpenStems', 'logs')
+  return logsDirFor({ platform: process.platform, home: homedir(), env: process.env })
 }
 
 /** Append one line to app.log. Logging never throws. */

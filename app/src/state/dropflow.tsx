@@ -125,7 +125,7 @@ export function useDropFlow(recipes: Recipe[], models: Model[], onQueued?: () =>
 }
 
 /**
- * Ctrl+V anywhere in the window: a copied link is fetched, copied files are queued. Text
+ * Ctrl+V (Cmd+V on a Mac) anywhere in the window: a copied link is fetched, copied files are queued. Text
  * fields keep their own paste.
  */
 export function usePaste(flow: Pick<DropFlow, 'addFiles' | 'addLinks'>): void {

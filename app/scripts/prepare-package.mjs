@@ -6,6 +6,10 @@
 //                                          small `rocm` helper, pre-built
 //   package/bin/uv.exe                     uv, which creates the Python environment on first run
 //
+// On a Mac the same script prepares the Apple Silicon build instead: one requirements file,
+// `package/engine/requirements-mps.txt` (PyTorch from PyPI), the same local wheels without
+// AMD's helper, and `package/bin/uv` for aarch64-apple-darwin.
+//
 // The loaders are pinned to git commits and AMD ships `rocm` as source only. Building their
 // wheels here means the user's machine needs neither git nor a build step. The large AMD
 // wheels are not shipped: the requirements file names them by URL with the sha256 from the
@@ -14,14 +18,40 @@
 //   node scripts/prepare-package.mjs
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const UV_VERSION = '0.13.6'
-const UV_SHA256 = 'a2a8820d5eea32f08ef467ef3b7f66883a9b076d5737a2fc2fbb5f458d1bb50f'
-const UV_URL = `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-pc-windows-msvc.zip`
+// Per system: the uv archive, its published sha256 (the `.sha256` file beside it in the uv
+// release), the file inside it, and the requirements files to write with their uv groups.
+const TARGETS = {
+  win32: {
+    uvArchive: 'uv-x86_64-pc-windows-msvc.zip',
+    uvSha256: 'a2a8820d5eea32f08ef467ef3b7f66883a9b076d5737a2fc2fbb5f458d1bb50f',
+    uvMember: 'uv.exe',
+    uvFile: 'uv.exe',
+    builds: [
+      ['requirements.txt', ['--no-dev']], // the default groups minus dev: the NVIDIA build
+      ['requirements-cu126.txt', ['--no-default-groups', '--group', 'cu126']], // older NVIDIA cards
+      ['requirements-rocm.txt', ['--no-default-groups', '--group', 'rocm']],
+    ],
+  },
+  darwin: {
+    uvArchive: 'uv-aarch64-apple-darwin.tar.gz',
+    uvSha256: '60fbd5c8a1ed681845eea28d9d622fcde03c51e91a43465b64a1e17db1ed3472',
+    // The tarball holds one folder with uv and uvx in it.
+    uvMember: 'uv-aarch64-apple-darwin/uv',
+    uvFile: 'uv',
+    builds: [['requirements-mps.txt', ['--no-default-groups', '--group', 'mps']]], // Apple Silicon
+  },
+}
+// PACKAGE_PLATFORM names the system to prepare for, for trying the other one's steps.
+const platform = process.env.PACKAGE_PLATFORM || process.platform
+const target = TARGETS[platform]
+if (!target) throw new Error(`no package is prepared on ${platform}: Windows and macOS only`)
+const UV_URL = `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/${target.uvArchive}`
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..')
 const engineDir = join(appDir, '..', 'engine')
@@ -29,7 +59,8 @@ const outDir = join(appDir, 'package')
 const wheels = join(outDir, 'engine', 'wheels')
 const bin = join(outDir, 'bin')
 // Windows ships bsdtar, which reads zip files; name it by path so a GNU tar on PATH is not used.
-const tar = join(process.env.SystemRoot ?? 'C:/Windows', 'System32', 'tar.exe')
+// macOS has bsdtar as its system tar.
+const tar = process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:/Windows', 'System32', 'tar.exe') : '/usr/bin/tar'
 
 const run = (command, args, options = {}) =>
   execFileSync(command, args, { stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8', ...options })
@@ -134,12 +165,7 @@ async function pin(groupArgs) {
   return requirements
 }
 
-const builds = [
-  ['requirements.txt', ['--no-dev']], // the default groups minus dev: the NVIDIA build
-  ['requirements-cu126.txt', ['--no-default-groups', '--group', 'cu126']], // older NVIDIA cards
-  ['requirements-rocm.txt', ['--no-default-groups', '--group', 'rocm']],
-]
-for (const [file, groupArgs] of builds) {
+for (const [file, groupArgs] of target.builds) {
   const requirements = await pin(groupArgs)
   writeFileSync(join(outDir, 'engine', file), `${requirements.join('\n')}\n`, 'utf8')
   console.log(`${file}: ${requirements.length} pinned requirements`)
@@ -150,10 +176,14 @@ rmSync(join(wheels, '.gitignore'), { force: true }) // uv build drops one in its
 console.log(`${readdirSync(wheels).length} local wheels`)
 
 // 3. uv itself, checked against the published sha256.
-const zip = join(outDir, 'uv.zip')
-console.log(`downloading uv ${UV_VERSION}`)
-writeFileSync(zip, await download(UV_URL, UV_SHA256))
-run(tar, ['-xf', zip, '-C', bin, 'uv.exe'])
-rmSync(zip)
-if (!existsSync(join(bin, 'uv.exe'))) throw new Error('uv.exe was not extracted')
+const archive = join(outDir, target.uvArchive)
+console.log(`downloading uv ${UV_VERSION} (${target.uvArchive})`)
+writeFileSync(archive, await download(UV_URL, target.uvSha256))
+// Only uv itself is taken, without the folder the macOS tarball wraps it in.
+const strip = target.uvMember.split('/').length - 1
+run(tar, ['-xf', archive, '-C', bin, ...(strip ? ['--strip-components', String(strip)] : []), target.uvMember])
+rmSync(archive)
+const uv = join(bin, target.uvFile)
+if (!existsSync(uv)) throw new Error(`${target.uvFile} was not extracted`)
+if (platform !== 'win32') chmodSync(uv, 0o755)
 console.log(`ready in ${outDir}`)

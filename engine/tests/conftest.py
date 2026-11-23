@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -42,6 +43,12 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENSTEMS_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.delenv("OPENSTEMS_ENGINE", raising=False)
     monkeypatch.delenv("OPENSTEMS_FAKE_DELAY", raising=False)
+    if sys.platform == "darwin":
+        # The unit tests run on the CPU. A Mac that reports its GPU would otherwise have the
+        # doctor run real operations on it; the tests about a Mac switch it back on themselves.
+        import torch
+
+        monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
 
 
 @pytest.fixture

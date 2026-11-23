@@ -1,9 +1,10 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from '@playwright/test'
-import { captureAroundPopup, clickTray, launch, trayPage } from './helpers'
+import { MAC, captureAroundPopup, clickTray, launch, trayPage } from './helpers'
 
 // Design review screenshots. Run with: SHOTS=1 pnpm e2e -g screenshots
+// The file names are the same on Windows and on a Mac: give each system its own SHOTS_DIR.
 test.skip(process.env.SHOTS !== '1', 'set SHOTS=1 to capture screenshots')
 
 test('screenshots', async () => {
@@ -77,8 +78,13 @@ test('screenshots of the quick-drop window', async () => {
     await page.locator('[data-testid="quick-row"][data-state="done"]').nth(2).waitFor()
     await page.waitForTimeout(700)
     await shot('tray-4-done')
-    // The real screen: frame, shadow and where the window sits by the taskbar.
-    await captureAroundPopup(app, join(out, 'tray-on-screen.png'))
+    // The real screen: frame, shadow and where the window sits by the taskbar or under the
+    // menu bar. A Mac lets an app see the screen only with the screen recording permission:
+    // without it this one picture is left out and the rest go on.
+    await captureAroundPopup(app, join(out, 'tray-on-screen.png')).catch((error: unknown) => {
+      if (!MAC) throw error
+      console.log(`tray-on-screen.png was not captured: ${String(error)}`)
+    })
     await page.locator('[data-testid="quick-row"][data-state="done"]').nth(1).hover()
     await page.waitForTimeout(300)
     await shot('tray-5-hover')

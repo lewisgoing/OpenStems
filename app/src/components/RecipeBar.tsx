@@ -4,6 +4,7 @@ import { Check, Download, Link2, Plus, SlidersHorizontal } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import type { Model, Recipe } from '@/api/client'
 import { formatBytes, stemColor } from '@/lib/format'
+import { shortcut } from '@/platform'
 import { MODEL_PREFIX, useSelection } from '@/state/selection'
 import { FormatSelect } from './FormatSelect'
 import { Button, Segmented, Select, type SelectOption, Switch, Tooltip } from './ui'
@@ -18,7 +19,7 @@ interface RecipeBarProps {
   recipes: Recipe[]
   models: Model[]
   onAddFiles: (files: File[]) => void
-  /** Take the link on the clipboard. Ctrl+V does the same. */
+  /** Take the link on the clipboard. Ctrl+V (Cmd+V on a Mac) does the same. */
   onPasteLink: () => void
   /** Songs are waiting for Start: that is the main action now, so "Add files" steps back. */
   quietAdd?: boolean
@@ -136,7 +137,7 @@ export function RecipeBar({ recipes, models, onAddFiles, onPasteLink, quietAdd }
         }}
       />
       {/* One accent action: adding files. A link is the second way in, so it stays quiet. */}
-      <Tooltip label="Fetch the song behind a copied link: YouTube, SoundCloud, Bandcamp and more (Ctrl+V)">
+      <Tooltip label={`Fetch the song behind a copied link: YouTube, SoundCloud, Bandcamp and more (${shortcut('V')})`}>
         <Button className="flex-none" onClick={onPasteLink}>
           <Link2 size={14} />
           Paste link

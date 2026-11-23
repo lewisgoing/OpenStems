@@ -42,7 +42,9 @@ OpenStems turns any dropped audio file into DAW-ready stems on the local GPU, wi
 - The manifest records the source path and hash, the recipe, and the model, hash and settings behind each stem.
 - File names stay valid on Windows and keep non-ASCII characters.
 
-**Non-goals for now:** real-time or plugin (VST) processing, model training, macOS or Linux builds, auto-update and code signing.
+**Non-goals for now:** real-time or plugin (VST) processing, model training, Linux builds, auto-update and code signing.
+
+macOS was a non-goal until 2026-11-23. There is now a build for Apple Silicon Macs, written on Windows and not yet run on a Mac by us: `docs/adr/0014-macos.md`. The target machine above is still the only one the app is tested on.
 
 ## Domain model
 
@@ -356,6 +358,8 @@ Every decision has a default, so the build never blocks. Change any of them befo
 | Review flow | One pull request per phase | Commit straight to `main` | Phase 0 |
 | Packaging | Installer in Phase 6 | Stay on a dev start script | Phase 6 |
 | Cloud-only models | Not supported | An optional MVSEP adapter behind the Engine port, after checking its API terms | After Phase 5 |
+| Apple Developer ID for the Mac build (the owner's to make) | Not bought: the Mac build is unsigned, macOS asks before the first open, and updates are manual | Buy a Developer ID (Apple Developer Program) and set the signing secrets, so the app is signed, notarized and updates itself (`docs/adr/0014-macos.md`) | Before the first release with a Mac build |
+| Who tests on a Mac (the owner's to make) | Nobody yet: Mac support is labelled as not run on a Mac by us, and waits for user reports | The owner or a named tester runs the doctor, the self-test and a separation on an Apple Silicon Mac | Before the label is dropped |
 
 ## Kickoff prompt
 

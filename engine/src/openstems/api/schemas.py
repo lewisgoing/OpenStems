@@ -30,15 +30,18 @@ class SystemInfo(BaseModel):
     version: str
     python: str
     torch: str | None = None
+    # The names are older than AMD and Mac support. `cuda_available` means "a GPU works",
+    # whichever backend it is; on a Mac (`mps`) `vram_gb` is the machine's unified memory.
     cuda_available: bool = False
     cuda_version: str | None = None
-    gpu_backend: Literal["cuda", "rocm"] | None = None
+    gpu_backend: Literal["cuda", "rocm", "mps"] | None = None
     gpu_backend_version: str | None = None
     gpu_name: str | None = None
     vram_gb: float | None = None
     ffmpeg: str | None = None
     ffmpeg_decode_ok: bool = False
     problems: list[str] = []
+    notes: list[str] = []
     fake_engine: bool = False
     worker: WorkerStatus
     config_dir: str
@@ -365,13 +368,14 @@ class SelfTest(BaseModel):
 
     ok: bool
     torch: str | None = None
-    gpu_backend: Literal["cuda", "rocm"] | None = None
+    gpu_backend: Literal["cuda", "rocm", "mps"] | None = None
     gpu_backend_version: str | None = None
     gpu_name: str | None = None
     gpu_available: bool = False
     ops: list[SelfTestOp] = []
     models: list[SelfTestModel] = []
     problems: list[str] = []
+    notes: list[str] = []
 
 
 class ErrorBody(BaseModel):

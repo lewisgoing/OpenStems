@@ -41,6 +41,9 @@ cuda = ["torch==2.14.1"]
 # The same PyTorch for CUDA 12.6: the build that still carries GTX 900-series, GTX 10-series
 # and Titan V cards. It cannot run a 50-series card.
 cu126 = ["torch==2.14.1"]
+# Apple Silicon: the same PyTorch from PyPI, whose macOS wheel carries the MPS backend
+# (docs/adr/0014-macos.md).
+mps = ["torch==2.14.1"]
 rocm = [
     "torch==2.9.1+rocm7.2.1",
     "rocm[libraries]==7.2.1",
@@ -50,7 +53,7 @@ rocm = [
 
 [tool.uv]
 default-groups = ["dev", "cuda"]
-conflicts = [[{ group = "cuda" }, { group = "cu126" }, { group = "rocm" }]]
+conflicts = [[{ group = "cuda" }, { group = "cu126" }, { group = "rocm" }, { group = "mps" }]]
 
 [build-system]
 requires = ["hatchling"]
@@ -61,6 +64,7 @@ packages = ["src/openstems"]
 
 # NVIDIA: PyTorch from the CUDA 13.0 wheel index (50-series cards need CUDA >= 12.8).
 # AMD: AMD's own PyTorch-on-Windows build and its ROCm runtime, from repo.radeon.com.
+# Apple Silicon (the `mps` group) has no entry here: its PyTorch comes from PyPI.
 [tool.uv.sources]
 torch = [
     { index = "pytorch-cu130", group = "cuda" },
@@ -102,7 +106,7 @@ venv = ".venv"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["gpu: needs a CUDA GPU and downloaded models (deselected in CI)"]
+markers = ["gpu: needs a GPU (CUDA, ROCm or MPS) and downloaded models (deselected in CI)"]
 addopts = "-m 'not gpu'"
 timeout = 180
 filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`"]

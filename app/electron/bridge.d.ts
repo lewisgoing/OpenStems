@@ -7,9 +7,9 @@ export type EngineStatus =
 
 /**
  * Which PyTorch build the engine environment holds: NVIDIA (CUDA 13.0), NVIDIA for older
- * cards (CUDA 12.6), or AMD (ROCm).
+ * cards (CUDA 12.6), AMD (ROCm), or Apple Silicon (MPS, the only build on a Mac).
  */
-export type TorchVariant = 'cuda' | 'cu126' | 'rocm'
+export type TorchVariant = 'cuda' | 'cu126' | 'rocm' | 'mps'
 
 export interface SetupStatus {
   /** `ready` means the Python environment exists; `needed` means first-run setup must run. */
@@ -27,27 +27,51 @@ export interface SetupStatus {
   variant: TorchVariant
   /** The build in the environment on disk, once a setup has finished. */
   installed: TorchVariant | null
+  /**
+   * The builds this machine can choose from. One entry (a Mac) means there is nothing to
+   * choose. Absent means the three Windows builds.
+   */
+  variants?: TorchVariant[]
   /** The video adapters were looked at; `gpus`, `note` and `recommended` are filled in. */
   detected: boolean
   recommended?: TorchVariant
   gpus: string[]
   /** One sentence about what was found and what it means. */
   note: string
+  /** Set when setup cannot work on this machine (an Intel Mac): the reason, in a sentence. */
+  unsupported?: string
 }
 
-/** How the app behaves as a Windows program: the tray and starting with Windows. */
+/**
+ * How the app behaves as a desktop program: the tray (on a Mac, the menu bar item) and
+ * starting at login.
+ */
 export interface ShellStatus {
-  /** Closing the window leaves the app in the tray instead of quitting. */
+  /**
+   * Closing the window leaves the app in the tray instead of quitting. Windows only: a Mac
+   * app always stays open without its window, so the switch does nothing there.
+   */
   closeToTray: boolean
   /** Look for a new version by itself, a few times a day. */
   checkForUpdates: boolean
-  /** A Windows notification when songs finish while the app is out of sight. */
+  /** A system notification when songs finish while the app is out of sight. */
   notifyReady: boolean
-  /** The app starts with Windows, in the tray. */
+  /** The app starts at login, in the tray, with no window. */
   startAtLogin: boolean
-  /** False in development: only an installed app can register itself to start with Windows. */
+  /** False in development: only an installed app can register itself to start at login. */
   canStartAtLogin: boolean
 }
+
+/*
+ * Two things reach the page of the full window on a Mac without going through the bridge:
+ *
+ * - The CSS variable `--traffic-lights-inset` on the root element: the width the title bar
+ *   must leave free on its left for the close, minimize and zoom buttons. It is `80px` in a
+ *   window, `0px` in full screen, where macOS hides the buttons, and not set at all on
+ *   Windows or in the quick-drop window.
+ * - The DOM event `openstems:settings` on `window`, when Settings is picked from the
+ *   application menu (Cmd+,).
+ */
 
 export type { TrayActivity } from './traylogic'
 
@@ -62,6 +86,14 @@ export interface UpdateStatus {
   current: string
   /** The newer version, once one is known. */
   version?: string
+  /**
+   * The app cannot install `version` by itself (an unsigned Mac app). "Download" opens `url`
+   * in the browser instead, and the state stays `available`: there is no progress and no
+   * restart. The button should say where it leads, such as "Get 0.3.0".
+   */
+  manual?: boolean
+  /** The release page a manual update opens. */
+  url?: string
   progress?: number
   /** When the last successful check finished, in milliseconds since the epoch. */
   checkedAt?: number

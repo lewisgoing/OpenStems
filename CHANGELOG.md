@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- **macOS on Apple Silicon (preview, not yet run on a Mac by us).** OpenStems can be built
+  for Macs with an M1 or later chip and macOS 14 or later. The models run on the Apple GPU
+  through PyTorch's MPS backend, at full precision. It was written and unit-tested on
+  Windows; no separation, installer or menu bar item has been seen working on a Mac.
+  `docs/adr/0014-macos.md` lists what was checked and what is unproven. Intel Macs are not
+  supported.
+- On a Mac the app lives in the menu bar, with the quick-drop window under it, a standard
+  application menu and a Dock icon. Closing the window never quits; Cmd+Q does.
+- First-run setup on a Mac installs one build (about 350 MB) with nothing to choose.
+- The Mac build has no Apple Developer ID: it is signed ad hoc, which names nobody. macOS
+  asks for a confirmation in System Settings the first
+  time (the README has the steps), and a new version is offered with a link to the release
+  page instead of installing itself. A build signed with an Apple Developer ID updates itself
+  as on Windows; signing happens when the certificate is supplied to the build.
+- Engine: `openstems doctor` and `selftest` know the Apple GPU. If the GPU's STFT does not
+  match the CPU's on a Mac, that one step runs on the CPU and the doctor says so. The doctor
+  and the self-test can now carry notes that are not problems.
+- Nothing changes on Windows: the same builds, folders and installer.
+
 ## 0.2.5 (2026-11-22)
 
 - **Paste a link.** A song can be queued from its web address: copy the link, then press

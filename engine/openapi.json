@@ -1160,7 +1160,8 @@
               {
                 "enum": [
                   "cuda",
-                  "rocm"
+                  "rocm",
+                  "mps"
                 ],
                 "type": "string"
               },
@@ -1198,6 +1199,14 @@
               "$ref": "#/components/schemas/SelfTestModel"
             },
             "title": "Models",
+            "type": "array"
+          },
+          "notes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
             "type": "array"
           },
           "ok": {
@@ -1856,7 +1865,8 @@
               {
                 "enum": [
                   "cuda",
-                  "rocm"
+                  "rocm",
+                  "mps"
                 ],
                 "type": "string"
               },
@@ -1891,6 +1901,14 @@
           "logs_dir": {
             "title": "Logs Dir",
             "type": "string"
+          },
+          "notes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
           },
           "problems": {
             "default": [],

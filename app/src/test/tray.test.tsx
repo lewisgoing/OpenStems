@@ -6,12 +6,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_PREFS,
   type Rect,
+  TITLE_BAR_HEIGHT,
+  TRAFFIC_LIGHTS,
+  TRAFFIC_LIGHTS_INSET,
   isTrayActivity,
+  macMenuTemplate,
+  menuBarPlacement,
   parsePrefs,
+  popupChrome,
   popupPlacement,
+  quitsOnWindowClose,
   readyNotice,
+  startsHidden,
   taskbarEdge,
+  trayIconFile,
+  trayClickAction,
+  trayMenuTemplate,
   trayPresentation,
+  windowChrome,
 } from '../../electron/traylogic'
 import type { Job, Link, Model, Recipe, StemFile } from '@/api/client'
 import { ToastProvider } from '@/components/toast'
@@ -271,6 +283,152 @@ describe('the quick-drop window position', () => {
     expect(popupPlacement({ x: -200, y: 688, width: 24, height: 24 }, second, SIZE)).toMatchObject({ x: -392, y: 168, edge: 'bottom' })
     const small = { bounds: { x: 0, y: 0, width: 800, height: 480 }, workArea: { x: 0, y: 0, width: 800, height: 440 } }
     expect(popupPlacement(null, small, SIZE)).toEqual({ x: 408, y: 12, width: 380, height: 416, edge: 'bottom' })
+  })
+})
+
+describe('the quick-drop window position on a Mac', () => {
+  // A 1512 by 982 screen with a 38 point menu bar (a notch) and the Dock at the bottom.
+  const MAC_SCREEN: Rect = { x: 0, y: 0, width: 1512, height: 982 }
+  const dockBottom = { bounds: MAC_SCREEN, workArea: { x: 0, y: 38, width: 1512, height: 874 } }
+  const item = { x: 1200, y: 0, width: 30, height: 38 }
+
+  it('hangs under the menu bar, centered on the menu bar item', () => {
+    expect(menuBarPlacement(item, dockBottom, SIZE)).toEqual({ x: 1025, y: 44, width: 380, height: 500, edge: 'top' })
+  })
+
+  it('stays at the top when the Dock takes more of the screen than the menu bar does', () => {
+    // The Windows rule reads the edge from the largest inset, which here is the Dock.
+    expect(popupPlacement(item, dockBottom, SIZE).edge).toBe('bottom')
+    expect(menuBarPlacement(item, dockBottom, SIZE).y).toBe(44)
+    const dockLeft = { bounds: MAC_SCREEN, workArea: { x: 80, y: 25, width: 1432, height: 957 } }
+    expect(menuBarPlacement({ x: 1200, y: 0, width: 30, height: 24 }, dockLeft, SIZE)).toMatchObject({ x: 1025, y: 31, edge: 'top' })
+  })
+
+  it('stays on the screen beside an item near either end of the bar', () => {
+    expect(menuBarPlacement({ x: 1480, y: 0, width: 30, height: 38 }, dockBottom, SIZE).x).toBe(1512 - 380 - 12)
+    const dockLeft = { bounds: MAC_SCREEN, workArea: { x: 80, y: 38, width: 1432, height: 944 } }
+    expect(menuBarPlacement({ x: 100, y: 0, width: 30, height: 38 }, dockLeft, SIZE).x).toBe(80 + 12)
+  })
+
+  it('stays clear of a menu bar that hides itself, as over a full-screen app', () => {
+    const hidden = { bounds: MAC_SCREEN, workArea: MAC_SCREEN }
+    expect(menuBarPlacement(item, hidden, SIZE)).toMatchObject({ x: 1025, y: 44 })
+  })
+
+  it('goes to the top right corner when macOS gives no item position', () => {
+    for (const icon of [null, undefined, { x: 0, y: 0, width: 0, height: 0 }]) {
+      expect(menuBarPlacement(icon, dockBottom, SIZE)).toEqual({ x: 1120, y: 44, width: 380, height: 500, edge: 'top' })
+    }
+  })
+
+  it('works on a second screen above the first, and shrinks on a screen too small', () => {
+    const above = { bounds: { x: 200, y: -1080, width: 1920, height: 1080 }, workArea: { x: 200, y: -1055, width: 1920, height: 1055 } }
+    expect(menuBarPlacement({ x: 1900, y: -1080, width: 30, height: 24 }, above, SIZE)).toMatchObject({ x: 1725, y: -1049 })
+    const small = { bounds: { x: 0, y: 0, width: 800, height: 500 }, workArea: { x: 0, y: 25, width: 800, height: 405 } }
+    expect(menuBarPlacement(null, small, SIZE)).toEqual({ x: 408, y: 31, width: 380, height: 387, edge: 'top' })
+  })
+})
+
+/* ---- Windows and Mac ---------------------------------------------------------------- */
+
+describe('what differs between Windows and a Mac', () => {
+  it('keeps the frame of the full window on Windows, and puts the three buttons in the title bar on a Mac', () => {
+    expect(windowChrome('win32', '#0c0d0f')).toEqual({
+      titleBarStyle: 'hidden',
+      titleBarOverlay: { color: '#0c0d0f', symbolColor: '#8b8f98', height: 40 },
+    })
+    const chrome = windowChrome('darwin', '#0c0d0f')
+    expect(chrome).toEqual({ titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 12 } })
+    expect(chrome).not.toHaveProperty('titleBarOverlay')
+    // A button's frame is 16 points high: centered in the title bar.
+    expect(TRAFFIC_LIGHTS.y + 16 / 2).toBe(TITLE_BAR_HEIGHT / 2)
+    // Three frames of 14, 6 apart, end before the room the page leaves for them.
+    expect(TRAFFIC_LIGHTS.x + 3 * 14 + 2 * 6).toBeLessThan(TRAFFIC_LIGHTS_INSET)
+  })
+
+  it('makes the quick-drop window a tool window on Windows and a panel on a Mac', () => {
+    expect(popupChrome('win32')).toEqual({ skipTaskbar: true, type: 'toolbar' })
+    expect(popupChrome('darwin')).toEqual({ type: 'panel', hiddenInMissionControl: true })
+  })
+
+  it('uses .ico files on Windows and template images on a Mac', () => {
+    expect((['idle', 'busy', 'ready'] as const).map((icon) => trayIconFile(icon, 'win32'))).toEqual([
+      'tray.ico',
+      'tray-busy.ico',
+      'tray-ready.ico',
+    ])
+    expect((['idle', 'busy', 'ready'] as const).map((icon) => trayIconFile(icon, 'darwin'))).toEqual([
+      'trayTemplate.png',
+      'tray-busyTemplate.png',
+      'tray-readyTemplate.png',
+    ])
+  })
+
+  it('quits with the window on Windows unless the app stays in the tray, and never on a Mac', () => {
+    expect(quitsOnWindowClose('win32', true, true)).toBe(false)
+    expect(quitsOnWindowClose('win32', false, true)).toBe(true)
+    expect(quitsOnWindowClose('win32', true, false)).toBe(true)
+    for (const closeToTray of [true, false]) {
+      for (const hasTray of [true, false]) expect(quitsOnWindowClose('darwin', closeToTray, hasTray)).toBe(false)
+    }
+  })
+
+  it('starts without a window with --tray, and on a Mac when opened at login', () => {
+    expect(startsHidden('win32', ['OpenStems.exe', '--tray'], false)).toBe(true)
+    expect(startsHidden('win32', ['OpenStems.exe'], false)).toBe(false)
+    // Only a Mac reports a launch at login; elsewhere the answer means nothing.
+    expect(startsHidden('win32', ['OpenStems.exe'], true)).toBe(false)
+    expect(startsHidden('darwin', ['OpenStems'], true)).toBe(true)
+    expect(startsHidden('darwin', ['OpenStems'], false)).toBe(false)
+    expect(startsHidden('darwin', ['OpenStems', '--tray'], false)).toBe(true)
+  })
+
+  it('toggles the quick-drop window on a click, and raises the menu by itself only on a Mac', () => {
+    // Windows, as it always was: the menu is set on the icon and Windows raises it.
+    expect(trayClickAction('win32', 'click')).toBe('toggle')
+    expect(trayClickAction('win32', 'double-click')).toBe('main')
+    expect(trayClickAction('win32', 'right-click')).toBeNull()
+    // Control means nothing to the Windows tray.
+    expect(trayClickAction('win32', 'click', true)).toBe('toggle')
+    expect(trayClickAction('darwin', 'click')).toBe('toggle')
+    expect(trayClickAction('darwin', 'click', true)).toBe('menu')
+    expect(trayClickAction('darwin', 'right-click')).toBe('menu')
+    expect(trayClickAction('darwin', 'double-click')).toBeNull()
+  })
+
+  it('offers the same tray menu on both, worded for each', () => {
+    const host = { quickDrop: vi.fn(), openMain: vi.fn(), quit: vi.fn() }
+    const windows = trayMenuTemplate('win32', host)
+    expect(windows.map((item) => item.label ?? item.type)).toEqual(['Quick drop', 'Show OpenStems', 'separator', 'Quit OpenStems'])
+    const macos = trayMenuTemplate('darwin', host)
+    expect(macos.map((item) => item.label ?? item.type)).toEqual(['Quick Drop', 'Show OpenStems', 'separator', 'Quit OpenStems'])
+    ;(macos[3]?.click as () => void)()
+    expect(host.quit).toHaveBeenCalledOnce()
+  })
+
+  it('gives a Mac the menu its standard shortcuts live in', () => {
+    const host = { name: 'OpenStems', settings: vi.fn(), help: vi.fn() }
+    const menu = macMenuTemplate(host)
+    const submenu = (index: number) => menu[index]?.submenu as { role?: string; label?: string; accelerator?: string; click?: () => void }[]
+    const roles = (index: number) => submenu(index).flatMap((item) => (item.role ? [item.role] : []))
+
+    expect(menu.map((item) => item.label ?? item.role)).toEqual(['OpenStems', 'File', 'Edit', 'windowMenu', 'help'])
+    expect(roles(0)).toEqual(['about', 'services', 'hide', 'hideOthers', 'unhide', 'quit'])
+    expect(roles(1)).toEqual(['close'])
+    expect(roles(2)).toEqual(['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll'])
+
+    // The items with the app's name in them say OpenStems, not the package's name.
+    const labelOf = (role: string) => submenu(0).find((item) => item.role === role)?.label
+    expect([labelOf('about'), labelOf('hide'), labelOf('quit')]).toEqual(['About OpenStems', 'Hide OpenStems', 'Quit OpenStems'])
+
+    const settings = submenu(0).find((item) => item.label === 'Settings…')
+    expect(settings?.accelerator).toBe('Command+,')
+    settings?.click?.()
+    expect(host.settings).toHaveBeenCalledOnce()
+    const help = submenu(4)[0]
+    expect(help?.label).toBe('OpenStems on GitHub')
+    help?.click?.()
+    expect(host.help).toHaveBeenCalledOnce()
   })
 })
 
@@ -788,6 +946,33 @@ describe('the quick-drop window frame', () => {
     // The header has the same action as an icon; this is the one in the message.
     fireEvent.click(screen.getAllByRole('button', { name: 'Open the full app' }).at(-1)!)
     expect(bridge.showMain).toHaveBeenCalled()
+  })
+})
+
+describe('the quick-drop window frame on a Mac', () => {
+  const header = () => [...document.querySelectorAll('header button')].map((button) => button.getAttribute('aria-label'))
+
+  it('has its Hide button at the left, where a Mac keeps the close button', async () => {
+    bridge.info.platform = 'darwin'
+    try {
+      render(<TrayApp />)
+      await screen.findByRole('heading', { name: 'Drop a song here' })
+      expect(header()).toEqual(['Hide', 'Open the full app'])
+      const hide = screen.getByRole('button', { name: 'Hide' })
+      expect(hide.compareDocumentPosition(screen.getByText('OpenStems')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      fireEvent.click(hide)
+      expect(bridge.hidePopup).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('button', { name: 'Paste link' })).toHaveAttribute('title', 'Fetch the song behind a copied link (⌘V)')
+    } finally {
+      bridge.info.platform = 'win32'
+    }
+  })
+
+  it('keeps it at the right on Windows', async () => {
+    render(<TrayApp />)
+    await screen.findByRole('heading', { name: 'Drop a song here' })
+    expect(header()).toEqual(['Open the full app', 'Hide'])
+    expect(screen.getByRole('button', { name: 'Paste link' })).toHaveAttribute('title', 'Fetch the song behind a copied link (Ctrl+V)')
   })
 })
 

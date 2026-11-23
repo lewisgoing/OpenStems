@@ -4,12 +4,13 @@ import { BrowserWindow, Menu, app, clipboard, dialog, ipcMain, nativeImage, shel
 import type { ShellStatus } from './bridge'
 import { EngineProcess } from './engine'
 import { log } from './log'
+import { APP_NAME } from './platform'
 import { Prefs } from './prefs'
 import { EngineSetup } from './setup'
 import { TrayController } from './tray'
-import { TRAY_FLAG, isTrayActivity } from './traylogic'
-import { Updater, fakeBackend } from './updatelogic'
-import { githubBackend } from './updater'
+import { TRAFFIC_LIGHTS_INSET, TRAY_FLAG, isTrayActivity, macMenuTemplate, quitsOnWindowClose, startsHidden, windowChrome } from './traylogic'
+import { Updater, fakeBackend, fakeManualBackend } from './updatelogic'
+import { updateBackend } from './updater'
 import { isVariant } from './variant'
 import { BACKGROUND, iconPath, loadRenderer, webPreferences } from './windows'
 
@@ -18,6 +19,8 @@ const DRAGGABLE = new Set(['.wav', '.flac', '.mp3', '.mid'])
 process.env.OPENSTEMS_APP_VERSION = app.getVersion()
 
 const E2E = process.env.OPENSTEMS_E2E === '1'
+const MAC = process.platform === 'darwin'
+const REPOSITORY = 'https://github.com/lewisgoing/OpenStems'
 const engine = new EngineProcess()
 const setup = new EngineSetup()
 const prefs = new Prefs()
@@ -32,15 +35,19 @@ const tray = new TrayController({
   recordNotice: E2E ? (title) => e2eState.notices.push(title) : undefined,
 })
 
-// Self-update needs an installed app. Tests get a stand-in that never touches the network.
+// Self-update needs an installed app. Tests get a stand-in that never touches the network;
+// with OPENSTEMS_E2E_UPDATE_MANUAL=1 it is the kind that only opens the release page.
 const E2E_UPDATE = E2E ? process.env.OPENSTEMS_E2E_UPDATE : undefined
 const updater = new Updater({
   current: app.getVersion(),
   backend: E2E_UPDATE
-    ? fakeBackend(E2E_UPDATE, () => (e2eState.updateInstalled = true))
+    ? process.env.OPENSTEMS_E2E_UPDATE_MANUAL === '1'
+      ? fakeManualBackend(E2E_UPDATE, (url) => (e2eState.updateOpened = url))
+      : fakeBackend(E2E_UPDATE, () => (e2eState.updateInstalled = true))
     : app.isPackaged && !E2E
-      ? githubBackend()
+      ? updateBackend()
       : null,
+  computer: MAC ? 'Mac' : 'PC',
   // The installer replaces the app's files: nothing of ours may still be running.
   beforeInstall: async () => {
     quitting = true
@@ -53,9 +60,11 @@ const updater = new Updater({
 const e2eState = {
   /** The update stand-in was asked to install. */
   updateInstalled: false,
+  /** The page the manual update stand-in was asked to open, instead of a browser. */
+  updateOpened: null as string | null,
   lastDrag: null as string[] | null,
   enginePid: () => engine.enginePid,
-  /** Stands in for the Windows login item, so tests never touch the registry. */
+  /** Stands in for the login item, so tests never touch the registry or the Mac's login items. */
   startAtLogin: false,
   notices: [] as string[],
   /** Stands in for the system clipboard, which tests must not read or change. */
@@ -97,11 +106,19 @@ function createWindow(): void {
     backgroundColor: BACKGROUND,
     title: 'OpenStems',
     icon: iconPath('icon.png'),
-    titleBarStyle: 'hidden',
-    titleBarOverlay: { color: BACKGROUND, symbolColor: '#8b8f98', height: 40 },
+    ...windowChrome(process.platform, BACKGROUND),
     webPreferences: webPreferences(),
   })
   mainWindow = window
+  if (MAC) {
+    // Full screen hides the three window buttons: the title bar gets their room back.
+    const lights = () => {
+      if (!window.isDestroyed()) window.webContents.send('window:traffic-lights', window.isFullScreen() ? 0 : TRAFFIC_LIGHTS_INSET)
+    }
+    window.on('enter-full-screen', lights)
+    window.on('leave-full-screen', lights)
+    window.webContents.on('did-finish-load', lights)
+  }
   window.once('ready-to-show', () => {
     window.show()
     tray.prewarm()
@@ -110,9 +127,10 @@ function createWindow(): void {
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = null
     if (quitting) return
-    if (!prefs.value.closeToTray || !tray.tray) {
+    if (quitsOnWindowClose(process.platform, prefs.value.closeToTray, tray.tray !== null)) {
       app.quit()
-    } else if (!prefs.value.trayNoticeShown) {
+    } else if (!MAC && !prefs.value.trayNoticeShown) {
+      // Not on a Mac: an app that stays open in the Dock without a window is the usual thing.
       prefs.update({ trayNoticeShown: true })
       tray.notifyStillRunning()
     }
@@ -132,19 +150,33 @@ function showMain(): void {
   mainWindow.focus()
 }
 
-/* ---- start with Windows ------------------------------------------------------------ */
+/** Settings from the application menu: the full window, then its Settings view. */
+function showSettings(): void {
+  const existed = Boolean(mainWindow && !mainWindow.isDestroyed())
+  showMain()
+  const window = mainWindow
+  if (!window) return
+  if (existed) window.webContents.send('menu:settings')
+  // A window that was just built has no page yet to hear it.
+  else window.once('ready-to-show', () => window.webContents.send('menu:settings'))
+}
+
+/* ---- start at login ---------------------------------------------------------------- */
 
 // Only an installed app registers itself: in development the entry would point at Electron.
 const canStartAtLogin = app.isPackaged || E2E
+// Windows starts the app with `--tray`. A Mac passes no arguments to a login item (it is
+// registered with the system as the app itself) and reports that it opened the app at login.
+const LOGIN_ITEM = MAC ? {} : { args: [TRAY_FLAG] }
 
 function startsAtLogin(): boolean {
   if (E2E) return e2eState.startAtLogin
-  return app.isPackaged && app.getLoginItemSettings({ args: [TRAY_FLAG] }).openAtLogin
+  return app.isPackaged && app.getLoginItemSettings(LOGIN_ITEM).openAtLogin
 }
 
 function setStartAtLogin(on: boolean): void {
   if (E2E) e2eState.startAtLogin = on
-  else if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: on, args: [TRAY_FLAG] })
+  else if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: on, ...LOGIN_ITEM })
 }
 
 function shellStatus(): ShellStatus {
@@ -178,7 +210,7 @@ function registerIpc(): void {
     if (setup.status.state === 'ready') engine.start()
   })
 
-  // Native drag-out: hand real files to the DAW or Explorer.
+  // Native drag-out: hand real files to the DAW, or to Explorer or Finder.
   ipcMain.on('drag:start', (event, paths: unknown) => {
     if (!Array.isArray(paths)) return
     const files = paths.filter(
@@ -268,9 +300,16 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   void app.whenReady().then(() => {
-    Menu.setApplicationMenu(null)
+    // Windows has no menu bar in the window. On a Mac the menu holds the standard shortcuts.
+    Menu.setApplicationMenu(
+      MAC
+        ? Menu.buildFromTemplate(
+            macMenuTemplate({ name: APP_NAME, settings: showSettings, help: () => void shell.openExternal(REPOSITORY) }),
+          )
+        : null,
+    )
     registerIpc()
-    const inTray = process.argv.includes(TRAY_FLAG)
+    const inTray = startsHidden(process.platform, process.argv, MAC && !E2E && app.getLoginItemSettings().wasOpenedAtLogin)
     log(`app ${app.getVersion()} started (packaged: ${app.isPackaged}${inTray ? ', in the tray' : ''})`)
     engine.onStatus((status) => {
       log(`engine ${status.state}${status.state === 'failed' ? `: ${status.error}` : ''}`)
@@ -307,11 +346,18 @@ if (!app.requestSingleInstanceLock()) {
     } else {
       void setup.detect() // the setup screen shows what was found
     }
+
+    // A click on the Dock icon, or opening the app again from Finder: back to the full
+    // window. Listened for only now, so a launch at login stays without a window.
+    // The Dock icon stays while only the menu bar item is in use. Taking the app out of the
+    // Dock would also take away its menu, and with it Cmd+Q, and the Dock is where a Mac
+    // user looks for an app that is running: the menu bar item is a shortcut to it.
+    if (MAC) app.on('activate', () => showMain())
   })
 
   // The quick-drop window exists while the app runs, so this fires only without a tray.
   app.on('window-all-closed', () => {
-    if (!prefs.value.closeToTray || !tray.tray) app.quit()
+    if (quitsOnWindowClose(process.platform, prefs.value.closeToTray, tray.tray !== null)) app.quit()
   })
 
   // On quit, stop the engine first so no process is left behind.

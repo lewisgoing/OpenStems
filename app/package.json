@@ -18,7 +18,9 @@
     "icons": "node scripts/make-icons.mjs",
     "dist": "electron-vite build && node scripts/prepare-package.mjs && electron-builder --win nsis --publish never",
     "package:prepare": "node scripts/prepare-package.mjs",
-    "pack": "electron-vite build && electron-builder --win --dir --publish never"
+    "pack": "electron-vite build && electron-builder --win --dir --publish never",
+    "dist:mac": "electron-vite build && node scripts/prepare-package.mjs && electron-builder --mac --config mac-build.cjs --publish never",
+    "pack:mac": "electron-vite build && electron-builder --mac --dir --config mac-build.cjs --publish never"
   },
   "dependencies": {
     "@base-ui/react": "1.9.0",
@@ -71,17 +73,20 @@
       {
         "from": "package/bin",
         "to": "bin"
-      },
-      {
-        "from": "resources",
-        "to": "icons",
-        "filter": [
-          "*.png",
-          "*.ico"
-        ]
       }
     ],
     "win": {
+      "extraResources": [
+        {
+          "from": "resources",
+          "to": "icons",
+          "filter": [
+            "*.png",
+            "*.ico",
+            "!*Template*.png"
+          ]
+        }
+      ],
       "target": [
         {
           "target": "nsis",
@@ -91,6 +96,42 @@
         }
       ],
       "icon": "resources/icon.ico"
+    },
+    "mac": {
+      "extraResources": [
+        {
+          "from": "resources",
+          "to": "icons",
+          "filter": [
+            "*.png"
+          ]
+        }
+      ],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.music",
+      "minimumSystemVersion": "14.0",
+      "icon": "resources/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "binaries": [
+        "Contents/Resources/bin/uv"
+      ],
+      "artifactName": "OpenStems-${version}-arm64.${ext}"
     },
     "nsis": {
       "oneClick": false,

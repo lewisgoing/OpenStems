@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { EngineStatus, OpenStemsBridge, SetupStatus, UpdateStatus } from './bridge'
+import { TRAFFIC_LIGHTS_INSET } from './traylogic'
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
   const handler = (_event: unknown, value: T) => listener(value)
@@ -42,3 +43,25 @@ const bridge: OpenStemsBridge = {
 }
 
 contextBridge.exposeInMainWorld('openstems', bridge)
+
+// The full window on a Mac: its three buttons sit in the page's own title bar, at the left.
+// The page reads how much room they take from a CSS variable, and nothing in full screen,
+// where macOS hides them. The quick-drop window has no such buttons.
+if (process.platform === 'darwin' && !new URLSearchParams(location.search).has('window')) {
+  let inset = TRAFFIC_LIGHTS_INSET
+  const apply = () => document.documentElement?.style.setProperty('--traffic-lights-inset', `${inset}px`)
+  ipcRenderer.on('window:traffic-lights', (_event, value: number) => {
+    inset = value
+    apply()
+  })
+  // The preload runs before the page has a root element.
+  if (document.documentElement) apply()
+  document.addEventListener('DOMContentLoaded', apply)
+  // Settings in the application menu. The page listens for the event on `window`. A page
+  // that is still loading has no listener yet: the mark on the root element is what it
+  // reads once it is up.
+  ipcRenderer.on('menu:settings', () => {
+    if (document.documentElement) document.documentElement.dataset.openView = 'settings'
+    window.dispatchEvent(new Event('openstems:settings'))
+  })
+}

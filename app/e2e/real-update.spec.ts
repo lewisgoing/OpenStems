@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, readdirSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { existsSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { _electron as electron, expect, test } from '@playwright/test'
 import type { UpdateStatus } from '../electron/bridge'
+import { WINDOWS, cleanProfile, packagedExe } from './helpers'
 
 // Self-update against the real GitHub release. Not part of CI: it needs a packaged build
 // with an older version number than the latest release, and it downloads the installer.
@@ -14,20 +15,23 @@ import type { UpdateStatus } from '../electron/bridge'
 //
 // It stops once the new version is downloaded and verified. It does not restart into it:
 // that would install the app on this machine.
+//
+// Windows only. A Mac build updates itself only when it is signed with a Developer ID, and
+// a build made here is not: it offers the release page instead, which `update.spec.ts`
+// covers with a stand-in.
 const profile = process.env.REAL_UPDATE_PROFILE
-const exe = resolve(import.meta.dirname, '..', 'release', 'win-unpacked', 'OpenStems.exe')
+const exe = packagedExe()
 
 test('real update: an older build finds the latest release and downloads it', async () => {
+  test.skip(!WINDOWS, 'Windows only: it downloads the Windows installer')
   test.skip(!profile, 'set REAL_UPDATE_PROFILE to an empty folder')
   test.setTimeout(15 * 60_000)
   expect(existsSync(exe), 'build the unpacked app first').toBe(true)
-  const local = join(profile ?? '', 'Local')
-  const roaming = join(profile ?? '', 'Roaming')
-  for (const dir of [local, roaming]) mkdirSync(dir, { recursive: true })
-  const env: Record<string, string> = { ...(process.env as Record<string, string>), LOCALAPPDATA: local, APPDATA: roaming }
-  for (const key of ['OPENSTEMS_E2E', 'OPENSTEMS_E2E_UPDATE', 'OPENSTEMS_ENGINE']) delete env[key]
+  const account = cleanProfile(profile ?? '')
+  const env: Record<string, string> = { ...(process.env as Record<string, string>), ...account.env }
+  for (const key of ['OPENSTEMS_E2E', 'OPENSTEMS_E2E_UPDATE', 'OPENSTEMS_E2E_UPDATE_MANUAL', 'OPENSTEMS_ENGINE']) delete env[key]
 
-  const app = await electron.launch({ executablePath: exe, args: [`--user-data-dir=${join(roaming, 'openstems-user-data')}`], env })
+  const app = await electron.launch({ executablePath: exe, args: [`--user-data-dir=${account.userData}`], env })
   try {
     const page = await app.firstWindow()
     await page.waitForFunction(() => typeof window.openstems?.updates === 'function')
@@ -48,7 +52,7 @@ test('real update: an older build finds the latest release and downloads it', as
     await expect(page.getByRole('button', { name: 'Restart to update' })).toBeVisible()
 
     // The verified installer is in the updater's cache.
-    const pending = join(local, 'openstems-app-updater', 'pending')
+    const pending = join(account.updaterCache, 'pending')
     console.log(`downloaded: ${readdirSync(pending).join(', ')}`)
     expect(readdirSync(pending).some((file) => file.endsWith('.exe'))).toBe(true)
   } finally {

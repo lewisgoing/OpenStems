@@ -93,3 +93,37 @@ Not done: creating a second Windows account. The clean-profile run stands in for
   "bad allocation" or a CUDA out-of-memory error that reported plenty of free VRAM. The engine
   now retries once after cleaning up, drops other warm models before giving up, and reports a
   failed model load as a memory problem instead of blaming the checkpoint.
+
+## On a Mac (added 2026-11-23)
+
+ADR 0014 adds a Mac build for Apple Silicon. **None of this has been run on a Mac by us.**
+
+`pnpm dist:mac`, run on a Mac, builds `OpenStems-<version>-arm64.dmg` and a zip of the same
+app, with `latest-mac.yml`. The app carries uv for `aarch64-apple-darwin` (0.13.6, the same
+pinned version, checked against its sha256) and one pin set, `requirements-mps.txt`. First run
+is the same five steps with one build and no card detection. PyTorch comes from PyPI, so the
+download is about 350 MB instead of about 3 GB. The environment has `bin/python` and
+`bin/openstems` where Windows has `Scripts\python.exe` and `Scripts\openstems.exe`.
+
+| What | Where | When the app is removed |
+| --- | --- | --- |
+| The app | `/Applications/OpenStems.app`, or wherever it was dragged | removed by dragging it to the Trash |
+| Python environment | `~/Library/Application Support/OpenStems/engine-env` | stays |
+| Models | `~/Library/Application Support/OpenStems/models`, or the folder set in Settings | stays |
+| Settings, user recipes | `~/Library/Application Support/OpenStems` | stays |
+| Outputs | `~/Music/OpenStems`, or the folder set in Settings | stays |
+| Logs and diagnostics | `~/Library/Logs/OpenStems` | stays |
+| History index | `~/Library/Caches/OpenStems` | stays (rebuildable) |
+
+A Mac app has no uninstaller. Dragging the app to the Trash removes the app and nothing else,
+so `engine-env` (several hundred MB) stays until the user deletes
+`~/Library/Application Support/OpenStems/engine-env` by hand. The README says so. Deleting
+the whole `OpenStems` folder there also deletes the settings and the downloaded models.
+
+The shell's own preferences (`shell.json`) stay in Electron's data folder, as on Windows:
+`~/Library/Application Support/openstems-app`, named after the package. Giving the app its
+display name there would move the Windows folder too, and lose existing users' preferences.
+The engine (`openstems/settings.py`) and the app (`electron/platform.ts`) each decide these
+folders, and must agree.
+
+The app is signed ad hoc unless a Developer ID certificate is supplied: ADR 0014, "Signing".

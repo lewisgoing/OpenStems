@@ -23,6 +23,7 @@ import torch.nn.functional as F
 from openstems.domain.errors import Cancelled
 from openstems.domain.quality import RunSettings
 from openstems.engines.base import CancelToken, ProgressFn
+from openstems.engines.device import empty_cache, is_oom
 
 
 def fast_half_precision(capability: tuple[int, int]) -> bool:
@@ -32,7 +33,8 @@ def fast_half_precision(capability: tuple[int, int]) -> bool:
 
 
 def use_half_precision(device: torch.device | str) -> bool:
-    """Whether a preset's fp16 should really be fp16 on this device."""
+    """Whether a preset's fp16 should really be fp16 on this device. Only on CUDA and ROCm:
+    the CPU and the Apple GPU ("mps") always run at full precision."""
     device = torch.device(device)
     if device.type != "cuda":
         return False
@@ -55,12 +57,6 @@ def _window(chunk_size: int, fade_size: int) -> torch.Tensor:
         window[-fade_size:] *= torch.linspace(1, 0, fade_size)
         window[:fade_size] *= torch.linspace(0, 1, fade_size)
     return window
-
-
-def _is_oom(exc: BaseException) -> bool:
-    if isinstance(exc, torch.OutOfMemoryError):
-        return True
-    return isinstance(exc, RuntimeError) and "out of memory" in str(exc).lower()
 
 
 def demix(
@@ -136,14 +132,13 @@ def demix(
         try:
             out = run([p for p, _ in parts_lengths])
         except Exception as exc:
-            if not _is_oom(exc) or (batch == 1 and retried_single):
+            if not is_oom(exc, device) or (batch == 1 and retried_single):
                 raise
             # Out of memory: free what we can, then halve the batch and retry these chunks.
             # At batch 1 there is nothing to halve, so retry once after the cleanup.
             del exc
             gc.collect()
-            if device.type == "cuda":
-                torch.cuda.empty_cache()
+            empty_cache(device)
             if batch == 1:
                 retried_single = True
             batch = max(1, batch // 2)
@@ -238,7 +233,6 @@ def run_model(
     except Cancelled:
         raise
     finally:
-        if torch.device(device).type == "cuda":
-            torch.cuda.empty_cache()
+        empty_cache(device)
     array = out.numpy()
     return {stems[i]: np.ascontiguousarray(array[k]) for k, i in enumerate(wanted)}

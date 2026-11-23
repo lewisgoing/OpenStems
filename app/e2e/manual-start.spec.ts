@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { type Launched, clickTray, launch, trayPage, trayState } from './helpers'
+import { type Launched, MOD, clickTray, launch, trayPage, trayState } from './helpers'
 
 // Manual start is the default: songs added to the queue wait until Start is pressed. The
 // other suites turn it off through OPENSTEMS_AUTO_START; here the setting is in charge.
@@ -49,7 +49,8 @@ test('one song can be started by itself, and Ctrl+Enter starts the rest', async 
   await expect(rows().nth(0)).toHaveAttribute('data-state', 'queued')
   await expect(ctx.page.getByRole('button', { name: 'Start 1 song' })).toBeVisible()
 
-  await ctx.page.keyboard.press('Control+Enter')
+  // Cmd+Enter on a Mac.
+  await ctx.page.keyboard.press(`${MOD}+Enter`)
   await expect(done()).toHaveCount(2)
 })
 

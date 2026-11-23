@@ -1,0 +1,170 @@
+name: release-mac
+
+# Builds the Mac app (Apple Silicon) for a release and adds it to that GitHub release:
+# the .dmg people download, the .zip and blockmaps a signed app updates itself from, and
+# latest-mac.yml, which every installed Mac app reads to learn that a new version is out.
+#
+# It runs when a release is published (the Windows files are uploaded by hand with
+# `gh release create`, which publishes it), and by hand for a tag that already has a release.
+#
+# Signing is optional. With the repository secrets CSC_LINK and CSC_KEY_PASSWORD (a Developer
+# ID Application certificate as base64 .p12, and its password) the app is signed; with
+# APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID as well it is notarized. Without
+# them the app is signed ad hoc (app/mac-build.cjs): macOS asks the user to allow it, and
+# the app offers updates as a link to the release page.
+#
+# Who sees what. The build job can only read the repository. The signing secrets go to the
+# one step that runs electron-builder, after everything that fetches and runs other people's
+# code (pnpm install, the build backends of the wheels) has finished. The token that can
+# write to the release exists only in the upload job, which runs none of the project's code.
+# Every action is pinned to a commit.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The tag of an existing release, such as v0.3.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-mac-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15 # Apple Silicon (arm64)
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      # Read by the shell as a variable, never pasted into a script.
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: The release exists
+        env:
+          GH_TOKEN: ${{ github.token }} # can only read in this job
+          GH_REPO: ${{ github.repository }}
+        run: gh release view "$TAG" --json tagName,isDraft,isPrerelease
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          # The uv the app ships: UV_VERSION in app/scripts/prepare-package.mjs.
+          version: "0.13.6"
+          enable-cache: true
+          cache-dependency-glob: engine/uv.lock
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          package_json_file: app/package.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - name: The tag is this version
+        working-directory: app
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::tag $TAG does not match app/package.json version $version"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: Install
+        working-directory: app
+        run: pnpm install --frozen-lockfile
+      # The two halves of `pnpm dist:mac`, apart. This half builds the app and prepares what
+      # ships with it (`package:prepare`: uv, the engine's pinned requirements, the wheels).
+      # It runs build tools fetched from the network, so it is given no secret.
+      - name: Build the app and what ships with it
+        working-directory: app
+        run: |
+          pnpm exec electron-vite build
+          pnpm package:prepare
+      # This half makes the .dmg and .zip. electron-builder reads the signing variables
+      # itself. A secret that is not set arrives as an empty string, which electron-builder
+      # would take as a value, so empty ones are removed.
+      - name: Package, and sign and notarize when the secrets exist
+        working-directory: app
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then unset "$name"; fi
+          done
+          if [ -z "${CSC_LINK:-}" ] || [ -z "${CSC_KEY_PASSWORD:-}" ]; then
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            echo "::notice::No signing certificate: the Mac build is signed ad hoc."
+          elif [ -z "${APPLE_ID:-}" ] || [ -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] || [ -z "${APPLE_TEAM_ID:-}" ]; then
+            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+            echo "::notice::Signed, but not notarized: the notarization secrets are not all set."
+          else
+            echo "::notice::Signed and notarized."
+          fi
+          pnpm exec electron-builder --mac --config mac-build.cjs --publish never
+      - name: What was built
+        working-directory: app/release
+        run: |
+          ls -l
+          # The authority for a Developer ID signature, "Signature=adhoc" without one.
+          codesign --display --verbose=2 mac-arm64/OpenStems.app 2>&1 | grep -E '^(Authority|TeamIdentifier|Signature)=' || echo "not signed"
+          # Whether the signature holds for the whole bundle. Reported, not required.
+          if codesign --verify --deep --strict mac-arm64/OpenStems.app; then
+            echo "the signature is valid"
+          else
+            echo "::warning::the app's signature does not verify"
+          fi
+      - name: Collect the release files
+        working-directory: app/release
+        run: |
+          shopt -s nullglob
+          required=("OpenStems-$VERSION-arm64.dmg" "OpenStems-$VERSION-arm64.zip" latest-mac.yml)
+          for file in "${required[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "::error::$file was not built"
+              exit 1
+            fi
+          done
+          mkdir upload
+          mv "${required[@]}" OpenStems-"$VERSION"-arm64.*.blockmap upload/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mac-release
+          path: app/release/upload
+          if-no-files-found: error
+          retention-days: 1
+
+  # Adds the files to the release. This job holds the only token that can write, and it runs
+  # nothing from the repository: it does not check it out.
+  upload:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # upload the files to the release, nothing else
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: mac-release
+          path: upload
+      - name: Upload to the release
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ls -l upload
+          gh release upload "$TAG" upload/* --clobber

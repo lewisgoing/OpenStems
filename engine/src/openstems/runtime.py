@@ -80,5 +80,5 @@ def build_runtime(settings: Settings | None = None) -> Runtime:
     catalog = load_catalog(settings.models_path)
     store = ModelStore(settings.models_path, fake=fake_mode())
     recipes = load_recipes(catalog, settings.recipes_path)
-    host = ModelHost(store, int(settings.vram_budget_gb * 1024**3))
+    host = ModelHost(store, settings.vram_budget_bytes)
     return Runtime(settings, catalog, store, recipes, Pipeline(catalog, store, host))

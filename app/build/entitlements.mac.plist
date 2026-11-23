@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  What a build signed with a Developer ID asks of the hardened runtime: the one thing
+  Electron's JavaScript engine needs, and nothing more. It is the first entry of the signing
+  library's own default (@electron/osx-sign, default.darwin.plist), without the device
+  entries. The helpers and the bundled uv inherit the same file.
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+  </dict>
+</plist>

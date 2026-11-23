@@ -5,13 +5,27 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Windows and a Mac side by side. The Mac is Apple Silicon (macos-15 is an arm64 runner;
+# macOS 14 runners were retired in November 2026) and installs the engine with the `mps`
+# group in place of the default groups, which hold the NVIDIA PyTorch: that has no Mac build.
 jobs:
   engine:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            sync: uv sync --locked
+          - os: macos-15
+            sync: uv sync --locked --no-default-groups --group mps --group dev
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: engine
@@ -22,7 +36,12 @@ jobs:
           enable-cache: true
           cache-dependency-glob: engine/uv.lock
       - name: Install
-        run: uv sync --locked
+        run: ${{ matrix.sync }}
+      # A plain `uv run` syncs the default groups first. On a Mac that would ask for the
+      # NVIDIA PyTorch: from here on uv runs in the environment as it was just installed.
+      - name: Keep the Mac environment as installed
+        if: runner.os == 'macOS'
+        run: echo "UV_NO_SYNC=1" >> "$GITHUB_ENV"
       - name: Lint
         run: |
           uv run ruff check
@@ -33,7 +52,15 @@ jobs:
         run: uv run pytest -q
 
   app:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            sync: uv sync --locked
+          - os: macos-15
+            sync: uv sync --locked --no-default-groups --group mps --group dev
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -42,7 +69,13 @@ jobs:
           cache-dependency-glob: engine/uv.lock
       - name: Install the engine (the end-to-end suite runs it with the FakeEngine)
         working-directory: engine
-        run: uv sync --locked
+        run: ${{ matrix.sync }}
+      # The app and the test helpers start the engine with the Mac's groups by themselves
+      # (`devGroupArgs` in app/electron/platform.ts). This keeps uv from changing the
+      # environment in the middle of a test all the same.
+      - name: Keep the Mac environment as installed
+        if: runner.os == 'macOS'
+        run: echo "UV_NO_SYNC=1" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: app/package.json
@@ -71,10 +104,36 @@ jobs:
       - name: End-to-end (Electron + FakeEngine)
         working-directory: app
         run: pnpm e2e
+      # The Mac bundle, signed ad hoc as a release without a certificate is (mac-build.cjs):
+      # proof that it builds, with uv and the engine's pinned requirements inside. On a pull
+      # request electron-builder skips signing unless told otherwise; this job holds no
+      # secret, so it is told. Nothing is published from here (see release-mac.yml).
+      - name: Build the Mac app bundle (no certificate)
+        if: runner.os == 'macOS'
+        working-directory: app
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          CSC_FOR_PULL_REQUEST: "true"
+        run: |
+          pnpm package:prepare
+          pnpm run pack:mac
+          bundle=release/mac-arm64/OpenStems.app/Contents
+          test -x "$bundle/MacOS/OpenStems"
+          test -x "$bundle/Resources/bin/uv"
+          test -f "$bundle/Resources/engine/requirements-mps.txt"
+          test -f "$bundle/Resources/icons/trayTemplate.png"
+          file "$bundle/MacOS/OpenStems" "$bundle/Resources/bin/uv"
+          codesign --display --verbose=2 release/mac-arm64/OpenStems.app 2>&1 | grep -E '^(Authority|TeamIdentifier|Signature)=' || echo "not signed"
+          # Whether the ad hoc signature holds for the whole bundle. Reported, not required.
+          if codesign --verify --deep --strict release/mac-arm64/OpenStems.app; then
+            echo "the signature is valid"
+          else
+            echo "::warning::the app's signature does not verify"
+          fi
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.os }}
           path: |
             app/playwright-report
             app/test-results

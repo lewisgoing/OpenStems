@@ -1,7 +1,8 @@
 """GPU self-test: run the same work on the GPU and on the CPU and compare the results.
 
 ``doctor`` says whether a GPU is there. This says whether it computes the right thing, which
-matters most on backends that are not tested on every release (AMD's ROCm build on Windows).
+matters most on backends that are not tested on every release (AMD's ROCm build on Windows,
+the Apple GPU on a Mac).
 Two levels:
 
 - ops: each kind of operation the separation models use, with fixed random inputs;
@@ -60,6 +61,8 @@ class SelfTestReport:
     ops: list[OpResult] = field(default_factory=list)
     models: list[ModelResult] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
+    # Not faults: for one, that the STFT runs on the CPU on this Mac.
+    notes: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -177,6 +180,7 @@ def _op_cases() -> list[tuple[str, Callable[[Any], Any], float]]:
     def half_precision(device: Any) -> Any:
         layer = copy.deepcopy(module(lambda: torch.nn.Linear(256, 256))).to(device)
         x = seeded(8, 128, 256).to(device)
+        # Only CUDA and ROCm run at half precision; the CPU and the Apple GPU never do.
         if torch.device(device).type != "cuda":
             return layer(x)
         with torch.autocast(device_type="cuda"):
@@ -233,16 +237,19 @@ def _op_cases() -> list[tuple[str, Callable[[Any], Any], float]]:
     ]
 
 
-def run_op_checks() -> list[OpResult]:
+def run_op_checks(device: str = "cuda") -> list[OpResult]:
+    """Each op on ``device`` ("cuda", or "mps" on a Mac) against the CPU."""
     import torch
+
+    from openstems.engines.device import synchronize
 
     results: list[OpResult] = []
     with torch.inference_mode():
         for name, fn, tolerance in _op_cases():
             try:
                 expected = fn("cpu").numpy()
-                got = fn("cuda").cpu().numpy()
-                torch.cuda.synchronize()
+                got = fn(device).cpu().numpy()
+                synchronize(device)
             except Exception as exc:
                 results.append(OpResult(name, False, None, f"{type(exc).__name__}: {exc}"))
                 continue
@@ -278,12 +285,14 @@ def default_models(catalog: Any, store: Any) -> list[Any]:
     return list(chosen.values())
 
 
-def check_model(spec: Any, store: Any, seconds: float, quality: str = "fast") -> ModelResult:
+def check_model(
+    spec: Any, store: Any, seconds: float, quality: str = "fast", gpu: str = "cuda"
+) -> ModelResult:
     """Separate a short signal three ways: CPU (the reference), GPU at full precision, and
-    GPU the way the app runs it (half precision where the preset asks for it)."""
-    import torch
-
+    GPU the way the app runs it (half precision where the preset asks for it). ``gpu`` is
+    the device name: "cuda", or "mps" on a Mac."""
     from openstems.domain.quality import resolve_settings
+    from openstems.engines.device import synchronize
     from openstems.engines.host import engine_for
 
     preset = resolve_settings(quality, spec)
@@ -297,8 +306,7 @@ def check_model(spec: Any, store: Any, seconds: float, quality: str = "fast") ->
         try:
             started = time.perf_counter()
             out = model.separate(mix, settings)
-            if device == "cuda":
-                torch.cuda.synchronize()
+            synchronize(device)
             taken = time.perf_counter() - started
         finally:
             model.unload()
@@ -308,10 +316,10 @@ def check_model(spec: Any, store: Any, seconds: float, quality: str = "fast") ->
             result.gpu_seconds = taken
         return out
 
-    steps = [("GPU", "cuda", preset), ("GPU at full precision", "cuda", full), ("CPU", "cpu", full)]
+    steps = [("GPU", gpu, preset), ("GPU at full precision", gpu, full), ("CPU", "cpu", full)]
     outputs: list[dict[str, np.ndarray]] = []
     for label, device, settings in steps:
-        if device == "cuda" and settings is full and preset.precision == "fp32":
+        if device == gpu and settings is full and preset.precision == "fp32":
             outputs.append(outputs[0])  # the preset already runs at full precision
             continue
         try:
@@ -342,7 +350,7 @@ def run_selftest(
     on_step: Callable[[str], None] | None = None,
 ) -> SelfTestReport:
     """Run the op checks, then one short separation per chosen model on both devices."""
-    from openstems.doctor import no_gpu_problem, torch_backend
+    from openstems.doctor import mac_gpu_name, mps_built, no_gpu_problem, torch_backend
 
     report = SelfTestReport()
     try:
@@ -352,16 +360,30 @@ def run_selftest(
         return report
 
     report.torch = torch.__version__
-    report.gpu_backend, report.gpu_backend_version = torch_backend(torch.version)
-    report.gpu_available = bool(torch.cuda.is_available())
-    if not report.gpu_available:
+    report.gpu_backend, report.gpu_backend_version = torch_backend(torch.version, mps_built(torch))
+    from openstems.engines.device import gpu_device_name
+    from openstems.engines.stft_fallback import ensure_stft
+
+    gpu = gpu_device_name()
+    report.gpu_available = gpu is not None
+    if gpu is None:
         report.problems.append(no_gpu_problem(report.gpu_backend))
         return report
-    report.gpu_name = torch.cuda.get_device_name(0)
+    report.gpu_name = mac_gpu_name() if gpu == "mps" else torch.cuda.get_device_name(0)
 
     if on_step:
         on_step("operations")
-    report.ops = run_op_checks()
+    # The operations run as PyTorch has them. Only after that may the STFT move to the CPU
+    # (on a Mac whose GPU gets it wrong), which is how the models then run.
+    report.ops = run_op_checks(gpu)
+    note = ensure_stft(gpu)
+    if note:
+        # Run them again the way the models now run, so the report shows what the app does.
+        report.notes.append(note)
+        report.ops = run_op_checks(gpu)
+        for op in report.ops:
+            if op.name in ("stft", "istft") and op.ok:
+                op.detail = "on the CPU"
     if not with_models:
         return report
 
@@ -380,5 +402,5 @@ def run_selftest(
     for spec in specs:
         if on_step:
             on_step(spec.id)
-        report.models.append(check_model(spec, runtime.store, seconds))
+        report.models.append(check_model(spec, runtime.store, seconds, gpu=gpu))
     return report
