@@ -1,0 +1,55 @@
+name: mac-check
+
+# Real models on a real Mac: the runner is Apple Silicon with about 7 GB of memory, which is
+# the small Mac nobody here owns. It downloads the four models of `every-stem`, makes a
+# synthetic song and runs scripts/mac_check.sh on them. The report is an artifact.
+#
+# Started by hand, or by a pull request that changes the script or this file. It is not part
+# of ci.yml: it downloads several GB and takes a while.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/mac-check.yml
+      - scripts/mac_check.sh
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: macos-15
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: engine/uv.lock
+      - name: Install the engine with the Mac build of PyTorch
+        run: uv sync --locked --no-default-groups --group mps --group dev
+      - name: Download the models (from the catalog, sha256 checked)
+        run: >
+          uv run --no-sync openstems models pull
+          bs-roformer-sw bs-roformer-leap-xe-vocals bs-roformer-karaoke-becruily mdx23c-drumsep
+      - name: Make a synthetic song
+        run: uv run --no-sync python ../scripts/make_demo_song.py mix "$RUNNER_TEMP/song" "Night Drive" 0
+      - name: Run the check
+        run: |
+          mkdir -p "$HOME/Desktop"
+          bash ../scripts/mac_check.sh "$RUNNER_TEMP/song/Night Drive.mp3" "$PWD/.venv/bin/openstems"
+      - name: The report
+        if: always()
+        run: cat "$HOME/Desktop/openstems-mac-check.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: openstems-mac-check
+          path: ~/Desktop/openstems-mac-check.txt
