@@ -63,18 +63,28 @@
     outline: 2px solid color-mix(in srgb, var(--color-accent) 70%, transparent);
     outline-offset: 2px;
   }
-  ::-webkit-scrollbar {
+  /* A Mac keeps its own scrollbars: they overlay the content, hide when idle and follow the
+     system setting. Styling any part of a scrollbar would replace them with fixed ones. */
+  :root:not([data-platform='darwin']) ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
   }
-  ::-webkit-scrollbar-thumb {
+  :root:not([data-platform='darwin']) ::-webkit-scrollbar-thumb {
     background: var(--color-line-strong);
     border: 3px solid transparent;
     background-clip: padding-box;
     border-radius: 999px;
   }
-  ::-webkit-scrollbar-thumb:hover {
+  :root:not([data-platform='darwin']) ::-webkit-scrollbar-thumb:hover {
     background-color: var(--color-faint);
+  }
+  /* On a Mac the system font comes first, so a Segoe UI installed with other software is
+     never picked, and the system's scrollbars and form parts are drawn for a dark page. */
+  :root[data-platform='darwin'] {
+    --font-sans: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --font-display: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+    color-scheme: dark;
   }
 }
 
@@ -84,6 +94,13 @@
 
 .drag-region {
   -webkit-app-region: drag;
+}
+/* The bar across the top of the full window. On a Mac the close, minimize and zoom buttons
+   sit at its left: the preload says how wide they are (80px, and 0px in full screen, where
+   macOS hides them). On Windows the variable is not set and both sides are the same. */
+.title-bar {
+  padding-left: max(0.875rem, var(--traffic-lights-inset, 0px));
+  padding-right: 0.875rem;
 }
 .no-drag {
   -webkit-app-region: no-drag;

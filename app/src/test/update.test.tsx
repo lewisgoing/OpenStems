@@ -3,7 +3,16 @@ import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { UpdateStatus } from '../../electron/bridge'
 import { DEFAULT_PREFS, parsePrefs } from '../../electron/traylogic'
-import { type UpdateBackend, Updater, fakeBackend } from '../../electron/updatelogic'
+import {
+  type ManualUpdateBackend,
+  RELEASES_URL,
+  type UpdateBackend,
+  Updater,
+  fakeBackend,
+  fakeManualBackend,
+  isDeveloperIdSigned,
+  isMissingUpdateFile,
+} from '../../electron/updatelogic'
 import { ToastProvider } from '@/components/toast'
 import { TooltipProvider } from '@/components/ui'
 import { UpdatePill, UpdateSettings, updateSummary } from '@/components/Update'
@@ -113,6 +122,133 @@ describe('the updater', () => {
   it('checks by default, and remembers when that is turned off', () => {
     expect(DEFAULT_PREFS.checkForUpdates).toBe(true)
     expect(parsePrefs('{"checkForUpdates": false}').checkForUpdates).toBe(false)
+  })
+
+  it('names the computer it runs on when a check the user asked for fails', async () => {
+    const backend = { ...fakeBackend('0.3.0', () => undefined), check: async () => Promise.reject(new Error('offline')) }
+    const instance = new Updater({ current: '0.2.0', backend, beforeInstall: async () => undefined, computer: 'Mac' })
+    expect((await instance.check(true)).error).toBe('Could not check for updates. Is this Mac online?')
+  })
+})
+
+/* ---- an app that cannot install an update: an unsigned Mac app ------------------------ */
+
+function manualUpdater(backend: Partial<ManualUpdateBackend> = {}, beforeInstall = vi.fn(async () => undefined)) {
+  const opened: string[] = []
+  const full: ManualUpdateBackend = { ...fakeManualBackend('0.3.0', (url) => opened.push(url)), ...backend }
+  const instance = new Updater({ current: '0.2.0', backend: full, beforeInstall })
+  const seen: UpdateStatus['state'][] = []
+  instance.onStatus((status) => seen.push(status.state))
+  return { instance, seen, opened, beforeInstall }
+}
+
+describe('the updater that only looks', () => {
+  it('offers the new version as one to fetch by hand, with the page it is on', async () => {
+    const { instance, seen } = manualUpdater()
+    expect(instance.status.supported).toBe(true)
+    expect(await instance.check()).toMatchObject({ state: 'available', version: '0.3.0', manual: true, url: RELEASES_URL })
+    expect(seen).toEqual(['checking', 'available'])
+    expect(RELEASES_URL).toBe('https://github.com/lewisgoing/OpenStems/releases/latest')
+  })
+
+  it('opens the release page on "download" and stays where it is', async () => {
+    const { instance, seen, opened } = manualUpdater()
+    await instance.check()
+    seen.length = 0
+    const status = await instance.download()
+    expect(opened).toEqual([RELEASES_URL])
+    expect(status).toMatchObject({ state: 'available', version: '0.3.0', manual: true })
+    expect(status.progress).toBeUndefined()
+    // Never downloading, never ready: there is nothing for the app to restart into.
+    expect(seen).toEqual([])
+    // The page opens again on another click.
+    await instance.download()
+    expect(opened).toHaveLength(2)
+  })
+
+  it('never installs, and stops nothing', async () => {
+    const { instance, beforeInstall } = manualUpdater()
+    await instance.check()
+    await instance.download()
+    expect(await instance.install()).toBe(false)
+    expect(beforeInstall).not.toHaveBeenCalled()
+  })
+
+  it('opens nothing before a version is found, and only an https address', async () => {
+    const early = manualUpdater()
+    await early.instance.download()
+    expect(early.opened).toEqual([])
+
+    const open = vi.fn(async () => undefined)
+    const unsafe = manualUpdater({ url: 'file:///Applications/Calculator.app', open })
+    await unsafe.instance.check()
+    expect(await unsafe.instance.download()).toMatchObject({ state: 'available', error: 'Could not open the download page.' })
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('says so when the page cannot be opened, and forgets it once it can', async () => {
+    let broken = true
+    const { instance } = manualUpdater({ open: async () => (broken ? Promise.reject(new Error('no browser')) : undefined) })
+    await instance.check()
+    expect(await instance.download()).toMatchObject({ state: 'available', error: 'Could not open the download page.' })
+    broken = false
+    expect((await instance.download()).error).toBeUndefined()
+  })
+
+  it('drops the offer when a later check finds nothing newer, and keeps it when the check fails', async () => {
+    let answer: 'newer' | 'same' | 'offline' = 'newer'
+    const { instance } = manualUpdater({
+      check: async () => (answer === 'newer' ? '0.3.0' : answer === 'same' ? null : Promise.reject(new Error('offline'))),
+    })
+    await instance.check()
+    answer = 'offline'
+    expect(await instance.check()).toMatchObject({ state: 'available', version: '0.3.0', manual: true, url: RELEASES_URL })
+    answer = 'same'
+    const status = await instance.check()
+    expect(status.state).toBe('idle')
+    expect(status.manual).toBeUndefined()
+    expect(status.url).toBeUndefined()
+  })
+
+  it('leaves an app that installs its own updates unmarked', async () => {
+    const { instance } = updater({})
+    const status = await instance.check()
+    expect(status.manual).toBeUndefined()
+    expect(status.url).toBeUndefined()
+  })
+})
+
+describe('a release without a Mac build', () => {
+  it('is told apart from a check that could not be made', () => {
+    // What electron-updater throws when latest-mac.yml is not among the release's files.
+    const missing = Object.assign(new Error('Cannot find latest-mac.yml in the latest release artifacts'), {
+      code: 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND',
+    })
+    expect(isMissingUpdateFile(missing)).toBe(true)
+    expect(isMissingUpdateFile(Object.assign(new Error('net::ERR_INTERNET_DISCONNECTED'), { code: 'ERR_INTERNET_DISCONNECTED' }))).toBe(false)
+    expect(isMissingUpdateFile(new Error('Cannot find latest-mac.yml'))).toBe(false)
+    expect(isMissingUpdateFile('ERR_UPDATER_CHANNEL_FILE_NOT_FOUND')).toBe(false)
+    expect(isMissingUpdateFile(null)).toBe(false)
+  })
+})
+
+describe('the signature of a Mac app', () => {
+  it('counts only a Developer ID as able to update itself', () => {
+    const signed = [
+      'Executable=/Applications/OpenStems.app/Contents/MacOS/OpenStems',
+      'Identifier=ing.lewisgo.openstems',
+      'Authority=Developer ID Application: Someone (ABCDE12345)',
+      'Authority=Developer ID Certification Authority',
+      'Authority=Apple Root CA',
+      'TeamIdentifier=ABCDE12345',
+    ].join('\n')
+    expect(isDeveloperIdSigned(signed)).toBe(true)
+    // What an unsigned build on Apple Silicon carries: an ad hoc signature, with no authority.
+    const adhoc = ['Executable=/Applications/OpenStems.app/Contents/MacOS/OpenStems', 'Signature=adhoc', 'TeamIdentifier=not set'].join('\n')
+    expect(isDeveloperIdSigned(adhoc)).toBe(false)
+    expect(isDeveloperIdSigned('Authority=Apple Development: Someone (ABCDE12345)')).toBe(false)
+    expect(isDeveloperIdSigned('/Applications/OpenStems.app: code object is not signed at all')).toBe(false)
+    expect(isDeveloperIdSigned('')).toBe(false)
   })
 })
 

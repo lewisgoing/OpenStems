@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Boxes, Download, History, ListMusic, Settings as SettingsIcon } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import type { SetupStatus, TorchVariant } from '../electron/bridge'
-import { VARIANTS, VARIANT_DOWNLOAD, VARIANT_LABEL } from '../electron/variant'
+import { VARIANT_CARDS, VARIANT_DOWNLOAD, VARIANT_LABEL, variantsFor } from '../electron/variant'
 import type { Job, Model, Recipe, StemSet } from './api/client'
 import { EngineProvider } from './api/engine'
 import { useJobs, useModelActions, useModels, useRecipes, useSettings } from './api/queries'
@@ -14,6 +14,7 @@ import { Button, Dialog, Segmented, TooltipProvider } from './components/ui'
 import { UpdatePill } from './components/Update'
 import { Wordmark } from './components/Wordmark'
 import { cn, formatBytes } from './lib/format'
+import { isMac, modKey, shortcut, words } from './platform'
 import { PendingDownload, useDropFlow, usePaste } from './state/dropflow'
 import { SelectionProvider } from './state/selection'
 import { HistoryView } from './views/HistoryView'
@@ -42,10 +43,11 @@ export default function App() {
 
 function TitleBar() {
   return (
-    <div className="drag-region flex h-10 flex-none items-center gap-2 border-b border-line px-3.5">
+    <div className="title-bar drag-region flex h-10 flex-none items-center gap-2 border-b border-line">
       <Wordmark />
       <span className="flex-1" />
-      {/* Clear of the window buttons, which Windows draws over the right end of this bar. */}
+      {/* Clear of the window buttons, which Windows draws over the right end of this bar. A Mac
+          has its buttons at the left (`.title-bar` leaves room for them) and this margin is 0. */}
       <div style={{ marginRight: 'calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))' }}>
         <UpdatePill />
       </div>
@@ -93,8 +95,6 @@ function CenteredMessage({ children }: { children: ReactNode }) {
   return <div className="grid flex-1 place-items-center p-8 text-center">{children}</div>
 }
 
-const BUILDS: { value: TorchVariant; label: string }[] = VARIANTS.map((value) => ({ value, label: VARIANT_LABEL[value] }))
-
 export function SetupScreen({ status }: { status: SetupStatus }) {
   const log = useRef<HTMLPreElement>(null)
   useEffect(() => {
@@ -105,6 +105,10 @@ export function SetupScreen({ status }: { status: SetupStatus }) {
   const [picked, setPicked] = useState<TorchVariant | null>(null)
   const variant = picked ?? status.variant
   const offRecommendation = status.recommended !== undefined && variant !== status.recommended
+  // A Mac has one build: it is named, with nothing to choose.
+  const builds = status.variants ?? variantsFor(window.openstems.info.platform)
+  const single = builds.length === 1
+  const mac = isMac()
   // After an app update the engine is brought up to date by itself: nothing to choose.
   if (status.updating) {
     return (
@@ -122,26 +126,43 @@ export function SetupScreen({ status }: { status: SetupStatus }) {
         <h1 className="m-0 font-display text-[17px] font-semibold">Set up the audio engine</h1>
         <p className="mt-2 mb-4 text-muted">
           OpenStems needs its Python environment before the first separation. This downloads Python, PyTorch for{' '}
-          {VARIANT_LABEL[variant]} graphics cards and the model code ({VARIANT_DOWNLOAD[variant]}) into your user
-          profile. It happens once.
+          {mac ? VARIANT_LABEL[variant] : `${VARIANT_LABEL[variant]} graphics cards`} and the model code (
+          {VARIANT_DOWNLOAD[variant]}) into {words().profile}. It happens once.
         </p>
         <div className="mb-4 rounded-[10px] border border-line bg-surface px-3.5 py-3">
           <div className="flex items-center justify-between gap-4">
-            <span className="font-medium">Graphics card</span>
-            {running ? (
+            <span className="font-medium">{single ? 'Engine build' : 'Graphics card'}</span>
+            {single ? (
+              <span className="text-muted">
+                {VARIANT_LABEL[variant]} · {VARIANT_CARDS[variant]}
+              </span>
+            ) : running ? (
               <span className="text-muted">{VARIANT_LABEL[variant]}</span>
             ) : (
-              <Segmented label="Graphics card" value={variant} options={BUILDS} onChange={setPicked} />
+              <Segmented
+                label="Graphics card"
+                value={variant}
+                options={builds.map((value) => ({ value, label: VARIANT_LABEL[value] }))}
+                onChange={setPicked}
+              />
             )}
           </div>
-          <p className="mt-2 mb-0 text-[12.5px] text-muted" role="status">
-            {status.detected ? status.note : 'Checking your graphics card'}
-            {offRecommendation &&
-              status.recommended &&
-              ` The ${VARIANT_LABEL[status.recommended]} build is the one that fits this PC.`}
-          </p>
+          {/* A machine that cannot be set up is told once, in the alert below. */}
+          {!status.unsupported && (
+            <p className="mt-2 mb-0 text-[12.5px] text-muted" role="status">
+              {status.detected ? status.note : single ? 'Checking this Mac' : 'Checking your graphics card'}
+              {offRecommendation &&
+                status.recommended &&
+                ` The ${VARIANT_LABEL[status.recommended]} build is the one that fits this ${words().computer}.`}
+            </p>
+          )}
         </div>
-        {status.state === 'failed' && (
+        {status.unsupported && (
+          <p className="mb-3 rounded-[8px] border border-danger/30 bg-danger/10 px-3 py-2 text-danger" role="alert">
+            {status.unsupported}
+          </p>
+        )}
+        {status.state === 'failed' && !status.unsupported && (
           <p className="mb-3 rounded-[8px] border border-danger/30 bg-danger/10 px-3 py-2 text-danger" role="alert">
             Setup failed: {status.error}
           </p>
@@ -153,7 +174,7 @@ export function SetupScreen({ status }: { status: SetupStatus }) {
         )}
         <Button
           variant="primary"
-          disabled={running || !status.detected}
+          disabled={running || !status.detected || Boolean(status.unsupported)}
           onClick={() => void window.openstems.runSetup(variant)}
         >
           {running && <span className="spinner !border-t-accent-ink" />}
@@ -204,10 +225,10 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
   const addLink = useCallback((url: string) => addLinks([url]), [addLinks])
   const { data: settings } = useSettings()
 
-  // Ctrl+1..4 switch views. Keyboard-initiated, so the view appears at once.
+  // Ctrl+1..4 (Cmd on a Mac) switch views. Keyboard-initiated, so the view appears at once.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (!event.ctrlKey || event.altKey || event.shiftKey) return
+      if (!modKey(event) || event.altKey || event.shiftKey) return
       const target = VIEWS[Number(event.key) - 1]
       if (!target) return
       event.preventDefault()
@@ -215,6 +236,19 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // Settings from the Mac application menu (Cmd+,). A menu or keyboard action, so no animation.
+  // The preload also leaves a mark on the root element, for a pick made before this ran.
+  useEffect(() => {
+    const onSettings = () => {
+      delete document.documentElement.dataset.openView
+      setPanel(null)
+      setView({ id: 'settings', animate: false })
+    }
+    if (document.documentElement.dataset.openView === 'settings') onSettings()
+    window.addEventListener('openstems:settings', onSettings)
+    return () => window.removeEventListener('openstems:settings', onSettings)
   }, [])
 
   const showJob = (job: Job | null) =>
@@ -260,7 +294,7 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
             key={id}
             type="button"
             aria-current={view.id === id ? 'page' : undefined}
-            title={`${label} (Ctrl+${index + 1})`}
+            title={`${label} (${shortcut(String(index + 1))})`}
             className={cn(
               'nav-item press flex h-8 items-center gap-2.5 rounded-[8px] border-0 bg-transparent px-2.5 text-left font-medium text-muted',
               view.id === id && '!bg-raised !text-text',

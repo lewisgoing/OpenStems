@@ -1,0 +1,147 @@
+import {
+  dataRoot,
+  devGroupArgs,
+  engineEnvDir,
+  installEnv,
+  joinPath,
+  logsDir,
+  macBundlePath,
+  uvFileName,
+  venvArgs,
+  venvExecutable,
+} from '../../electron/platform'
+
+const windows = { platform: 'win32', home: 'C:\\Users\\lew', env: { LOCALAPPDATA: 'C:\\Users\\lew\\AppData\\Local' } }
+const mac = { platform: 'darwin', home: '/Users/lew', env: {} }
+
+describe('folders on Windows', () => {
+  it('are under %LOCALAPPDATA%\\OpenStems, as they always were', () => {
+    expect(dataRoot(windows)).toBe('C:\\Users\\lew\\AppData\\Local\\OpenStems')
+    expect(engineEnvDir(windows)).toBe('C:\\Users\\lew\\AppData\\Local\\OpenStems\\engine-env')
+    expect(logsDir(windows)).toBe('C:\\Users\\lew\\AppData\\Local\\OpenStems\\logs')
+  })
+
+  it('follow a profile that was moved', () => {
+    const moved = { ...windows, env: { LOCALAPPDATA: 'D:\\tmp\\fresh\\Local' } }
+    expect(engineEnvDir(moved)).toBe('D:\\tmp\\fresh\\Local\\OpenStems\\engine-env')
+    expect(logsDir(moved)).toBe('D:\\tmp\\fresh\\Local\\OpenStems\\logs')
+  })
+
+  it('fall back to the home folder when LOCALAPPDATA is not set', () => {
+    expect(engineEnvDir({ ...windows, env: {} })).toBe('C:\\Users\\lew\\AppData\\Local\\OpenStems\\engine-env')
+  })
+})
+
+describe('folders on a Mac', () => {
+  it('are in the Library, with forward slashes whatever system asks', () => {
+    expect(dataRoot(mac)).toBe('/Users/lew/Library/Application Support/OpenStems')
+    expect(engineEnvDir(mac)).toBe('/Users/lew/Library/Application Support/OpenStems/engine-env')
+    expect(logsDir(mac)).toBe('/Users/lew/Library/Logs/OpenStems')
+  })
+
+  it('ignore the Windows variable', () => {
+    const odd = { ...mac, env: { LOCALAPPDATA: 'C:\\somewhere' } }
+    expect(dataRoot(odd)).toBe(dataRoot(mac))
+    expect(logsDir(odd)).toBe(logsDir(mac))
+  })
+})
+
+describe('other systems', () => {
+  it('keep the layout they had', () => {
+    const linux = { platform: 'linux', home: '/home/lew', env: {} }
+    expect(engineEnvDir(linux)).toBe('/home/lew/AppData/Local/OpenStems/engine-env')
+    expect(logsDir({ ...linux, env: { LOCALAPPDATA: '/tmp/profile' } })).toBe('/tmp/profile/OpenStems/logs')
+  })
+})
+
+describe('programs', () => {
+  it('in a Python environment are in Scripts with .exe on Windows and in bin elsewhere', () => {
+    expect(venvExecutable(engineEnvDir(windows), 'openstems', 'win32')).toBe(
+      'C:\\Users\\lew\\AppData\\Local\\OpenStems\\engine-env\\Scripts\\openstems.exe',
+    )
+    expect(venvExecutable(engineEnvDir(windows), 'python', 'win32')).toBe(
+      'C:\\Users\\lew\\AppData\\Local\\OpenStems\\engine-env\\Scripts\\python.exe',
+    )
+    expect(venvExecutable(engineEnvDir(mac), 'openstems', 'darwin')).toBe(
+      '/Users/lew/Library/Application Support/OpenStems/engine-env/bin/openstems',
+    )
+    expect(venvExecutable(engineEnvDir(mac), 'python', 'darwin')).toBe(
+      '/Users/lew/Library/Application Support/OpenStems/engine-env/bin/python',
+    )
+  })
+
+  it('name the bundled uv', () => {
+    expect(uvFileName('win32')).toBe('uv.exe')
+    expect(uvFileName('darwin')).toBe('uv')
+  })
+
+  it('join paths the way the named system writes them', () => {
+    expect(joinPath('win32', 'C:\\a', 'b', 'c.txt')).toBe('C:\\a\\b\\c.txt')
+    expect(joinPath('darwin', '/a', 'b', 'c.txt')).toBe('/a/b/c.txt')
+    // What Node's own join gives for the same parts.
+    expect(joinPath('win32', 'C:\\a\\', 'b')).toBe('C:\\a\\b')
+    expect(joinPath('win32', 'C:/a', 'b')).toBe('C:\\a\\b')
+    expect(joinPath('win32', '\\\\server\\share', 'b')).toBe('\\\\server\\share\\b')
+    expect(joinPath('darwin', '/a/', 'b')).toBe('/a/b')
+  })
+})
+
+describe('the engine in development', () => {
+  it('asks uv for the Apple Silicon PyTorch on a Mac and for nothing extra on Windows', () => {
+    expect(devGroupArgs('win32')).toEqual([])
+    expect(devGroupArgs('darwin')).toEqual(['--no-default-groups', '--group', 'dev', '--group', 'mps'])
+  })
+})
+
+describe('first-run setup', () => {
+  it('uses only the Python uv manages on a Mac, and asks Windows for nothing extra', () => {
+    expect(venvArgs('win32')).toEqual([])
+    expect(venvArgs('darwin')).toEqual(['--managed-python'])
+  })
+
+  it('copies files out of the uv cache on Windows, as it always did, and leaves a Mac at the default', () => {
+    expect(installEnv('win32')).toEqual({ UV_LINK_MODE: 'copy' })
+    expect(installEnv('darwin')).toEqual({})
+  })
+})
+
+describe('the Mac app bundle', () => {
+  it('is three levels above the program inside it', () => {
+    expect(macBundlePath('/Applications/OpenStems.app/Contents/MacOS/OpenStems')).toBe('/Applications/OpenStems.app')
+    expect(macBundlePath('/Users/lew/My Apps/OpenStems.app/Contents/MacOS/OpenStems')).toBe('/Users/lew/My Apps/OpenStems.app')
+  })
+})
+
+describe('the Mac build configuration', () => {
+  type Build = { mac: { identity?: string | null; hardenedRuntime?: boolean; entitlements?: string }; win: unknown; appId: string }
+  const load = async () => {
+    const file: string = '../../mac-build.cjs'
+    const loaded = (await import(/* @vite-ignore */ file)) as { macBuild?: (env: object) => Build; default?: { macBuild: (env: object) => Build } }
+    return (loaded.macBuild ?? loaded.default?.macBuild) as (env: object) => Build
+  }
+
+  it('signs ad hoc, without the hardened runtime, when there is no certificate', async () => {
+    const macBuild = await load()
+    const config = macBuild({})
+    expect(config.mac.identity).toBe('-')
+    expect(config.mac.hardenedRuntime).toBe(false)
+    // An empty secret is no certificate.
+    expect(macBuild({ CSC_LINK: '' }).mac.identity).toBe('-')
+    expect(config.appId).toBe('ing.lewisgo.openstems')
+  })
+
+  it('leaves the build as package.json has it when a certificate is supplied', async () => {
+    const macBuild = await load()
+    const config = macBuild({ CSC_LINK: 'base64...' })
+    expect(config.mac.identity).toBeUndefined()
+    expect(config.mac.hardenedRuntime).toBe(true)
+    expect(config.mac.entitlements).toBe('build/entitlements.mac.plist')
+  })
+
+  it('never changes the configuration the Windows build reads', async () => {
+    const macBuild = await load()
+    const before = JSON.stringify(macBuild({ CSC_LINK: 'x' }))
+    macBuild({}).mac.identity = 'changed'
+    expect(JSON.stringify(macBuild({ CSC_LINK: 'x' }))).toBe(before)
+  })
+})

@@ -7,6 +7,8 @@
  *   cu126  The same PyTorch for CUDA 12.6: the last build with GTX 900 and 10 series cards
  *          in it. It cannot run a 50-series card.
  *   rocm   AMD's PyTorch-on-Windows build (ROCm), for the Radeon cards AMD supports.
+ *   mps    PyTorch from PyPI for Apple Silicon Macs (the MPS backend). The only build on a
+ *          Mac, and never offered on Windows.
  */
 import type { TorchVariant } from './bridge'
 
@@ -27,13 +29,46 @@ export interface VariantChoice {
   note: string
 }
 
-/** Every build, in the order they are offered. */
+/**
+ * The builds offered on Windows, in the order they are offered. A screen that may run on a
+ * Mac asks `variantsFor` instead.
+ */
 export const VARIANTS: TorchVariant[] = ['cuda', 'cu126', 'rocm']
+
+/** The builds offered on a platform (`process.platform`). A Mac has one and nothing to choose. */
+export function variantsFor(platform: string): TorchVariant[] {
+  return platform === 'darwin' ? ['mps'] : VARIANTS
+}
+
+/** The build assumed before anything is known, and for a marker that names none. */
+export function defaultVariant(platform: string): TorchVariant {
+  return platform === 'darwin' ? 'mps' : 'cuda'
+}
+
+/**
+ * Why setup cannot work on this machine, or null. PyTorch publishes no build for Intel
+ * Macs, so there is nothing to install there.
+ */
+export function unsupportedReason(platform: string, arch: string): string | null {
+  if (platform === 'darwin' && arch !== 'arm64') {
+    return 'OpenStems needs a Mac with Apple Silicon (M1 or later). PyTorch has no build for Intel Macs, so the audio engine cannot be set up on this one.'
+  }
+  return null
+}
+
+/** Why setup must not start for `variant` on this machine, or null when it may. */
+export function setupRefusal(variant: TorchVariant, platform: string, arch: string): string | null {
+  const unsupported = unsupportedReason(platform, arch)
+  if (unsupported) return unsupported
+  if (variantsFor(platform).includes(variant)) return null
+  return `The ${VARIANT_LABEL[variant]} build is not available on ${platform === 'darwin' ? 'a Mac' : 'this system'}.`
+}
 
 export const VARIANT_LABEL: Record<TorchVariant, string> = {
   cuda: 'NVIDIA',
   cu126: 'NVIDIA (older)',
   rocm: 'AMD Radeon',
+  mps: 'Apple Silicon',
 }
 
 /** Which cards a build is for, in a few words. */
@@ -41,6 +76,7 @@ export const VARIANT_CARDS: Record<TorchVariant, string> = {
   cuda: 'GTX 16 series, RTX 20 series and later',
   cu126: 'GTX 900 and 10 series, Titan V',
   rocm: 'RX 9070, 9060 XT, 7900 XTX, 7700',
+  mps: 'M1 and later',
 }
 
 /** Download size shown before setup starts. */
@@ -48,6 +84,8 @@ export const VARIANT_DOWNLOAD: Record<TorchVariant, string> = {
   cuda: 'about 3 GB',
   cu126: 'about 3.5 GB',
   rocm: 'about 2.5 GB, 5 GB once unpacked',
+  // The macOS arm64 PyTorch wheel is 127 MB; the other packages and Python come to about 200 MB.
+  mps: 'about 350 MB',
 }
 
 const VENDOR_IDS: Record<string, GpuVendor> = { '10DE': 'nvidia', '1002': 'amd', '1022': 'amd', '8086': 'intel' }
@@ -115,8 +153,23 @@ export function nvidiaOlder(name: string): boolean {
   )
 }
 
-/** Pick the build for a machine. NVIDIA wins when both vendors are present. */
-export function recommendVariant(adapters: GpuAdapter[]): VariantChoice {
+/** The one build for a Mac. Nothing is detected: every Apple Silicon Mac has the same GPU family. */
+function recommendForMac(arch: string): VariantChoice {
+  const unsupported = unsupportedReason('darwin', arch)
+  if (unsupported) return { variant: 'mps', gpu: null, note: unsupported }
+  return {
+    variant: 'mps',
+    gpu: 'Apple Silicon',
+    note: 'Mac support is new and has not been run on a Mac by OpenStems. It needs an Apple Silicon Mac with macOS 14 or later.',
+  }
+}
+
+/**
+ * Pick the build for a machine. NVIDIA wins when both vendors are present. On a Mac
+ * (`host.platform` is 'darwin') the adapters are not looked at.
+ */
+export function recommendVariant(adapters: GpuAdapter[], host: { platform: string; arch: string } = { platform: 'win32', arch: 'x64' }): VariantChoice {
+  if (host.platform === 'darwin') return recommendForMac(host.arch)
   const cards = adapters.filter((a) => a.vendor === 'nvidia')
   // With two NVIDIA cards, a current one decides.
   const nvidia = cards.find((a) => !nvidiaOlder(a.name)) ?? cards[0]
@@ -162,13 +215,16 @@ export function recommendVariant(adapters: GpuAdapter[]): VariantChoice {
 }
 
 export function isVariant(value: unknown): value is TorchVariant {
-  return value === 'cuda' || value === 'cu126' || value === 'rocm'
+  return value === 'cuda' || value === 'cu126' || value === 'rocm' || value === 'mps'
 }
 
-/** The marker file written after setup: `<app version> <variant>`. Older markers hold only the version. */
-export function parseMarker(text: string): { version: string; variant: TorchVariant } {
+/**
+ * The marker file written after setup: `<app version> <variant>`. Older markers hold only the
+ * version: such an environment holds the platform's first build (NVIDIA on Windows).
+ */
+export function parseMarker(text: string, platform = 'win32'): { version: string; variant: TorchVariant } {
   const [version = '', variant] = text.trim().split(/\s+/)
-  return { version, variant: isVariant(variant) ? variant : 'cuda' }
+  return { version, variant: isVariant(variant) ? variant : defaultVariant(platform) }
 }
 
 export function formatMarker(version: string, variant: TorchVariant): string {

@@ -17,6 +17,7 @@ import { Button, IconButton, ProgressBar, Segmented, Select, Tooltip, TooltipPro
 import { UpdatePill } from '@/components/Update'
 import { Wordmark } from '@/components/Wordmark'
 import { cn, formatBytes, formatPercent, stemColor } from '@/lib/format'
+import { isMac, shortcut, words } from '@/platform'
 import { PendingDownload, useDropFlow, usePaste } from '@/state/dropflow'
 import { type MixFile, capitalize, mixLabel, useMixFile } from '@/state/mix'
 import { SelectionProvider, useSelection } from '@/state/selection'
@@ -32,7 +33,7 @@ const MAX_ROWS = 30
 const MAX_PILLS = 12
 
 /**
- * The quick-drop window: a small interface by the tray. Drop a song on it, then drag the
+ * The quick-drop window: a small interface by the tray (on a Mac, under the menu bar). Drop a song on it, then drag the
  * stems out of it. It shares the queue, the recipe and the quality with the full window.
  */
 export default function TrayApp() {
@@ -47,21 +48,28 @@ export default function TrayApp() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  const mac = isMac()
+  const hide = (
+    <IconButton label="Hide" onClick={() => window.openstems.hidePopup()}>
+      <X size={14} />
+    </IconButton>
+  )
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider delay={450} closeDelay={0}>
         <ToastProvider>
           <div className="flex h-full flex-col">
-            <header className="flex h-10 flex-none items-center gap-2 border-b border-line pr-1.5 pl-3.5">
+            {/* The button that puts the window away sits where each system keeps its close
+                button: at the right on Windows, at the left on a Mac. */}
+            <header className={cn('flex h-10 flex-none items-center gap-2 border-b border-line pr-1.5', mac ? 'pl-1.5' : 'pl-3.5')}>
+              {mac && hide}
               <Wordmark />
               <span className="flex-1" />
               <UpdatePill compact className="mr-1" />
               <IconButton label="Open the full app" onClick={() => void window.openstems.showMain()}>
                 <AppWindow size={14} />
               </IconButton>
-              <IconButton label="Hide" onClick={() => window.openstems.hidePopup()}>
-                <X size={14} />
-              </IconButton>
+              {!mac && hide}
             </header>
             <TrayGate />
           </div>
@@ -398,7 +406,7 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
             </p>
             <div className="flex justify-center gap-2">
               <Button onClick={chooseFiles}>Choose files</Button>
-              <Button onClick={flow.pasteLink} title="Fetch the song behind a copied link (Ctrl+V)">
+              <Button onClick={flow.pasteLink} title={`Fetch the song behind a copied link (${shortcut('V')})`}>
                 <Link2 size={14} />
                 Paste link
               </Button>
@@ -416,7 +424,7 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
               <Plus size={14} />
               Drop a song, or choose files
             </button>
-            <Tooltip label="Paste a link to a song (Ctrl+V)">
+            <Tooltip label={`Paste a link to a song (${shortcut('V')})`}>
               <button
                 type="button"
                 aria-label="Paste a link"
@@ -581,7 +589,7 @@ export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mix
             </IconButton>
           )}
           {hasStems && (
-            <IconButton label="Show in Explorer" onClick={() => void window.openstems.revealInExplorer(job.stems[0]?.path ?? '')}>
+            <IconButton label={`Show in ${words().fileManager}`} onClick={() => void window.openstems.revealInExplorer(job.stems[0]?.path ?? '')}>
               <FolderOpen size={14} />
             </IconButton>
           )}

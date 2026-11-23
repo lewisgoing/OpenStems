@@ -2,13 +2,22 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { SetupStatus } from '../../electron/bridge'
 import {
+  VARIANTS,
+  VARIANT_CARDS,
+  VARIANT_DOWNLOAD,
+  VARIANT_LABEL,
   adaptersFromVendorIds,
+  defaultVariant,
   formatMarker,
+  isVariant,
   nvidiaOlder,
   parseAdapters,
   parseMarker,
   recommendVariant,
   rocmSupport,
+  setupRefusal,
+  unsupportedReason,
+  variantsFor,
 } from '../../electron/variant'
 import { SetupScreen } from '@/App'
 import { TooltipProvider } from '@/components/ui'
@@ -150,6 +159,64 @@ describe('the setup marker', () => {
   it('reads a marker from before AMD support as the NVIDIA build', () => {
     expect(parseMarker('0.1.0\n')).toEqual({ version: '0.1.0', variant: 'cuda' })
     expect(parseMarker('0.1.0 something')).toEqual({ version: '0.1.0', variant: 'cuda' })
+  })
+})
+
+describe('the builds on a Mac', () => {
+  const mac = { platform: 'darwin', arch: 'arm64' }
+
+  it('are one, and Windows keeps its three', () => {
+    expect(variantsFor('darwin')).toEqual(['mps'])
+    expect(variantsFor('win32')).toEqual(['cuda', 'cu126', 'rocm'])
+    expect(VARIANTS).toEqual(['cuda', 'cu126', 'rocm'])
+    expect(defaultVariant('darwin')).toBe('mps')
+    expect(defaultVariant('win32')).toBe('cuda')
+  })
+
+  it('has a name, the Macs it is for and a download size', () => {
+    expect(isVariant('mps')).toBe(true)
+    expect(VARIANT_LABEL.mps).toBe('Apple Silicon')
+    expect(VARIANT_CARDS.mps).toBe('M1 and later')
+    expect(VARIANT_DOWNLOAD.mps).toMatch(/^about \d+ MB$/)
+  })
+
+  it('is recommended without looking at the adapters, and says it has not been run on a Mac', () => {
+    const choice = recommendVariant([{ name: 'NVIDIA GeForce RTX 3060', vendor: 'nvidia' }], mac)
+    expect(choice.variant).toBe('mps')
+    expect(choice.gpu).toBe('Apple Silicon')
+    expect(choice.note).toMatch(/has not been run on a Mac by OpenStems/)
+    expect(recommendVariant([], mac)).toEqual(choice)
+  })
+
+  it('is never recommended on Windows', () => {
+    const adapters = parseAdapters(DEV_MACHINE)
+    expect(recommendVariant([]).variant).toBe('cuda')
+    expect(recommendVariant([], { platform: 'win32', arch: 'arm64' }).variant).toBe('cuda')
+    expect(recommendVariant(adapters, { platform: 'win32', arch: 'x64' })).toEqual(recommendVariant(adapters))
+  })
+
+  it('cannot be set up on an Intel Mac, and says why', () => {
+    expect(unsupportedReason('darwin', 'arm64')).toBeNull()
+    expect(unsupportedReason('win32', 'x64')).toBeNull()
+    expect(unsupportedReason('darwin', 'x64')).toMatch(/Apple Silicon/)
+    expect(recommendVariant([], { platform: 'darwin', arch: 'x64' }).note).toMatch(/no build for Intel Macs/)
+    expect(setupRefusal('mps', 'darwin', 'x64')).toMatch(/Intel Macs/)
+  })
+
+  it('is the only build setup accepts on a Mac, and one Windows refuses', () => {
+    expect(setupRefusal('mps', 'darwin', 'arm64')).toBeNull()
+    expect(setupRefusal('cuda', 'darwin', 'arm64')).toBe('The NVIDIA build is not available on a Mac.')
+    expect(setupRefusal('rocm', 'darwin', 'arm64')).toMatch(/AMD Radeon/)
+    for (const variant of VARIANTS) expect(setupRefusal(variant, 'win32', 'x64')).toBeNull()
+    expect(setupRefusal('mps', 'win32', 'x64')).toBe('The Apple Silicon build is not available on this system.')
+  })
+
+  it('is what a marker with no build means on a Mac', () => {
+    expect(parseMarker('0.3.0\n', 'darwin')).toEqual({ version: '0.3.0', variant: 'mps' })
+    expect(parseMarker('0.3.0 something', 'darwin')).toEqual({ version: '0.3.0', variant: 'mps' })
+    expect(parseMarker('0.3.0\n', 'win32')).toEqual({ version: '0.3.0', variant: 'cuda' })
+    expect(parseMarker(formatMarker('0.3.0', 'mps'), 'darwin')).toEqual({ version: '0.3.0', variant: 'mps' })
+    expect(parseMarker(formatMarker('0.3.0', 'mps'))).toEqual({ version: '0.3.0', variant: 'mps' })
   })
 })
 

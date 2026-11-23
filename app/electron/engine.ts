@@ -1,9 +1,11 @@
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { app } from 'electron'
 import type { EngineStatus } from './bridge'
+import { type Host, devGroupArgs, engineEnvDir as envDirFor, uvFileName, venvExecutable } from './platform'
 
 const HEALTH_TIMEOUT_MS = 90_000
 
@@ -21,16 +23,26 @@ export function engineSourceDir(): string {
 
 /** The Python environment created on first run (packaged builds only). */
 export function engineEnvDir(): string {
-  const local = process.env.LOCALAPPDATA ?? join(app.getPath('home'), 'AppData', 'Local')
-  return join(local, 'OpenStems', 'engine-env')
+  return envDirFor(host())
+}
+
+/** This machine, for the folder functions in `platform.ts`. */
+function host(): Host {
+  // Off Windows the home folder follows HOME, as the engine's does.
+  return { platform: process.platform, home: process.platform === 'win32' ? app.getPath('home') : homedir(), env: process.env }
+}
+
+/** A program in the engine's environment: `python`, `openstems`. */
+export function envExecutable(name: string): string {
+  return venvExecutable(engineEnvDir(), name, process.platform)
 }
 
 export function engineExecutable(): string {
-  return join(engineEnvDir(), 'Scripts', 'openstems.exe')
+  return envExecutable('openstems')
 }
 
 export function bundledUv(): string {
-  return app.isPackaged ? join(process.resourcesPath, 'bin', 'uv.exe') : 'uv'
+  return app.isPackaged ? join(process.resourcesPath, 'bin', uvFileName(process.platform)) : 'uv'
 }
 
 export function engineCommand(): EngineCommand {
@@ -44,7 +56,7 @@ export function engineCommand(): EngineCommand {
     return { command: engineExecutable(), args: serve }
   }
   const source = engineSourceDir()
-  return { command: 'uv', args: ['run', '--project', source, 'openstems', ...serve], cwd: source }
+  return { command: 'uv', args: ['run', '--project', source, ...devGroupArgs(process.platform), 'openstems', ...serve], cwd: source }
 }
 
 export function engineInstalled(): boolean {
@@ -52,6 +64,16 @@ export function engineInstalled(): boolean {
 }
 
 type Listener = (status: EngineStatus) => void
+
+/** Signal a process group (not Windows). A group that is already gone is not an error. */
+function signalGroup(pid: number, signal: NodeJS.Signals, child: ChildProcess): void {
+  try {
+    process.kill(-pid, signal)
+  } catch {
+    // No such group: the child was not its leader, or everything has exited.
+    if (child.exitCode === null && child.signalCode === null) child.kill(signal)
+  }
+}
 
 /** Starts `openstems serve`, waits for its health check, and stops it on quit. */
 export class EngineProcess {
@@ -85,6 +107,8 @@ export class EngineProcess {
         env: { ...process.env, ...spec.env, PYTHONUTF8: '1', PYTHONUNBUFFERED: '1' },
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
+        // Off Windows the engine gets its own process group, so `stop` can end all of it.
+        detached: process.platform !== 'win32',
       })
     } catch (error) {
       this.set({ state: 'failed', error: `Could not start the engine: ${String(error)}` })
@@ -155,7 +179,11 @@ export class EngineProcess {
         // `uv run` puts Python in a child process: kill the whole tree.
         execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], () => undefined)
       } else {
-        child.kill('SIGTERM')
+        // The same tree is one process group here (`detached` in `start`): the launcher,
+        // Python and the GPU worker. Ask first, then insist on whatever is left.
+        const pid = child.pid as number
+        signalGroup(pid, 'SIGTERM', child)
+        setTimeout(() => signalGroup(pid, 'SIGKILL', child), 3000).unref()
       }
       setTimeout(done, 4000)
     })

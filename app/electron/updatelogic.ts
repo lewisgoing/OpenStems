@@ -23,6 +23,44 @@ export function fakeBackend(version: string, onInstall: () => void, stepMs = 120
   }
 }
 
+/** Where the newest release is, for an app that cannot install it by itself. */
+export const RELEASES_URL = 'https://github.com/lewisgoing/OpenStems/releases/latest'
+
+/**
+ * A backend that only looks. An unsigned Mac app cannot replace itself, so there the app
+ * says a new version exists and opens the page it can be downloaded from.
+ */
+export interface ManualUpdateBackend {
+  check(): Promise<string | null>
+  /** The page with the new version. Only an https address is ever opened. */
+  url: string
+  /** Open that page in the browser. */
+  open(url: string): Promise<void>
+}
+
+export type AnyUpdateBackend = UpdateBackend | ManualUpdateBackend
+
+const isManual = (backend: AnyUpdateBackend): backend is ManualUpdateBackend => 'open' in backend
+
+/** The stand-in for a backend that only looks: `version` is on offer, and `onOpen` gets the page. */
+export function fakeManualBackend(version: string, onOpen: (url: string) => void, url = RELEASES_URL): ManualUpdateBackend {
+  return { check: async () => version, url, open: async (page) => onOpen(page) }
+}
+
+/** What `codesign -dv --verbose=2` prints for an app signed with a Developer ID certificate. */
+export function isDeveloperIdSigned(codesignOutput: string): boolean {
+  return /^Authority=Developer ID Application:/m.test(codesignOutput)
+}
+
+/**
+ * Whether a failed check means "the latest release has no update file for this system":
+ * electron-updater's error when `latest-mac.yml` is not among the release's files. That is
+ * a release whose Mac build is not there yet, or never will be, not a broken connection.
+ */
+export function isMissingUpdateFile(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND'
+}
+
 const FIRST_CHECK_MS = 15_000
 const CHECK_EVERY_MS = 6 * 60 * 60 * 1000
 
@@ -32,9 +70,11 @@ interface UpdaterOptions {
   /** The version that is running. */
   current: string
   /** Null where the app cannot update itself (development). */
-  backend: UpdateBackend | null
+  backend: AnyUpdateBackend | null
   /** Runs before the installer takes over: everything of the app's must have stopped. */
   beforeInstall: () => Promise<void>
+  /** What the user calls this computer, for "Is this PC online?". */
+  computer?: string
   log?: (message: string) => void
 }
 
@@ -42,11 +82,16 @@ interface UpdaterOptions {
  * Self-update: look for a newer release, download it when the user says so, then restart
  * into it. One state at a time, sent to every window. Nothing is downloaded or installed
  * unless the user asked for it.
+ *
+ * With a backend that only looks, the offer is marked `manual` and "download" opens the
+ * release page in the browser. The state stays at `available`: the app cannot know whether
+ * the user went on to install anything.
  */
 export class Updater {
   status: UpdateStatus
-  private readonly backend: UpdateBackend | null
+  private readonly backend: AnyUpdateBackend | null
   private readonly beforeInstall: () => Promise<void>
+  private readonly computer: string
   private readonly log: (message: string) => void
   private listeners = new Set<Listener>()
   private timer: ReturnType<typeof setInterval> | null = null
@@ -55,6 +100,7 @@ export class Updater {
   constructor(options: UpdaterOptions) {
     this.backend = options.backend
     this.beforeInstall = options.beforeInstall
+    this.computer = options.computer ?? 'PC'
     this.log = options.log ?? (() => undefined)
     this.status = { state: 'idle', current: options.current, supported: options.backend !== null }
   }
@@ -89,15 +135,16 @@ export class Updater {
     this.set({ state: 'checking', error: undefined })
     try {
       const version = await backend.check()
-      if (version) this.set({ state: 'available', version, checkedAt: Date.now() })
-      else this.set({ state: 'idle', version: undefined, checkedAt: Date.now() })
+      const offer = isManual(backend) ? { manual: true, url: backend.url } : {}
+      if (version) this.set({ state: 'available', version, checkedAt: Date.now(), ...offer })
+      else this.set({ state: 'idle', version: undefined, manual: undefined, url: undefined, checkedAt: Date.now() })
     } catch (error) {
       this.log(`update check failed: ${error instanceof Error ? error.message : String(error)}`)
       // No network is the usual reason. A check the app made by itself stays quiet about it.
       this.set({
         state: known ? 'available' : 'idle',
         version: known,
-        error: manual ? 'Could not check for updates. Is this PC online?' : undefined,
+        error: manual ? `Could not check for updates. Is this ${this.computer} online?` : undefined,
       })
     } finally {
       this.busy = false
@@ -108,6 +155,7 @@ export class Updater {
   async download(): Promise<UpdateStatus> {
     const { backend } = this
     if (!backend || this.busy || this.status.state !== 'available') return this.status
+    if (isManual(backend)) return this.openReleasePage(backend)
     this.busy = true
     this.set({ state: 'downloading', progress: 0, error: undefined })
     try {
@@ -124,12 +172,30 @@ export class Updater {
     return this.status
   }
 
+  /** The manual update: the release page in the browser, and the offer stays as it is. */
+  private async openReleasePage(backend: ManualUpdateBackend): Promise<UpdateStatus> {
+    this.busy = true
+    try {
+      if (!backend.url.startsWith('https://')) throw new Error(`not an https address: ${backend.url}`)
+      await backend.open(backend.url)
+      if (this.status.error) this.set({ error: undefined })
+    } catch (error) {
+      this.log(`could not open the release page: ${error instanceof Error ? error.message : String(error)}`)
+      this.set({ error: 'Could not open the download page.' })
+    } finally {
+      this.busy = false
+    }
+    return this.status
+  }
+
   /** Stop what is running, then hand over to the installer. Only once a version is downloaded. */
   async install(): Promise<boolean> {
-    if (!this.backend || this.status.state !== 'ready') return false
+    const { backend } = this
+    // A backend that only looks never reaches `ready`.
+    if (!backend || isManual(backend) || this.status.state !== 'ready') return false
     this.log(`installing update ${this.status.version ?? ''}`)
     await this.beforeInstall()
-    this.backend.install()
+    backend.install()
     return true
   }
 }

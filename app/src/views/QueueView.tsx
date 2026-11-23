@@ -8,6 +8,7 @@ import { RecipeBar } from '@/components/RecipeBar'
 import { useToast } from '@/components/toast'
 import { Button, IconButton, ProgressBar, Tooltip } from '@/components/ui'
 import { cn, formatPercent } from '@/lib/format'
+import { modKey, shortcut } from '@/platform'
 
 export const ACTIVE = new Set<Job['state']>(['preparing', 'running', 'writing'])
 const JOB_DRAG_TYPE = 'application/x-openstems-job'
@@ -126,13 +127,13 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
 
 /**
  * The one button of manual start: there while songs wait for it, gone when none do. It says
- * how many it starts. Ctrl+Enter does the same from the keyboard.
+ * how many it starts. Ctrl+Enter (Cmd+Enter on a Mac) does the same from the keyboard.
  */
 export function StartButton({ held, onStart }: { held: number; onStart: () => void }) {
   useEffect(() => {
     if (held === 0) return
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Enter' || !event.ctrlKey || event.altKey || event.shiftKey) return
+      if (event.key !== 'Enter' || !modKey(event) || event.altKey || event.shiftKey) return
       event.preventDefault()
       onStart()
     }
@@ -141,7 +142,7 @@ export function StartButton({ held, onStart }: { held: number; onStart: () => vo
   }, [held, onStart])
   if (held === 0) return null
   return (
-    <Button size="sm" variant="primary" title="Start the songs that are waiting (Ctrl+Enter)" onClick={onStart}>
+    <Button size="sm" variant="primary" title={`Start the songs that are waiting (${shortcut('Enter')})`} onClick={onStart}>
       <Play size={11} fill="currentColor" />
       Start {held === 1 ? '1 song' : `${held} songs`}
     </Button>

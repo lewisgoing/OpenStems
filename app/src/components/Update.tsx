@@ -67,6 +67,9 @@ function useRestart(): { restart: () => void; restarting: boolean; dialog: React
  * The one thing the app says about a new version: a small button that takes it from
  * "available" through the download to the restart. It is absent while there is nothing new.
  * `compact` is for the quick-drop window, where the label is a single word.
+ *
+ * An app that cannot install the version itself (`manual`, an unsigned Mac app) has one
+ * step: the button opens the download page and stays as it is.
  */
 export function UpdatePill({ compact, className }: { compact?: boolean; className?: string }) {
   const status = useUpdateStatus()
@@ -81,8 +84,9 @@ export function UpdatePill({ compact, className }: { compact?: boolean; classNam
 
   if (!status?.version || status.state === 'idle' || status.state === 'checking') return null
   const { version, state } = status
-  const downloading = state === 'downloading'
-  const ready = state === 'ready'
+  const manual = Boolean(status.manual)
+  const downloading = state === 'downloading' && !manual
+  const ready = state === 'ready' && !manual
   const percent = formatPercent(status.progress ?? 0)
 
   const label = restarting
@@ -95,14 +99,20 @@ export function UpdatePill({ compact, className }: { compact?: boolean; classNam
         ? compact
           ? percent
           : `Downloading ${percent}`
-        : compact
-          ? 'Update'
-          : `Update to ${version}`
+        : manual
+          ? compact
+            ? 'Get'
+            : `Get ${version}`
+          : compact
+            ? 'Update'
+            : `Update to ${version}`
   const hint = ready
     ? `Version ${version} is downloaded. Restarting installs it.`
     : downloading
       ? `Downloading version ${version}`
-      : `Version ${version} is available. You have ${status.current}.`
+      : manual
+        ? `Version ${version} is available. You have ${status.current}. This opens the download page.`
+        : `Version ${version} is available. You have ${status.current}.`
 
   // One button from the offer to the restart: it arrives once, and after that only what it
   // says changes. While downloading it fills from the left; full, it becomes the restart.
@@ -112,7 +122,7 @@ export function UpdatePill({ compact, className }: { compact?: boolean; classNam
         <button
           type="button"
           className={cn('update-pill pressable no-drag flex-none', className)}
-          data-state={restarting ? 'restarting' : state}
+          data-state={restarting ? 'restarting' : manual ? 'available' : state}
           data-compact={compact ? 'true' : undefined}
           aria-label={downloading ? `Downloading version ${version}: ${percent}` : undefined}
           disabled={downloading || restarting}
@@ -139,7 +149,9 @@ export function updateSummary(status: UpdateStatus): string {
     case 'checking':
       return 'Checking for a new version.'
     case 'available':
-      return `Version ${status.version} is available.`
+      return status.manual
+        ? `Version ${status.version} is available. Download it from the release page.`
+        : `Version ${status.version} is available.`
     case 'downloading':
       return `Downloading version ${status.version}: ${formatPercent(status.progress ?? 0)}.`
     case 'ready':
@@ -177,8 +189,9 @@ export function UpdateSettings({ Row }: { Row: (props: RowProps) => ReactNode })
         {restarting ? 'Restarting' : 'Restart to update'}
       </Button>
     ) : status.state === 'available' ? (
+      // A manual update stays here: the same call opens the download page in the browser.
       <Button variant="primary" onClick={() => void window.openstems.downloadUpdate()}>
-        Download
+        {status.manual ? 'Open download page' : 'Download'}
       </Button>
     ) : status.state === 'downloading' ? (
       <Button disabled>

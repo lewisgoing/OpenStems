@@ -3,16 +3,21 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
 import type { SetupStatus } from './bridge'
-import { bundledUv, engineEnvDir, engineExecutable, engineInstalled, engineSourceDir } from './engine'
+import { bundledUv, engineEnvDir, engineExecutable, engineInstalled, engineSourceDir, envExecutable } from './engine'
+import { installEnv, venvArgs } from './platform'
 import {
   type GpuAdapter,
   type TorchVariant,
   adaptersFromVendorIds,
+  defaultVariant,
   formatMarker,
   isVariant,
   parseAdapters,
   parseMarker,
   recommendVariant,
+  setupRefusal,
+  unsupportedReason,
+  variantsFor,
 } from './variant'
 
 type Listener = (status: SetupStatus) => void
@@ -40,10 +45,20 @@ const VARIANTS: Record<TorchVariant, { requirements: string; indexArgs: string[]
     indexArgs: [],
     what: 'PyTorch for AMD Radeon GPUs',
   },
+  mps: {
+    // Apple Silicon: PyTorch comes from PyPI like everything else, so no extra index.
+    requirements: 'requirements-mps.txt',
+    indexArgs: [],
+    what: 'PyTorch for Apple Silicon',
+  },
 }
 
-/** Ask Windows for its video adapters. Falls back to Chromium's list, then to nothing. */
+/**
+ * Ask Windows for its video adapters. Falls back to Chromium's list, then to nothing.
+ * A Mac is not asked: it has one build, whatever its adapters are called.
+ */
 export async function detectAdapters(): Promise<GpuAdapter[]> {
+  if (process.platform === 'darwin') return []
   if (process.platform === 'win32') {
     const json = await new Promise<string>((resolve) => {
       execFile(
@@ -88,11 +103,13 @@ export class EngineSetup {
       state: this.upToDate() ? 'ready' : 'needed',
       log: [],
       managed: app.isPackaged && !process.env.OPENSTEMS_ENGINE_CMD,
-      variant: installed ?? 'cuda',
+      variant: installed ?? defaultVariant(process.platform),
       installed,
+      variants: variantsFor(process.platform),
       detected: false,
       gpus: [],
       note: '',
+      unsupported: unsupportedReason(process.platform, process.arch) ?? undefined,
     }
   }
 
@@ -107,7 +124,7 @@ export class EngineSetup {
 
   private readMarker(): { version: string; variant: TorchVariant } | null {
     try {
-      return parseMarker(readFileSync(this.marker(), 'utf8'))
+      return parseMarker(readFileSync(this.marker(), 'utf8'), process.platform)
     } catch {
       return null
     }
@@ -142,14 +159,17 @@ export class EngineSetup {
   detect(): Promise<void> {
     this.detecting ??= (async () => {
       const adapters = await detectAdapters()
-      const choice = recommendVariant(adapters)
+      const choice = recommendVariant(adapters, { platform: process.platform, arch: process.arch })
       const forced = process.env.OPENSTEMS_TORCH_VARIANT
+      const offered = variantsFor(process.platform)
+      // An environment built for a build this system does not offer is not kept.
+      const installed = this.status.installed && offered.includes(this.status.installed) ? this.status.installed : null
       this.set({
         detected: true,
         gpus: adapters.map((a) => a.name),
         note: choice.note,
         recommended: choice.variant,
-        variant: isVariant(forced) ? forced : (this.status.installed ?? choice.variant),
+        variant: isVariant(forced) && offered.includes(forced) ? forced : (installed ?? choice.variant),
       })
     })()
     return this.detecting
@@ -183,7 +203,7 @@ export class EngineSetup {
         'pip',
         'install',
         '--python',
-        join(engineEnvDir(), 'Scripts', 'python.exe'),
+        envExecutable('python'),
         '--no-deps',
         '--requirement',
         join(source, spec.requirements),
@@ -191,7 +211,7 @@ export class EngineSetup {
         join(source, 'wheels'),
         ...spec.indexArgs,
       ],
-      { UV_LINK_MODE: 'copy' },
+      installEnv(process.platform),
     )
   }
 
@@ -204,8 +224,8 @@ export class EngineSetup {
       this.status.managed &&
       this.status.state === 'needed' &&
       this.installedVariant() !== null &&
-      existsSync(join(engineEnvDir(), 'Scripts', 'python.exe')) &&
-      existsSync(join(engineSourceDir(), VARIANTS[this.installedVariant() ?? 'cuda'].requirements))
+      existsSync(envExecutable('python')) &&
+      existsSync(join(engineSourceDir(), VARIANTS[this.installedVariant() ?? defaultVariant(process.platform)].requirements))
     )
   }
 
@@ -235,6 +255,11 @@ export class EngineSetup {
     await this.detect()
     const chosen = variant ?? this.status.variant
     const spec = VARIANTS[chosen]
+    const refused = setupRefusal(chosen, process.platform, process.arch)
+    if (refused) {
+      this.set({ state: 'failed', log: [], error: refused })
+      return
+    }
     this.set({ state: 'running', log: [], error: undefined, variant: chosen })
     const envDir = engineEnvDir()
     const source = engineSourceDir()
@@ -246,7 +271,7 @@ export class EngineSetup {
 
       // uv fetches its own Python, so nothing has to be installed on the machine first.
       this.log(`Creating the Python ${PYTHON_VERSION} environment`)
-      await this.run(uv, ['venv', '--python', PYTHON_VERSION, '--clear', envDir])
+      await this.run(uv, ['venv', '--python', PYTHON_VERSION, ...venvArgs(process.platform), '--clear', envDir])
       this.set({ installed: null })
 
       // Every dependency is pinned; nothing is resolved on the user's machine.

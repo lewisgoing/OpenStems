@@ -977,7 +977,7 @@ export interface components {
              */
             gpu_available: boolean;
             /** Gpu Backend */
-            gpu_backend?: ("cuda" | "rocm") | null;
+            gpu_backend?: ("cuda" | "rocm" | "mps") | null;
             /** Gpu Backend Version */
             gpu_backend_version?: string | null;
             /** Gpu Name */
@@ -987,6 +987,11 @@ export interface components {
              * @default []
              */
             models: components["schemas"]["SelfTestModel"][];
+            /**
+             * Notes
+             * @default []
+             */
+            notes: string[];
             /** Ok */
             ok: boolean;
             /**
@@ -1197,13 +1202,18 @@ export interface components {
              */
             ffmpeg_decode_ok: boolean;
             /** Gpu Backend */
-            gpu_backend?: ("cuda" | "rocm") | null;
+            gpu_backend?: ("cuda" | "rocm" | "mps") | null;
             /** Gpu Backend Version */
             gpu_backend_version?: string | null;
             /** Gpu Name */
             gpu_name?: string | null;
             /** Logs Dir */
             logs_dir: string;
+            /**
+             * Notes
+             * @default []
+             */
+            notes: string[];
             /**
              * Problems
              * @default []

@@ -1,5 +1,7 @@
-// Draws the app icon and the drag icons without any image library: a tiny rasterizer
-// (rounded rectangles, 4x supersampling) plus a PNG and ICO writer built on node:zlib.
+// Draws the app icon, the tray icons and the drag icons without any image library: a tiny
+// rasterizer (rounded rectangles, 4x supersampling) plus a PNG, ICO and ICNS writer built on
+// node:zlib. The files for a Mac (icon.icns, the *Template.png menu bar images) are made
+// here too, so no Mac is needed to draw them.
 //
 //   node scripts/make-icons.mjs
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -13,8 +15,7 @@ mkdirSync(out, { recursive: true })
 const STEMS = ['#f472b6', '#fbbf24', '#60a5fa', '#c8f04a']
 const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
 
-function canvas(size) {
-  const scale = 4
+function canvas(size, scale = 4) {
   const n = size * scale
   const data = new Float32Array(n * n * 4)
   const rect = (x, y, w, h, radius, hex, alpha = 1) => {
@@ -131,6 +132,42 @@ function appIcon(size) {
   return c.toPng()
 }
 
+/**
+ * The same icon on the grid of a Mac: the tile is 824 of 1024 across with clear space around
+ * it, as every Dock icon is, so it sits at the same size as its neighbours. The bars keep
+ * their place inside the tile.
+ */
+function macAppIcon(size) {
+  // The large sizes need less supersampling to look clean, and far less memory.
+  const c = canvas(size, size >= 512 ? 2 : 4)
+  const k = size / 1024
+  const tile = 824
+  const origin = (1024 - tile) / 2
+  const radius = 185
+  c.rect(origin * k, origin * k, tile * k, tile * k, radius * k, '#16181d')
+  c.rect(origin * k, origin * k, tile * k, tile * k, radius * k, '#ffffff', 0.03)
+  // The Windows tile is 60 units across, from 2: the same drawing, scaled into this tile.
+  const u = (tile / 60) * k
+  const at = (v) => origin * k + (v - 2) * u
+  const widths = [34, 22, 40, 28]
+  widths.forEach((w, i) => c.rect(at(13), at(15 + i * 9.5), w * u, 5.5 * u, 2.75 * u, STEMS[i]))
+  return c.toPng()
+}
+
+/** An ICNS file: a header, then each PNG under the type code that names its size. */
+function icns(images) {
+  const entries = images.map(({ type, data }) => {
+    const head = Buffer.alloc(8)
+    head.write(type, 0, 'ascii')
+    head.writeUInt32BE(data.length + 8, 4)
+    return Buffer.concat([head, data])
+  })
+  const header = Buffer.alloc(8)
+  header.write('icns', 0, 'ascii')
+  header.writeUInt32BE(8 + entries.reduce((sum, entry) => sum + entry.length, 0), 4)
+  return Buffer.concat([header, ...entries])
+}
+
 /** Drag icon: one stem "clip", or a small stack for several files. */
 function dragIcon(count) {
   const size = 64
@@ -172,21 +209,66 @@ function trayIcon(size, state) {
   return c.toPng()
 }
 
+/**
+ * Menu bar icon for a Mac: a template image, black with alpha, which macOS colors for a
+ * light or a dark menu bar. It cannot carry color, so the states read by shape alone: four
+ * bars; three bars and a ring while work is going on; three bars and a solid dot when stems
+ * are waiting. The ring and the dot are larger than on Windows, where color helps.
+ */
+function menuBarIcon(size, state) {
+  const c = canvas(size)
+  const u = size / 16
+  const heights = [9, 14, 7, 12]
+  const barWidth = 2.6
+  const gap = 1.1
+  const idle = state === 'idle'
+  const left = idle ? (16 - (4 * barWidth + 3 * gap)) / 2 : 0
+  heights.slice(0, idle ? 4 : 3).forEach((h, i) => {
+    c.rect((left + i * (barWidth + gap)) * u, (15 - h) * u, barWidth * u, h * u, 1.3 * u, '#000000')
+  })
+  if (!idle) {
+    const d = 5
+    const line = 1.25
+    const x = 16 - d
+    const y = 15 - d
+    c.rect(x * u, y * u, d * u, d * u, (d / 2) * u, '#000000')
+    if (state === 'busy') c.clear((x + line) * u, (y + line) * u, (d - 2 * line) * u, (d - 2 * line) * u, (d / 2 - line) * u)
+  }
+  return c.toPng()
+}
+
 const TRAY_SIZES = [16, 20, 24, 32, 40, 48, 64]
 for (const state of ['idle', 'busy', 'ready']) {
   const name = state === 'idle' ? 'tray.ico' : `tray-${state}.ico`
   writeFileSync(join(out, name), ico(TRAY_SIZES.map((size) => ({ size, data: trayIcon(size, state) }))))
+}
+// The menu bar images for a Mac: 16 points, and the same drawing at twice the pixels. The
+// names must end in `Template`, with `@2x` after it, or macOS treats them as plain pictures.
+for (const state of ['idle', 'busy', 'ready']) {
+  const name = state === 'idle' ? 'trayTemplate' : `tray-${state}Template`
+  writeFileSync(join(out, `${name}.png`), menuBarIcon(16, state))
+  writeFileSync(join(out, `${name}@2x.png`), menuBarIcon(32, state))
 }
 // For looking at the tray icons while drawing them: TRAY_PREVIEW=<folder> writes each size as a PNG.
 if (process.env.TRAY_PREVIEW) {
   mkdirSync(process.env.TRAY_PREVIEW, { recursive: true })
   for (const state of ['idle', 'busy', 'ready']) {
     for (const size of [16, 24, 32, 64]) writeFileSync(join(process.env.TRAY_PREVIEW, `${state}-${size}.png`), trayIcon(size, state))
+    for (const size of [16, 32, 128]) writeFileSync(join(process.env.TRAY_PREVIEW, `mac-${state}-${size}.png`), menuBarIcon(size, state))
   }
+  writeFileSync(join(process.env.TRAY_PREVIEW, 'mac-app-512.png'), macAppIcon(512))
 }
 
 writeFileSync(join(out, 'icon.png'), appIcon(256))
 writeFileSync(join(out, 'icon.ico'), ico([16, 24, 32, 48, 64, 256].map((size) => ({ size, data: appIcon(size) }))))
+// The Mac app icon. Each type code is one size in pixels; the second row is the `@2x` set.
+const ICNS_TYPES = [
+  ['icp4', 16], ['icp5', 32], ['ic07', 128], ['ic08', 256], ['ic09', 512], ['ic10', 1024],
+  ['ic11', 32], ['ic12', 64], ['ic13', 256], ['ic14', 512],
+]
+const macIcons = new Map()
+for (const [, size] of ICNS_TYPES) if (!macIcons.has(size)) macIcons.set(size, macAppIcon(size))
+writeFileSync(join(out, 'icon.icns'), icns(ICNS_TYPES.map(([type, size]) => ({ type, data: macIcons.get(size) }))))
 writeFileSync(join(out, 'drag-one.png'), dragIcon(1))
 writeFileSync(join(out, 'drag-many.png'), dragIcon(3))
 console.log(`icons written to ${out}`)

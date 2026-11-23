@@ -4,6 +4,7 @@ import { type StemFile, fileUrl } from '@/api/client'
 import { useEngine } from '@/api/engine'
 import { StemPlayer } from '@/audio/player'
 import { cn, formatTime, stemColor } from '@/lib/format'
+import { modClick, modKey, words } from '@/platform'
 import { capitalize, mixLabel, useMixFile } from '@/state/mix'
 import { useToast } from './toast'
 import { Button, IconButton, Tooltip } from './ui'
@@ -179,7 +180,7 @@ export function StemsPanel({ title, subtitle, directory, stems, analysis, onClos
             Drag all
           </div>
         </Tooltip>
-        <IconButton label="Reveal in Explorer" onClick={() => void window.openstems.revealInExplorer(stems[0]?.path ?? directory)}>
+        <IconButton label={`Reveal in ${words().fileManager}`} onClick={() => void window.openstems.revealInExplorer(stems[0]?.path ?? directory)}>
           <FolderOpen size={15} />
         </IconButton>
       </div>
@@ -237,12 +238,12 @@ export function StemsPanel({ title, subtitle, directory, stems, analysis, onClos
                   type="button"
                   aria-label={`Solo ${stem.name}`}
                   aria-pressed={soloed}
-                  title="Solo (Ctrl+click to add)"
+                  title={`Solo (${modClick()} to add)`}
                   className={cn(
                     'press h-6 w-6 rounded-[5px] border border-transparent text-[11px] font-bold text-muted',
                     soloed && 'border-accent/50 bg-accent/15 !text-accent',
                   )}
-                  onClick={(event) => player.toggleSolo(stem.name, event.ctrlKey || event.shiftKey)}
+                  onClick={(event) => player.toggleSolo(stem.name, modKey(event) || event.shiftKey)}
                 >
                   S
                 </button>
