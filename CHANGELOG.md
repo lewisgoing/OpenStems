@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Listen before you drag.** In the quick-drop window, click a stem to hear it and click
+  again to stop. Another stem of the same song picks up at the same spot, so the same bar can
+  be compared across stems. Dragging still drags.
+- **A notification when stems are ready.** When songs finish while OpenStems is out of sight,
+  Windows says so once, by name for one song or as a count for several. Clicking it opens the
+  quick-drop window. Settings > Tray can turn it off.
+
 ## 0.2.3 (2026-11-22)
 
 - **Songs wait for Start.** Files you drop or add now wait in the queue until you press

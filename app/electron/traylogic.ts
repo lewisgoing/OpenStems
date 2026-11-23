@@ -168,9 +168,26 @@ export interface ShellPrefs {
   trayNoticeShown: boolean
   /** Look for a new version by itself, a few times a day. */
   checkForUpdates: boolean
+  /** Raise a Windows notification when songs finish while the app is out of sight. */
+  notifyReady: boolean
 }
 
-export const DEFAULT_PREFS: ShellPrefs = { closeToTray: true, trayNoticeShown: false, checkForUpdates: true }
+export const DEFAULT_PREFS: ShellPrefs = {
+  closeToTray: true,
+  trayNoticeShown: false,
+  checkForUpdates: true,
+  notifyReady: true,
+}
+
+/**
+ * What the notification says when the queue has run dry out of sight: the one song by name,
+ * or how many there are. `count` is how many finished since the user last looked.
+ */
+export function readyNotice(done: { name: string; stems: number }, count: number): { title: string; content: string } {
+  if (count > 1) return { title: `${count} songs are ready`, content: 'Click to drag their stems out.' }
+  const stems = `${done.stems} ${done.stems === 1 ? 'stem' : 'stems'}`
+  return { title: `${shorten(done.name, 60)} is ready`, content: `${stems}. Click to drag them out.` }
+}
 
 /** Read `shell.json`. Anything missing or of the wrong type falls back to the default. */
 export function parsePrefs(text: string | null | undefined): ShellPrefs {
@@ -186,6 +203,7 @@ export function parsePrefs(text: string | null | undefined): ShellPrefs {
     closeToTray: flag('closeToTray'),
     trayNoticeShown: flag('trayNoticeShown'),
     checkForUpdates: flag('checkForUpdates'),
+    notifyReady: flag('notifyReady'),
   }
 }
 

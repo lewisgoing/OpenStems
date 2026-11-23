@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppWindow, Download, FolderOpen, Layers, Play, Plus, RotateCcw, X } from 'lucide-react'
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { TrayActivity } from '../../electron/bridge'
-import type { Job, Model, Recipe } from '@/api/client'
-import { EngineProvider } from '@/api/engine'
+import { type Job, type Model, type Recipe, type StemFile, fileUrl } from '@/api/client'
+import { EngineProvider, useEngine } from '@/api/engine'
 import { useJobActions, useJobs, useModels, useRecipes, useSettings } from '@/api/queries'
 import { useEngineStatus } from '@/api/status'
+import { Audition, type AuditionState } from '@/audio/audition'
 import { DropOverlay } from '@/components/DropOverlay'
 import { FormatSelect } from '@/components/FormatSelect'
 import { QUALITY, useCurrentRecipe, useRecipeOptions } from '@/components/RecipeBar'
@@ -181,6 +182,45 @@ function useNewlyFinished(jobs: Job[] | undefined): string | null {
   return last.current
 }
 
+/* ---- listening before dragging ---------------------------------------------------- */
+
+/**
+ * One stem at a time, by clicking its pill. It stops when the window is put away and when
+ * the song it belongs to is no longer the one laid out.
+ */
+function useAudition(shown: StemFile[]): { state: AuditionState; listen: (stem: StemFile, group: string) => void } {
+  const { connection } = useEngine()
+  const audition = useMemo(
+    () => new Audition({ Authorization: `Bearer ${connection.token}` }, window.openstems.info.e2e),
+    [connection.token],
+  )
+  const state = useSyncExternalStore(
+    (listener) => audition.subscribe(listener),
+    () => audition.state,
+  )
+  useEffect(() => () => audition.dispose(), [audition])
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden) audition.stop()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [audition])
+  const paths = shown.map((stem) => stem.path).join('|')
+  useEffect(() => {
+    if (audition.state.path && !paths.split('|').includes(audition.state.path)) audition.stop()
+  }, [audition, paths])
+  const toast = useToast()
+  const error = state.error
+  useEffect(() => {
+    if (error) toast.show(error, { kind: 'error' })
+  }, [error, toast])
+  return {
+    state,
+    listen: (stem, group) => void audition.toggle({ path: stem.path, url: fileUrl(connection, stem.path), group }),
+  }
+}
+
 /* ---- the window proper ------------------------------------------------------------ */
 
 export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Model[] }) {
@@ -210,6 +250,7 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
   const expanded = picked && withStems.some((job) => job.id === picked) ? picked : (latest?.id ?? null)
 
   const shown = [...jobs].reverse().slice(0, MAX_ROWS)
+  const audition = useAudition(jobs.find((job) => job.id === expanded)?.stems ?? [])
   const finished = jobs.filter((job) => FINISHED.has(job.state)).length
   const held = jobs.filter((job) => job.held).length
   const { data: settings } = useSettings()
@@ -277,6 +318,8 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
                 expanded={job.id === expanded}
                 fresh={picked === null && job.id === finishedId}
                 onPick={() => setPick({ id: job.id, since: finishedId })}
+                audition={audition.state}
+                onListen={(stem) => audition.listen(stem, job.id)}
                 onStart={() => actions.start.mutate(job.id, { onError: toast.error })}
                 onCancel={() => actions.cancel.mutate(job.id, { onError: toast.error })}
                 onRetry={() => actions.retry.mutate(job.id, { onError: toast.error })}
@@ -333,6 +376,9 @@ interface QuickRowProps {
   /** The stems arrived just now, so they may make an entrance. */
   fresh: boolean
   onPick: () => void
+  /** What is being listened to, and the click that starts or stops a stem. */
+  audition: AuditionState
+  onListen: (stem: StemFile) => void
   onStart: () => void
   onCancel: () => void
   onRetry: () => void
@@ -344,7 +390,7 @@ function startDrag(event: React.DragEvent, paths: string[]): void {
   window.openstems.startDrag(paths)
 }
 
-export function QuickRow({ job, expanded, fresh, onPick, onStart, onCancel, onRetry }: QuickRowProps) {
+export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, onStart, onCancel, onRetry }: QuickRowProps) {
   const active = ACTIVE.has(job.state)
   const queued = job.state === 'queued'
   const done = job.state === 'done'
@@ -430,27 +476,47 @@ export function QuickRow({ job, expanded, fresh, onPick, onStart, onCancel, onRe
           aria-label={`Stems of ${job.track_name}`}
           onClick={(event) => event.stopPropagation()}
         >
-          {pills.map((stem, index) => (
-            <div
-              key={stem.path}
-              draggable
-              role="button"
-              tabIndex={0}
-              aria-label={`Drag ${stem.name}`}
-              title="Drag into your DAW or a folder"
-              data-testid="quick-stem"
-              className="stem-pill stem-handle"
-              style={{ ['--i' as string]: Math.min(index, 8) }}
-              onDragStart={(event) => startDrag(event, [stem.path])}
-              onKeyDown={(event) => {
-                // A drag needs a pointer. From the keyboard, Enter shows the file instead.
-                if (event.key === 'Enter') void window.openstems.revealInExplorer(stem.path)
-              }}
-            >
-              <span className="h-1.5 w-1.5 flex-none rounded-full" style={{ background: stemColor(stem.name) }} />
-              <span className="truncate">{stem.name}</span>
-            </div>
-          ))}
+          {pills.map((stem, index) => {
+            const mine = audition.path === stem.path
+            const playing = mine && audition.status === 'playing'
+            return (
+              // Click to listen, drag to use: the two things one does with a stem.
+              <div
+                key={stem.path}
+                draggable
+                role="button"
+                tabIndex={0}
+                aria-pressed={playing}
+                aria-label={playing ? `Stop ${stem.name}` : `Play ${stem.name}`}
+                title="Click to listen, drag into your DAW or a folder"
+                data-testid="quick-stem"
+                data-audition={mine ? audition.status : undefined}
+                className="stem-pill stem-handle"
+                style={{ ['--i' as string]: Math.min(index, 8), ['--stem' as string]: stemColor(stem.name) }}
+                onClick={() => onListen(stem)}
+                onDragStart={(event) => startDrag(event, [stem.path])}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return
+                  event.preventDefault()
+                  onListen(stem)
+                }}
+              >
+                {/* One slot for the dot and for the bars, so starting to play moves nothing. */}
+                <span className="stem-mark" aria-hidden="true">
+                  {playing ? (
+                    <span className="audition-bars">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                  ) : (
+                    <span className="stem-dot h-1.5 w-1.5 rounded-full" />
+                  )}
+                </span>
+                <span className="truncate">{stem.name}</span>
+              </div>
+            )
+          })}
           {more > 0 && (
             <button type="button" className="stem-pill pressable text-muted" onClick={() => void window.openstems.showMain()}>
               +{more} in the full app

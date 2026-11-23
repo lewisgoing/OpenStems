@@ -159,6 +159,8 @@ OpenStems keeps an icon in the notification area, by the clock.
   song on it, and its stems come back as pills you drag straight into your DAW. It uses the
   same recipe, quality and queue as the full window, and stays open while you work in other
   windows. Click the icon again, press Escape or use its close button to put it away.
+- **Click a stem to hear it** before you drag it; click again to stop.
+- **A notification** tells you when songs finished while you were looking elsewhere.
 - **The icon tells you what is going on**: a ring while a song is being separated, a dot when
   stems finished while you were looking elsewhere. Hover for the track name and progress.
 - **Right-click** for Quick drop, Show OpenStems and Quit. A double click opens the full app.

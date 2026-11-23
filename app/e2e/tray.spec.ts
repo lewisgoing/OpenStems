@@ -76,6 +76,19 @@ test('a song dropped on the quick-drop window comes back as stems that drag out 
   expect(one[0]).toMatch(/First Song - vocals\.wav$/)
   expect(existsSync(one[0] ?? '')).toBe(true)
 
+  // A click plays the stem; a second click stops it. Another stem takes over from the first.
+  const vocals = done.getByTestId('quick-stem').first()
+  const drums = done.getByTestId('quick-stem').nth(1)
+  await vocals.click()
+  await expect(vocals).toHaveAttribute('data-audition', 'playing')
+  await drums.click()
+  await expect(drums).toHaveAttribute('data-audition', 'playing')
+  await expect(vocals).not.toHaveAttribute('data-audition')
+  await drums.click()
+  await expect(drums).not.toHaveAttribute('data-audition')
+  // The window was open when the stems arrived: no notification.
+  expect(await notices(ctx.app)).toEqual([])
+
   // Every stem at once.
   await done.getByTestId('quick-drag-all').dispatchEvent('dragstart')
   await expect.poll(() => lastDrag(ctx.app)).toHaveLength(6)
@@ -112,6 +125,8 @@ test('the two windows share the recipe and the queue, and the icon announces ste
   await expect(ctx.page.locator('[data-testid="job-row"][data-state="done"]')).toHaveCount(1)
   await expect.poll(async () => (await trayState(ctx.app)).icon).toBe('ready')
   expect((await trayState(ctx.app)).tooltip).toBe('OpenStems: Second Song is ready, 7 stems')
+  // And a notification says so, once.
+  expect(await notices(ctx.app)).toEqual(['Second Song is ready'])
 
   // Opening the quick-drop window shows it, newest first, and the mark has done its job.
   await clickTray(ctx.app)

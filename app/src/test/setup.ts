@@ -19,7 +19,13 @@ const setupStatus: SetupStatus = {
   note: '',
 }
 
-const shellStatus: ShellStatus = { closeToTray: true, checkForUpdates: true, startAtLogin: false, canStartAtLogin: true }
+const shellStatus: ShellStatus = {
+  closeToTray: true,
+  checkForUpdates: true,
+  notifyReady: true,
+  startAtLogin: false,
+  canStartAtLogin: true,
+}
 const updateStatus: UpdateStatus = { state: 'idle', current: '0.0.0-test', supported: true }
 
 /** A stand-in for the preload bridge. Tests read `window.openstems.startDrag.mock.calls`. */
