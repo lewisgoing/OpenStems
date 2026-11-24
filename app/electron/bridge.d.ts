@@ -56,6 +56,8 @@ export interface ShellStatus {
   checkForUpdates: boolean
   /** A system notification when songs finish while the app is out of sight. */
   notifyReady: boolean
+  /** Light, dark, or whatever the system uses (`system`, which follows it live). */
+  theme: 'system' | 'light' | 'dark'
   /** The app starts at login, in the tray, with no window. */
   startAtLogin: boolean
   /** False in development: only an installed app can register itself to start at login. */
@@ -135,7 +137,7 @@ export interface OpenStemsBridge {
   /** The quick-drop window tells the tray icon what the queue is doing. */
   reportActivity(activity: import('./traylogic').TrayActivity): void
   shellStatus(): Promise<ShellStatus>
-  setShell(patch: Partial<Pick<ShellStatus, 'closeToTray' | 'startAtLogin' | 'checkForUpdates' | 'notifyReady'>>): Promise<ShellStatus>
+  setShell(patch: Partial<Pick<ShellStatus, 'closeToTray' | 'startAtLogin' | 'checkForUpdates' | 'notifyReady' | 'theme'>>): Promise<ShellStatus>
   /** Self-update. */
   updates(): Promise<UpdateStatus>
   onUpdateStatus(listener: (status: UpdateStatus) => void): () => void

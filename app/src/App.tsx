@@ -9,6 +9,7 @@ import { useJobs, useModelActions, useModels, useRecipes, useSettings } from './
 import { useEngineStatus } from './api/status'
 import { DropOverlay } from './components/DropOverlay'
 import { StemsPanel, type StemsPanelProps } from './components/StemsPanel'
+import { ThemeSwitch } from './components/ThemeSwitch'
 import { ToastProvider, useToast } from './components/toast'
 import { Button, Dialog, Segmented, TooltipProvider } from './components/ui'
 import { UpdatePill } from './components/Update'
@@ -309,10 +310,11 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
           >
             <Icon size={15} />
             <span className="flex-1">{label}</span>
-            {id === 'queue' && activeCount > 0 && <span className="tabular text-[11.5px] text-accent">{activeCount}</span>}
-            {id === 'models' && downloading > 0 && <Download size={12} className="text-accent" />}
+            {id === 'queue' && activeCount > 0 && <span className="tabular text-[11.5px] text-accent-fg">{activeCount}</span>}
+            {id === 'models' && downloading > 0 && <Download size={12} className="text-accent-fg" />}
           </button>
         ))}
+        <ThemeSwitch className="mt-auto w-full" />
       </nav>
 
       <main key={view.id} className="view flex min-w-0 flex-1" data-animate={view.animate}>

@@ -99,7 +99,7 @@ function ToastView({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: num
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
       className={cn(
-        'toast pointer-events-auto flex max-w-[min(420px,calc(100vw-32px))] items-center gap-3 rounded-[10px] border bg-raised px-3.5 py-2.5 shadow-[0_10px_30px_rgb(0_0_0/0.5)]',
+        'toast pointer-events-auto flex max-w-[min(420px,calc(100vw-32px))] items-center gap-3 rounded-[10px] border bg-raised px-3.5 py-2.5 shadow-[var(--shadow-toast)]',
         toast.kind === 'error' ? 'border-danger/40' : 'border-line-strong',
       )}
     >

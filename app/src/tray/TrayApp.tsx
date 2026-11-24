@@ -23,6 +23,7 @@ import { PendingDownload, useDropFlow, usePaste } from '@/state/dropflow'
 import { type MixFile, capitalize, groupsOf, mixLabel, useMixFile } from '@/state/mix'
 import { SelectionProvider, useSelection } from '@/state/selection'
 import { ACTIVE, StartButton, StateIcon, StemsMark, statusText } from '@/views/QueueView'
+import { useTheme } from '@/lib/theme'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 30_000 } },
@@ -550,6 +551,7 @@ function startDrag(event: React.DragEvent, paths: string[]): void {
 }
 
 export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mixer = null, onMix, onStart, onCancel, onRetry }: QuickRowProps) {
+  const theme = useTheme()
   const active = ACTIVE.has(job.state)
   const queued = job.state === 'queued'
   const done = job.state === 'done'
@@ -664,7 +666,7 @@ export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mix
                 data-audition={mine ? audition.status : undefined}
                 data-mix={mixer ? (inMix ? 'in' : 'out') : undefined}
                 className="stem-pill stem-handle"
-                style={{ ['--i' as string]: Math.min(index, 8), ['--stem' as string]: stemColor(stem.name) }}
+                style={{ ['--i' as string]: Math.min(index, 8), ['--stem' as string]: stemColor(stem.name, theme) }}
                 onClick={act}
                 onDragStart={(event) => startDrag(event, [stem.path])}
                 onKeyDown={(event) => {

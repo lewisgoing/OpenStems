@@ -5,6 +5,7 @@ import { useStemSets } from '@/api/queries'
 import { FitChip } from '@/components/Fit'
 import { Button, Select, Tooltip } from '@/components/ui'
 import { cn, stemColor } from '@/lib/format'
+import { useTheme } from '@/lib/theme'
 
 interface HistoryViewProps {
   recipes: Recipe[]
@@ -14,6 +15,7 @@ interface HistoryViewProps {
 }
 
 export function HistoryView({ recipes, selected, onSelect, onRerun }: HistoryViewProps) {
+  const theme = useTheme()
   const [query, setQuery] = useState('')
   const deferred = useDeferredValue(query)
   const { data: sets = [], isFetched } = useStemSets(deferred)
@@ -60,7 +62,7 @@ export function HistoryView({ recipes, selected, onSelect, onRerun }: HistoryVie
                 <div className="mt-1 flex items-center gap-1 overflow-hidden">
                   {set.stems.slice(0, 8).map((stem) => (
                     <span key={stem.name} className="chip">
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: stemColor(stem.name) }} />
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: stemColor(stem.name, theme) }} />
                       {stem.name}
                     </span>
                   ))}

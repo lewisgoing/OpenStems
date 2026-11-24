@@ -64,6 +64,8 @@ test('packaged app: first-run setup, then the first separation, with no terminal
     // Its own browser-data folder, so the test can run beside an app that is already open
     // (one instance per data folder is allowed).
     args: [`--user-data-dir=${account.userData}`],
+    // The pages take their theme from Electron, not from Playwright's stand-in.
+    colorScheme: null,
     env,
   })
   try {
@@ -192,7 +194,7 @@ test('packaged app: switch the engine build from Settings', async () => {
   const env = { ...(process.env as Record<string, string>) }
   for (const key of ['OPENSTEMS_ENGINE', 'OPENSTEMS_CONFIG_DIR', 'OPENSTEMS_CACHE_DIR', 'OPENSTEMS_E2E', 'OPENSTEMS_TORCH_VARIANT']) delete env[key]
   Object.assign(env, account.env, { OPENSTEMS_MODELS_DIR: models ?? '', OPENSTEMS_OUTPUT_DIR: join(profile ?? '', 'outputs') })
-  const app = await electron.launch({ executablePath: exe, args: [`--user-data-dir=${account.userData}`], env })
+  const app = await electron.launch({ executablePath: exe, args: [`--user-data-dir=${account.userData}`], env, colorScheme: null })
   try {
     const page = await app.firstWindow()
     const nav = page.getByRole('navigation', { name: 'Views' })

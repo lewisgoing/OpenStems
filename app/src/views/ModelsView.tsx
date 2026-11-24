@@ -260,7 +260,7 @@ function ImportDialog({ open, onClose }: { open: boolean; onClose: () => void })
           <Select label="Architecture" value={architecture} options={ARCHITECTURES} onChange={setArchitecture} className="min-w-[200px]" />
         </div>
         <label className="flex items-start gap-2.5 rounded-[8px] border border-warn/30 bg-warn/5 p-3 text-[12.5px]">
-          <input type="checkbox" className="mt-0.5 accent-[var(--color-accent)]" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} />
+          <input type="checkbox" className="mt-0.5 accent-[var(--color-accent-fg)]" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} />
           <span>
             Checkpoints are pickles: a malicious file can run code when it is loaded. OpenStems loads with
             weights-only mode, which blocks that, but only import checkpoints from a source you trust.

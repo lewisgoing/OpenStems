@@ -12,6 +12,9 @@
   --color-faint: #5d626c;
   --color-accent: #c8f04a;
   --color-accent-ink: #141a00;
+  /* The accent as text or a thin line. On a dark page it is the accent itself; on a light
+     one the lime is too pale to read, so it goes deeper there. */
+  --color-accent-fg: #c8f04a;
   --color-danger: #ff6b6b;
   --color-warn: #fbbf24;
   --color-ok: #6ee7a0;
@@ -28,6 +31,75 @@
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
+}
+
+/* Light and dark. The dark colors are the ones above; a light page swaps them under
+   `data-theme`, which `src/lib/theme.ts` sets from what Electron reports. `--color-bg` and
+   `--color-muted` are also the window and title bar button colors in
+   `electron/traylogic.ts` (`WINDOW_COLORS`): change both together. What is not a color token
+   (shadows, the dim behind a dialog, the tooltip) is a variable of its own here. */
+:root {
+  color-scheme: dark;
+  --btn-bg: var(--color-raised);
+  --btn-shadow: none;
+  --popup-bg: var(--color-raised);
+  --segmented-track: var(--color-surface);
+  --segmented-thumb: var(--color-hover);
+  --tooltip-bg: #2a2e36;
+  --tooltip-text: #e9eaed;
+  --shadow-popup: 0 12px 32px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.3);
+  --shadow-tooltip: 0 4px 14px rgb(0 0 0 / 0.4);
+  --shadow-dialog: 0 24px 64px rgb(0 0 0 / 0.6);
+  --shadow-toast: 0 10px 30px rgb(0 0 0 / 0.5);
+  --shadow-thumb: 0 1px 2px rgb(0 0 0 / 0.4);
+  --backdrop: rgb(0 0 0 / 0.55);
+  /* The part of a waveform not yet played. */
+  --wave-rest: 0.3;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --color-bg: #f7f8f9;
+  --color-surface: #ffffff;
+  --color-raised: #eef0f3;
+  --color-hover: #e6e9ed;
+  --color-line: #e3e6ea;
+  --color-line-strong: #d0d5db;
+  --color-text: #16181c;
+  --color-muted: #5b616b;
+  --color-faint: #8a909a;
+  --color-accent: #b5e33b;
+  --color-accent-ink: #141a00;
+  --color-accent-fg: #4d7a0a;
+  --color-danger: #d42c2c;
+  --color-warn: #b45309;
+  --color-ok: #15803d;
+  /* Buttons are white cards on the page, with a hairline of shadow under the border. */
+  --btn-bg: var(--color-surface);
+  --btn-shadow: 0 1px 1px rgb(16 24 40 / 0.05);
+  /* Menus float above the page in white, held off it by their shadow. */
+  --popup-bg: var(--color-surface);
+  /* A light segmented control is a gray track with a white thumb, the other way round. */
+  --segmented-track: var(--color-raised);
+  --segmented-thumb: var(--color-surface);
+  /* The tooltip stays dark: a small dark label reads at once on a light page. */
+  --tooltip-bg: #1f2227;
+  --tooltip-text: #f3f4f6;
+  /* Shadows on white are a tint, not a darkness: far lighter, and slightly cool. */
+  --shadow-popup: 0 12px 32px rgb(16 24 40 / 0.12), 0 2px 6px rgb(16 24 40 / 0.06);
+  --shadow-tooltip: 0 4px 14px rgb(16 24 40 / 0.18);
+  --shadow-dialog: 0 24px 64px rgb(16 24 40 / 0.18), 0 2px 8px rgb(16 24 40 / 0.06);
+  --shadow-toast: 0 10px 30px rgb(16 24 40 / 0.14), 0 1px 3px rgb(16 24 40 / 0.06);
+  --shadow-thumb: 0 1px 2px rgb(16 24 40 / 0.14), 0 0 0 0.5px rgb(16 24 40 / 0.06);
+  --backdrop: rgb(15 17 20 / 0.3);
+  /* A faded color on white turns to pastel sooner than on black: fade it less. */
+  --wave-rest: 0.42;
+}
+/* For the one frame the theme changes in, nothing eases: every color changes together. */
+.theme-switching,
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition: none !important;
 }
 
 @layer base {
@@ -60,7 +132,7 @@
     background: color-mix(in srgb, var(--color-accent) 35%, transparent);
   }
   :focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--color-accent) 70%, transparent);
+    outline: 2px solid color-mix(in srgb, var(--color-accent-fg) 70%, transparent);
     outline-offset: 2px;
   }
   /* A Mac keeps its own scrollbars: they overlay the content, hide when idle and follow the
@@ -79,12 +151,11 @@
     background-color: var(--color-faint);
   }
   /* On a Mac the system font comes first, so a Segoe UI installed with other software is
-     never picked, and the system's scrollbars and form parts are drawn for a dark page. */
+     never picked. Its scrollbars and form parts follow `color-scheme`, set per theme above. */
   :root[data-platform='darwin'] {
     --font-sans: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     --font-display: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
-    color-scheme: dark;
   }
 }
 
@@ -143,7 +214,8 @@
   padding: 0 12px;
   border-radius: var(--radius-md);
   border: 1px solid var(--color-line-strong);
-  background: var(--color-raised);
+  background: var(--btn-bg);
+  box-shadow: var(--btn-shadow);
   font-weight: 500;
   white-space: nowrap;
   cursor: default;
@@ -157,6 +229,7 @@
 .btn-ghost {
   background: transparent;
   border-color: transparent;
+  box-shadow: none;
   color: var(--color-muted);
 }
 .btn-danger {
@@ -223,12 +296,10 @@
   transition:
     transform 150ms var(--ease-out),
     opacity 150ms var(--ease-out);
-  background: var(--color-raised);
+  background: var(--popup-bg);
   border: 1px solid var(--color-line-strong);
   border-radius: var(--radius-lg);
-  box-shadow:
-    0 12px 32px rgb(0 0 0 / 0.45),
-    0 2px 6px rgb(0 0 0 / 0.3);
+  box-shadow: var(--shadow-popup);
   outline: none;
 }
 .popup[data-starting-style],
@@ -247,10 +318,10 @@
     opacity 125ms var(--ease-out);
   padding: 4px 8px;
   border-radius: var(--radius-sm);
-  background: #2a2e36;
-  color: var(--color-text);
+  background: var(--tooltip-bg);
+  color: var(--tooltip-text);
   font-size: 12px;
-  box-shadow: 0 4px 14px rgb(0 0 0 / 0.4);
+  box-shadow: var(--shadow-tooltip);
   pointer-events: none;
 }
 .tooltip[data-starting-style],
@@ -271,7 +342,7 @@
 .dialog-backdrop {
   position: fixed;
   inset: 0;
-  background: rgb(0 0 0 / 0.55);
+  background: var(--backdrop);
   transition: opacity 180ms ease;
 }
 .dialog-backdrop[data-starting-style],
@@ -294,7 +365,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-line-strong);
   border-radius: 14px;
-  box-shadow: 0 24px 64px rgb(0 0 0 / 0.6);
+  box-shadow: var(--shadow-dialog);
   padding: 20px;
   outline: none;
 }
@@ -350,7 +421,7 @@
   height: 100%;
   width: 100%;
   border-radius: 999px;
-  background: var(--color-accent);
+  background: var(--color-accent-fg);
   transform-origin: left;
   transition: transform 160ms linear;
 }
@@ -376,7 +447,7 @@
   height: 14px;
   border-radius: 50%;
   border: 2px solid var(--color-line-strong);
-  border-top-color: var(--color-accent);
+  border-top-color: var(--color-accent-fg);
   /* A fast spinner makes the wait feel shorter. */
   animation: spin 0.6s linear infinite;
 }
@@ -452,7 +523,7 @@
   grid-auto-columns: 1fr;
   padding: 2px;
   border-radius: var(--radius-md);
-  background: var(--color-surface);
+  background: var(--segmented-track);
   border: 1px solid var(--color-line);
 }
 .segmented-thumb {
@@ -461,8 +532,8 @@
   bottom: 2px;
   left: 2px;
   border-radius: 6px;
-  background: var(--color-hover);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  background: var(--segmented-thumb);
+  box-shadow: var(--shadow-thumb);
 }
 .segmented[data-animate='true'] .segmented-thumb {
   transition: transform 180ms var(--ease-out);
@@ -483,6 +554,16 @@
 }
 .segmented-option[aria-checked='true'] {
   color: var(--color-text);
+}
+/* The part of a waveform not yet played, faded per theme. */
+.wave-rest {
+  opacity: var(--wave-rest);
+}
+/* Three icons across the foot of the sidebar: light, dark, or the system's. */
+.theme-switch .segmented-option {
+  display: grid;
+  place-items: center;
+  padding: 0;
 }
 
 /* ---- switch ---------------------------------------------------------------- */
@@ -510,6 +591,7 @@
   height: 14px;
   border-radius: 50%;
   background: white;
+  box-shadow: var(--shadow-thumb);
   transition: transform 160ms var(--ease-out);
 }
 .switch[data-checked] .switch-thumb {
@@ -536,7 +618,7 @@
   transition: border-color 140ms ease;
 }
 .input:focus {
-  border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent-fg) 60%, transparent);
 }
 .input::placeholder {
   color: var(--color-faint);
@@ -604,7 +686,7 @@
   text-align: center;
 }
 .input.chip-input:focus {
-  border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent-fg) 60%, transparent);
 }
 @media (hover: hover) {
   .input.chip-input:hover:not(:focus) {
@@ -623,9 +705,9 @@
   padding: 0 10px;
   overflow: hidden;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent-fg) 45%, transparent);
   background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-  color: var(--color-accent);
+  color: var(--color-accent-fg);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;

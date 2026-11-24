@@ -204,6 +204,8 @@ export interface ShellPrefs {
   checkForUpdates: boolean
   /** Raise a notification when songs finish while the app is out of sight. */
   notifyReady: boolean
+  /** Light, dark, or whatever the system uses. */
+  theme: ThemePref
 }
 
 export const DEFAULT_PREFS: ShellPrefs = {
@@ -211,6 +213,8 @@ export const DEFAULT_PREFS: ShellPrefs = {
   trayNoticeShown: false,
   checkForUpdates: true,
   notifyReady: true,
+  // Dark until the user picks otherwise: the app looked like this before there was a choice.
+  theme: 'dark',
 }
 
 /**
@@ -232,13 +236,45 @@ export function parsePrefs(text: string | null | undefined): ShellPrefs {
   } catch {
     // No file yet, or not JSON.
   }
-  const flag = (key: keyof ShellPrefs) => (typeof stored[key] === 'boolean' ? (stored[key] as boolean) : DEFAULT_PREFS[key])
+  type Flag = Exclude<keyof ShellPrefs, 'theme'>
+  const flag = (key: Flag): boolean => (typeof stored[key] === 'boolean' ? (stored[key] as boolean) : DEFAULT_PREFS[key])
   return {
     closeToTray: flag('closeToTray'),
     trayNoticeShown: flag('trayNoticeShown'),
     checkForUpdates: flag('checkForUpdates'),
     notifyReady: flag('notifyReady'),
+    theme: isThemePref(stored.theme) ? stored.theme : DEFAULT_PREFS.theme,
   }
+}
+
+/* ---- light and dark ---------------------------------------------------------------- */
+
+/** What the user picked. `system` follows the operating system, live. */
+export type ThemePref = 'system' | 'light' | 'dark'
+/** What the windows show. */
+export type Theme = 'light' | 'dark'
+
+export const THEME_PREFS: readonly ThemePref[] = ['system', 'light', 'dark']
+
+export function isThemePref(value: unknown): value is ThemePref {
+  return typeof value === 'string' && (THEME_PREFS as readonly string[]).includes(value)
+}
+
+/**
+ * The colors Electron paints before the page does, per theme: the window's background (so
+ * no dark frame flashes before a light page, or the other way round) and, on Windows, the
+ * minimize, maximize and close buttons drawn over the title bar. They match `--color-bg`
+ * and `--color-muted` in `src/styles.css`: change both together.
+ */
+export const WINDOW_COLORS: Record<Theme, { background: string; symbol: string }> = {
+  dark: { background: '#0c0d0f', symbol: '#8b8f98' },
+  light: { background: '#f7f8f9', symbol: '#5b616b' },
+}
+
+/** The Windows title bar buttons for a theme. A Mac draws its own window buttons. */
+export function titleBarOverlay(theme: Theme): { color: string; symbolColor: string; height: number } {
+  const colors = WINDOW_COLORS[theme]
+  return { color: colors.background, symbolColor: colors.symbol, height: TITLE_BAR_HEIGHT }
 }
 
 /** The flag a launch at login carries: start in the tray, without a window. */
@@ -270,10 +306,10 @@ export const TRAFFIC_LIGHTS_INSET = 80
  */
 export function windowChrome(
   platform: Platform,
-  background: string,
+  theme: Theme,
 ): Pick<BrowserWindowConstructorOptions, 'titleBarStyle' | 'titleBarOverlay' | 'trafficLightPosition'> {
   if (mac(platform)) return { titleBarStyle: 'hidden', trafficLightPosition: TRAFFIC_LIGHTS }
-  return { titleBarStyle: 'hidden', titleBarOverlay: { color: background, symbolColor: '#8b8f98', height: TITLE_BAR_HEIGHT } }
+  return { titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlay(theme) }
 }
 
 /**

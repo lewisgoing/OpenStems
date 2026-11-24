@@ -75,6 +75,9 @@ export async function launch(
   const app = await electron.launch({
     args: [appDir, `--user-data-dir=${join(root, 'user-data')}`, ...(options.args ?? [])],
     cwd: appDir,
+    // Playwright answers `prefers-color-scheme` with "light" unless told not to; the app reads
+    // it for its theme, which Electron's `nativeTheme` decides (`src/lib/theme.ts`).
+    colorScheme: null,
     env: {
       ...(process.env as Record<string, string>),
       OPENSTEMS_E2E: '1',

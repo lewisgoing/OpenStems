@@ -14,7 +14,7 @@ import {
   trayMenuTemplate,
   trayPresentation,
 } from './traylogic'
-import { BACKGROUND, iconPath, loadRenderer, webPreferences } from './windows'
+import { background, iconPath, loadRenderer, webPreferences } from './windows'
 
 const MAC = process.platform === 'darwin'
 
@@ -107,7 +107,7 @@ export class TrayController {
       fullscreenable: false,
       alwaysOnTop: true,
       ...popupChrome(process.platform),
-      backgroundColor: BACKGROUND,
+      backgroundColor: background(),
       title: 'OpenStems quick drop',
       icon: iconPath('icon.png'),
       webPreferences: webPreferences(),
