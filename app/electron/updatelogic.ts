@@ -69,6 +69,17 @@ export function canInstallUpdates(codesignOutput: string): boolean {
 }
 
 /**
+ * Where to read updates from in place of the GitHub releases: OPENSTEMS_UPDATE_FEED, for
+ * trying an update with two builds served from a folder (`python3 -m http.server`), on a
+ * Mac by hand or in CI (`app/scripts/mac-update-test.sh`). Only an http(s) address counts;
+ * anything else is ignored and the releases are read as always.
+ */
+export function testFeedUrl(env: Record<string, string | undefined>): string | null {
+  const url = env.OPENSTEMS_UPDATE_FEED?.trim()
+  return url && /^https?:\/\/\S+$/i.test(url) ? url : null
+}
+
+/**
  * Whether a failed check means "the latest release has no update file for this system":
  * electron-updater's error when `latest-mac.yml` is not among the release's files. That is
  * a release whose Mac build is not there yet, or never will be, not a broken connection.

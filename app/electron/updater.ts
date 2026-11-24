@@ -10,6 +10,7 @@ import {
   type UpdateBackend,
   canInstallUpdates,
   isMissingUpdateFile,
+  testFeedUrl,
 } from './updatelogic'
 
 /** electron-updater, set up so that nothing happens behind the user's back. */
@@ -23,6 +24,12 @@ function updater() {
     warn: (message: unknown) => log(`updater warning: ${String(message)}`),
     error: (message: unknown) => log(`updater error: ${String(message)}`),
     debug: () => undefined,
+  }
+  // Testing only: builds served from a folder stand in for the GitHub releases.
+  const feed = testFeedUrl(process.env)
+  if (feed) {
+    autoUpdater.setFeedURL({ provider: 'generic', url: feed })
+    log(`updates: reading ${feed} (OPENSTEMS_UPDATE_FEED), not the GitHub releases`)
   }
   return autoUpdater
 }

@@ -137,6 +137,11 @@ jobs:
       - name: A self-signed Mac app updates itself
         if: runner.os == 'macOS'
         working-directory: app
+        # The project's certificate, so the test signs as a release does. A pull request
+        # from a fork gets no secrets and the script makes a throwaway certificate.
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: bash scripts/mac-update-test.sh "$GITHUB_WORKSPACE/engine/.venv/bin/openstems"
       - uses: actions/upload-artifact@v4
         if: failure()

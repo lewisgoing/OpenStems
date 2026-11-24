@@ -57,7 +57,20 @@ app updates itself" (`app/scripts/mac-update-test.sh`, `app/e2e/mac-update.spec.
   after "restart" the installer replaced the bundle and started the new version. The
   bundle then read 9.9.9. This is the real updater, not a stand-in.
 
-That step runs on every pull request, so a change that breaks it is caught.
+That step runs on every pull request, so a change that breaks it is caught. Since the
+certificate is in the repository secrets it signs both builds with the project's own
+certificate, through the same configuration and signing step as a release (a pull request
+from a fork gets no secrets and uses a throwaway certificate instead). It also checks what
+the installer checks, before the installer does: the newer build satisfies the older one's
+designated requirement, and a copy signed ad hoc does not. The test builds are release
+builds, GitHub as the update source included; only at run time is the app pointed at the
+local server, with `OPENSTEMS_UPDATE_FEED`.
+
+The requirement check and the update feed came from a second attempt at the same change,
+made in parallel on 2026-11-23 (branch `mac-self-signed`, not merged). That attempt
+re-signed the app with `codesign --deep` after electron-builder, on the belief that
+electron-builder cannot use a self-signed certificate; it can, once the runner trusts it
+(above), so the extra step was not taken over.
 
 ## The certificate
 
@@ -81,7 +94,11 @@ H"86e0372e339292ddc79e6018db42490b7dfc2759"`.
 - **On a Mac with a person at it.** The CI app was built there and never downloaded, so it
   carries no quarantine mark, and it ran from a folder, not from `/Applications`. An app
   from a dmg, allowed through System Settings, moved to Applications and then updated has
-  not been tried. The owner's M1 Max is where to try it.
+  not been tried. The owner's M1 Max is where to try it: install the first self-signed
+  release from its dmg, then either wait for the next release, or serve a newer build from
+  a folder (`python3 -m http.server 8000` in the folder that holds its zip and
+  `latest-mac.yml`) and start the app with
+  `OPENSTEMS_UPDATE_FEED=http://127.0.0.1:8000 /Applications/OpenStems.app/Contents/MacOS/OpenStems`.
 - **Whether Gatekeeper asks again after an update.** Not known.
 
 ## Consequences

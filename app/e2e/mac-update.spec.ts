@@ -12,12 +12,14 @@ import { MAC } from './helpers'
 //
 //   MAC_UPDATE_APP     the older build, a copy that may be replaced: <folder>/OpenStems.app
 //   MAC_UPDATE_ENGINE  an engine to start in place of first-run setup (the FakeEngine)
+//   MAC_UPDATE_FEED    where the newer one is served, passed to the app as OPENSTEMS_UPDATE_FEED
 //
 // The real updater runs here, not a stand-in: electron-updater fetches the zip and hands
 // it to the installer inside Electron (Squirrel), which is the part that checks the
 // signature.
 const bundle = process.env.MAC_UPDATE_APP
 const engine = process.env.MAC_UPDATE_ENGINE
+const feed = process.env.MAC_UPDATE_FEED
 
 function bundleVersion(app: string): string {
   const plist = join(app, 'Contents', 'Info.plist')
@@ -26,7 +28,7 @@ function bundleVersion(app: string): string {
 
 test('mac update: a self-signed app installs a newer self-signed version', async () => {
   test.skip(!MAC, 'Mac only')
-  test.skip(!bundle || !engine, 'run through scripts/mac-update-test.sh')
+  test.skip(!bundle || !engine || !feed, 'run through scripts/mac-update-test.sh')
   test.setTimeout(10 * 60_000)
   const installed = bundle ?? ''
   const root = mkdtempSync(join(tmpdir(), 'openstems-update-'))
@@ -38,6 +40,7 @@ test('mac update: a self-signed app installs a newer self-signed version', async
     OPENSTEMS_MODELS_DIR: join(root, 'models'),
     OPENSTEMS_OUTPUT_DIR: join(root, 'outputs'),
     OPENSTEMS_CACHE_DIR: join(root, 'cache'),
+    OPENSTEMS_UPDATE_FEED: feed ?? '',
   }
   for (const key of ['OPENSTEMS_E2E', 'OPENSTEMS_E2E_UPDATE', 'OPENSTEMS_E2E_UPDATE_MANUAL']) delete env[key]
 

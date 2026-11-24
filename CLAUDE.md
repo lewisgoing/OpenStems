@@ -93,9 +93,14 @@ App (run from `app/`):
   update itself. `release-mac.yml` sees that it is self-signed, trusts it on the runner and
   sets `OPENSTEMS_SELF_SIGNED=1` (no hardened runtime, no notarization). Every release must
   use the same certificate: `docs/adr/0018-mac-self-signed.md`
-- `bash scripts/mac-update-test.sh ENGINE` in `app/` (Mac CI runner only: it trusts a
-  throwaway certificate with sudo): two self-signed builds, and the older one installs the
-  newer one through the real updater (`e2e/mac-update.spec.ts`). The Mac app job in CI runs it
+- `bash scripts/mac-update-test.sh ENGINE` in `app/` (Mac CI runner only: it trusts the
+  certificate with sudo): two self-signed builds, with the project's certificate from the
+  secrets or a throwaway one, the requirement check the installer makes, and the older one
+  installing the newer one through the real updater (`e2e/mac-update.spec.ts`). The Mac app
+  job in CI runs it
+- `OPENSTEMS_UPDATE_FEED=<http(s) address>` before starting the app: read updates from that
+  folder (a `latest-mac.yml` or `latest.yml` and the build beside it) in place of the GitHub
+  releases (`updatelogic.testFeedUrl`). For trying an update by hand
 - Releasing: set the version in `app/package.json`, `engine/pyproject.toml` and
   `engine/src/openstems/__init__.py`, `uv lock`, changelog heading, merge, tag `v<version>` on
   `main`, `pnpm dist`, then `gh release create v<version>` with those three files. Never a

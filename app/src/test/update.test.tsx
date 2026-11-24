@@ -11,6 +11,7 @@ import {
   fakeBackend,
   fakeManualBackend,
   canInstallUpdates,
+  testFeedUrl,
   isMissingUpdateFile,
 } from '../../electron/updatelogic'
 import { ToastProvider } from '@/components/toast'
@@ -259,6 +260,17 @@ describe('the signature of a Mac app', () => {
     expect(canInstallUpdates(selfSigned)).toBe(true)
     // A chain that ends at Apple but is not a Developer ID is not a release signature.
     expect(canInstallUpdates('Authority=Mac Developer: Someone (ABCDE12345)\nAuthority=Apple Root CA')).toBe(false)
+  })
+})
+
+describe('the test feed', () => {
+  it('reads an http(s) address from OPENSTEMS_UPDATE_FEED and nothing else', () => {
+    expect(testFeedUrl({ OPENSTEMS_UPDATE_FEED: 'http://localhost:8000/' })).toBe('http://localhost:8000/')
+    expect(testFeedUrl({ OPENSTEMS_UPDATE_FEED: ' https://example.com/feed ' })).toBe('https://example.com/feed')
+    expect(testFeedUrl({})).toBeNull()
+    expect(testFeedUrl({ OPENSTEMS_UPDATE_FEED: '' })).toBeNull()
+    expect(testFeedUrl({ OPENSTEMS_UPDATE_FEED: 'file:///tmp/feed' })).toBeNull()
+    expect(testFeedUrl({ OPENSTEMS_UPDATE_FEED: 'localhost:8000' })).toBeNull()
   })
 })
 

@@ -1,64 +1,85 @@
 #!/bin/bash
 # The self-signed update, end to end, on a Mac CI runner. Not for a Mac of your own: it
-# tells the system to trust a throwaway certificate (with sudo) and leaves it there.
+# tells the system to trust the certificate (with sudo) and leaves it there.
 #
-# It makes a certificate, builds the app twice with it (an older and a newer version, the
-# way release-mac.yml builds a self-signed release), checks both signatures, serves the
-# newer one from this machine and lets the older one update itself to it
-# (e2e/mac-update.spec.ts). Run from app/, after "pnpm build" and "pnpm package:prepare":
+# It builds the app twice, an older and a newer version, the way release-mac.yml builds a
+# release: the same configuration and signing step, so with the project's certificate when
+# CSC_LINK and CSC_KEY_PASSWORD are set (the repository secrets; a pull request from a fork
+# has none), else with a throwaway one made here. It checks both signatures and that the
+# newer build satisfies the older one's designated requirement (what the installer asks),
+# serves the newer one from this machine and lets the older one update itself to it through
+# the real updater (e2e/mac-update.spec.ts). Run from app/, after "pnpm build" and
+# "pnpm package:prepare":
 #
 #   bash scripts/mac-update-test.sh <path to an installed engine's openstems command>
 set -euo pipefail
 
 engine="${1:?the path to an installed engine command, such as ../engine/.venv/bin/openstems}"
 work="${RUNNER_TEMP:?run on a CI runner}/self-signed-update"
-name="OpenStems CI Self-Signed"
 port=8765
 rm -rf "$work"
 mkdir -p "$work"
 
-# A password made here and gone with the runner: the certificate signs nothing that ships.
-CSC_KEY_PASSWORD="$(openssl rand -hex 16)"
-bash ../scripts/make-mac-cert.sh "$name" "$work/cert" "$CSC_KEY_PASSWORD"
-CSC_LINK="$(cat "$work/cert/cert.p12.base64")"
+if [ -n "${CSC_LINK:-}" ] && [ -n "${CSC_KEY_PASSWORD:-}" ]; then
+  echo "certificate: the project's own (repository secrets)"
+else
+  # A password made here and gone with the runner: the certificate signs nothing that ships.
+  CSC_KEY_PASSWORD="$(openssl rand -hex 16)"
+  bash ../scripts/make-mac-cert.sh "OpenStems CI Self-Signed" "$work/cert" "$CSC_KEY_PASSWORD" >/dev/null
+  CSC_LINK="$(cat "$work/cert/cert.p12.base64")"
+  echo "certificate: a throwaway one made here (no repository secrets)"
+fi
 export CSC_LINK CSC_KEY_PASSWORD
 
-# The release workflow's own check, on this runner's openssl: it must call the
-# certificate self-signed, and hand back the certificate the system is told to trust.
+# The release workflow's own check, on this runner's openssl: it must call the certificate
+# self-signed, and hand back the certificate the system is told to trust.
 kind=$(bash ../scripts/mac-cert-kind.sh "$work/signing.pem")
-echo "certificate: $kind ($(openssl version))"
+echo "kind: $kind ($(openssl version))"
 test "$kind" = self-signed
-cmp <(openssl x509 -in "$work/signing.pem" -noout -fingerprint -sha256) \
-  <(openssl x509 -in "$work/cert/cert.pem" -noout -fingerprint -sha256)
+name=$(openssl x509 -in "$work/signing.pem" -noout -subject -nameopt multiline | sed -n 's/^ *commonName *= *//p')
+echo "name: $name"
 # electron-builder lists only certificates the system trusts for code signing.
 sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$work/signing.pem"
 
 export OPENSTEMS_SELF_SIGNED=1 CSC_FOR_PULL_REQUEST=true
 unset CSC_IDENTITY_AUTO_DISCOVERY
-export UPDATE_FEED="http://127.0.0.1:$port"
 
 build_version() { # version, folder
   UPDATE_VERSION="$1" UPDATE_OUT="$2" pnpm exec electron-builder --mac zip --config e2e/mac-update-build.cjs --publish never
 }
 build_version 0.0.1 "$work/old"
 build_version 9.9.9 "$work/new"
+# The key is not needed from here on.
+unset CSC_LINK CSC_KEY_PASSWORD
 
-for which in old new; do
-  app="$work/$which/mac-arm64/OpenStems.app"
-  echo "== $which"
+old="$work/old/mac-arm64/OpenStems.app"
+new="$work/new/mac-arm64/OpenStems.app"
+for app in "$old" "$new"; do
+  echo "== $app"
   codesign --display --verbose=2 "$app" 2>&1 | grep -E "^(Authority|TeamIdentifier|Signature)=" || true
   codesign --display --verbose=2 "$app" 2>&1 | grep -qx "Authority=$name"
   codesign --verify --deep --strict "$app"
-  codesign --display -r- "$app" 2>/dev/null | sed -n "s/^designated => //p" | tee "$work/$which.requirement"
 done
-# The same signer in both: this is what lets one replace the other.
-cmp "$work/old.requirement" "$work/new.requirement"
-grep -q "certificate leaf" "$work/old.requirement"
+# What the installer asks before it puts an update in place: does the new app satisfy the
+# running one's designated requirement? It must pin the certificate, and an app signed ad
+# hoc must not pass it.
+requirement=$(codesign --display -r- "$old" 2>&1 | sed -n 's/^designated => //p')
+echo "requirement: $requirement"
+case "$requirement" in *"certificate leaf"*) ;; *) echo "::error::the requirement pins no certificate"; exit 1 ;; esac
+codesign --verify --deep --strict -R "=$requirement" "$new"
+echo "the newer build satisfies the older one's requirement"
+ditto "$new" "$work/adhoc.app"
+codesign --force --deep --sign - "$work/adhoc.app" 2>/dev/null
+if codesign --verify -R "=$requirement" "$work/adhoc.app" 2>/dev/null; then
+  echo "::error::an app signed ad hoc satisfies the requirement"
+  exit 1
+fi
+echo "an app signed ad hoc does not"
 ls -l "$work/new"
 test -f "$work/new/latest-mac.yml"
 
 mkdir "$work/installed"
-ditto "$work/old/mac-arm64/OpenStems.app" "$work/installed/OpenStems.app"
+ditto "$old" "$work/installed/OpenStems.app"
 
 python3 -m http.server "$port" --bind 127.0.0.1 --directory "$work/new" > "$work/server.log" 2>&1 &
 server=$!
@@ -73,4 +94,5 @@ finish() {
 }
 trap finish EXIT
 
-MAC_UPDATE_APP="$work/installed/OpenStems.app" MAC_UPDATE_ENGINE="$engine" pnpm e2e -g "mac update"
+MAC_UPDATE_APP="$work/installed/OpenStems.app" MAC_UPDATE_ENGINE="$engine" \
+  MAC_UPDATE_FEED="http://127.0.0.1:$port" pnpm e2e -g "mac update"
