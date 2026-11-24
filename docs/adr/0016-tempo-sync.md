@@ -127,8 +127,8 @@ Seen in FL Studio 2026 on Windows, by the owner:
 Not tried, or not known:
 
 - FL Studio on a Mac. The bytes are the same; nobody has dropped a stem into it there.
-- Other programs. Ableton Live, Logic, Reaper and others may read an `acid` chunk, ignore it
-  or act on it differently; none was tried.
+- Other programs besides Ableton Live (see "Ableton Live" below). Logic, Reaper and others
+  may read an `acid` chunk, ignore it or act on it differently; none was tried.
 - Where the limit between 60 and 90 seconds lies exactly, and whether it is a setting.
 - Whether a typed tempo with decimals stretches as exactly as a whole one; FL shows it, but
   timing over a full song was not measured.
@@ -146,3 +146,37 @@ both limits above: it starts on bar 1 and FL stretches it by itself. Nobody has 
 clip into FL to confirm it yet. Each clip also carries a `LIST`/`INFO` comment
 ("OpenStems clip ..."), the app's own mark for not writing over a clip in use; FL is not
 known to read it.
+
+## Ableton Live (2026-11-24)
+
+Ableton Live does not read the chunk. Ableton's help says ACID tags in WAV files "can not be
+used in Live", and the owner confirmed it in Live 13 beta. The test files were one synthetic
+song at 97 BPM, about four minutes, with a two-beat pickup so bar 1 (the first kick) is at
+1.237 s. They were dropped into a Set at 120 BPM:
+
+| File | Auto-warp on | Auto-warp off |
+|---|---|---|
+| no chunk | warped, 97, first marker at 0.00 | unwarped |
+| chunk as written (beats 0) | warped, 97, first marker at 0.00 | unwarped |
+| chunk with the beat count (405) | warped, 97, first marker at 0.00 | unwarped |
+| no chunk, "97bpm" in the name | warped, 97, first marker at 0.00 | not tried |
+| no chunk, cut to start on bar 1 | warped, 97, first marker at 0.00 | not tried |
+| three stems of the song, with the chunk | drums and melody 97, bass 145.50; all at 0.00 | not tried |
+| 8 bars (about 20 s), with and without | both 97 | both 97 (short-sample rule) |
+
+- The 97 is Live's own analysis: the chunk changes nothing, on or off.
+- Live put bar 1 at the start of every file, so where the song has a pickup the grid is off
+  by the pickup (here half a bar). Only the file that starts on bar 1 is right.
+- Live analyzes each stem by itself, and stems of one song can disagree: the bass came out
+  at 97 x 1.5. Stems dropped together are then not on one grid.
+- An 8-bar loop is read as 8 bars with or without the chunk, by Live's rule for short
+  samples, not from the chunk.
+
+So for Live the chunk does nothing (and does no harm: it stays for FL Studio). What would
+give Live the tempo and bar 1 is a Live Set written beside the stems, with each clip's warp
+markers set from the song's tempo and `downbeat`; Live's `.asd` analysis files are an
+undocumented binary format that changed in Live 12 and are not an option. The research
+behind this, with the other routes ranked, is `docs/research/ableton-tempo.md`.
+
+The files come from `scripts/make_ableton_test_files.py`. Not tried in Live: the file name with auto-warp off, Live 11 or 12, and a Mac (the test ran
+on the owner's machine with Live 13 beta).
