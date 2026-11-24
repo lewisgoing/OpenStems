@@ -1,6 +1,6 @@
 import { existsSync, statSync } from 'node:fs'
 import { extname } from 'node:path'
-import { BrowserWindow, Menu, app, clipboard, dialog, ipcMain, nativeImage, shell } from 'electron'
+import { BrowserWindow, Menu, app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from 'electron'
 import type { ShellStatus } from './bridge'
 import { EngineProcess } from './engine'
 import { log } from './log'
@@ -8,11 +8,20 @@ import { APP_NAME } from './platform'
 import { Prefs } from './prefs'
 import { EngineSetup } from './setup'
 import { TrayController } from './tray'
-import { TRAFFIC_LIGHTS_INSET, TRAY_FLAG, isTrayActivity, macMenuTemplate, quitsOnWindowClose, startsHidden, windowChrome } from './traylogic'
+import {
+  TRAFFIC_LIGHTS_INSET,
+  TRAY_FLAG,
+  isThemePref,
+  isTrayActivity,
+  macMenuTemplate,
+  quitsOnWindowClose,
+  startsHidden,
+  windowChrome,
+} from './traylogic'
 import { Updater, fakeBackend, fakeManualBackend } from './updatelogic'
 import { updateBackend } from './updater'
 import { isVariant } from './variant'
-import { BACKGROUND, iconPath, loadRenderer, webPreferences } from './windows'
+import { background, currentTheme, iconPath, loadRenderer, recolor, webPreferences } from './windows'
 
 const DRAGGABLE = new Set(['.wav', '.flac', '.mp3', '.mid'])
 
@@ -103,10 +112,10 @@ function createWindow(): void {
     minWidth: 980,
     minHeight: 640,
     show: false,
-    backgroundColor: BACKGROUND,
+    backgroundColor: background(),
     title: 'OpenStems',
     icon: iconPath('icon.png'),
-    ...windowChrome(process.platform, BACKGROUND),
+    ...windowChrome(process.platform, currentTheme()),
     webPreferences: webPreferences(),
   })
   mainWindow = window
@@ -184,6 +193,7 @@ function shellStatus(): ShellStatus {
     closeToTray: prefs.value.closeToTray,
     checkForUpdates: prefs.value.checkForUpdates,
     notifyReady: prefs.value.notifyReady,
+    theme: prefs.value.theme,
     startAtLogin: startsAtLogin(),
     canStartAtLogin,
   }
@@ -273,6 +283,10 @@ function registerIpc(): void {
     if (typeof changes.closeToTray === 'boolean') prefs.update({ closeToTray: changes.closeToTray })
     if (typeof changes.checkForUpdates === 'boolean') prefs.update({ checkForUpdates: changes.checkForUpdates })
     if (typeof changes.notifyReady === 'boolean') prefs.update({ notifyReady: changes.notifyReady })
+    if (isThemePref(changes.theme)) {
+      prefs.update({ theme: changes.theme })
+      nativeTheme.themeSource = changes.theme
+    }
     if (typeof changes.startAtLogin === 'boolean' && canStartAtLogin) setStartAtLogin(changes.startAtLogin)
     return shellStatus()
   })
@@ -300,6 +314,14 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   void app.whenReady().then(() => {
+    // Light or dark, before any window opens. Both pages follow it through
+    // `prefers-color-scheme`, and so do native menus and dialogs; what Electron paints itself
+    // is repainted here when the pick or, with `system`, the system's theme changes.
+    nativeTheme.themeSource = prefs.value.theme
+    nativeTheme.on('updated', () => {
+      recolor(mainWindow, true)
+      recolor(tray.popup, false)
+    })
     // Windows has no menu bar in the window. On a Mac the menu holds the standard shortcuts.
     Menu.setApplicationMenu(
       MAC

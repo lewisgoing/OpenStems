@@ -9,7 +9,8 @@ import { RecipeBar } from '@/components/RecipeBar'
 import { TempoKey } from '@/components/TempoKey'
 import { useToast } from '@/components/toast'
 import { Button, IconButton, ProgressBar, Tooltip } from '@/components/ui'
-import { cn, formatPercent } from '@/lib/format'
+import { cn, formatPercent, paletteColor } from '@/lib/format'
+import { useTheme } from '@/lib/theme'
 import { tempoKeyOf } from '@/lib/tempokey'
 import { modKey, shortcut } from '@/platform'
 
@@ -154,10 +155,11 @@ export function StartButton({ held, onStart }: { held: number; onStart: () => vo
 
 /** Five stem bars in a tile: the mark of an empty drop target. */
 export function StemsMark() {
+  const theme = useTheme()
   return (
     <div className="mx-auto mb-5 flex h-16 w-16 items-end justify-center gap-[5px] rounded-2xl border border-line bg-surface p-4" aria-hidden="true">
       {[14, 26, 18, 30, 12].map((height, i) => (
-        <span key={i} className="w-[5px] rounded-full" style={{ height, background: ['#f472b6', '#fbbf24', '#60a5fa', '#c8f04a', '#a78bfa'][i] }} />
+        <span key={i} className="w-[5px] rounded-full" style={{ height, background: paletteColor(['#f472b6', '#fbbf24', '#60a5fa', '#c8f04a', '#a78bfa'][i] ?? '#c8f04a', theme) }} />
       ))}
     </div>
   )
@@ -212,7 +214,7 @@ function JobRow({ job, index, selected, dropTarget, onSelect, onStart, onCancel,
         'row-enter group/row row-hover relative mb-1 rounded-[10px] border border-transparent px-3 py-2.5',
         selected && '!border-line-strong bg-raised',
         done && 'cursor-pointer',
-        dropTarget && 'shadow-[0_-2px_0_var(--color-accent)]',
+        dropTarget && 'shadow-[0_-2px_0_var(--color-accent-fg)]',
       )}
       style={{ ['--stagger' as string]: `${Math.min(index, 6) * 30}ms` }}
       onClick={onSelect}

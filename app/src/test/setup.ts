@@ -26,6 +26,7 @@ const shellStatus: ShellStatus = {
   closeToTray: true,
   checkForUpdates: true,
   notifyReady: true,
+  theme: 'dark',
   startAtLogin: false,
   canStartAtLogin: true,
 }

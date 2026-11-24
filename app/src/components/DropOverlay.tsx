@@ -83,7 +83,7 @@ export function DropOverlay({ onDrop, onLink, label, manual }: DropOverlayProps)
 
   return (
     <div className="drop-overlay" data-active={active} aria-hidden={!active}>
-      <div className="drop-card max-w-[calc(100vw-40px)] rounded-[18px] border-2 border-dashed border-accent/60 bg-surface px-12 py-10 text-center">
+      <div className="drop-card max-w-[calc(100vw-40px)] rounded-[18px] border-2 border-dashed border-accent-fg/60 bg-surface px-12 py-10 text-center">
         <div className="font-display text-[19px] font-semibold">{manual ? 'Drop to add to the queue' : 'Drop to separate'}</div>
         <div className="mt-1.5 text-muted">{manual ? `${label}, when you press Start` : `Runs ${label}`}</div>
       </div>

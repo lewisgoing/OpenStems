@@ -7,12 +7,18 @@ import { MAC, captureAroundPopup, clickTray, launch, trayPage } from './helpers'
 // The file names are the same on Windows and on a Mac: give each system its own SHOTS_DIR.
 test.skip(process.env.SHOTS !== '1', 'set SHOTS=1 to capture screenshots')
 
-test('screenshots', async () => {
+/** The main views, dark (the default) or, picked with the sidebar's switch, light. */
+async function mainViews(theme: 'dark' | 'light') {
   const out = process.env.SHOTS_DIR ?? join(import.meta.dirname, '..', 'test-results', 'shots')
   mkdirSync(out, { recursive: true })
   const { app, page, fixtures } = await launch({ OPENSTEMS_FAKE_DELAY: '0.15' })
-  const shot = (name: string) => page.screenshot({ path: join(out, `${name}.png`) })
+  const prefix = theme === 'light' ? 'light-' : ''
+  const shot = (name: string) => page.screenshot({ path: join(out, `${prefix}${name}.png`) })
   try {
+    if (theme === 'light') {
+      await page.getByRole('radiogroup', { name: 'Theme' }).getByRole('radio', { name: 'Light' }).click()
+      await page.waitForTimeout(300)
+    }
     await shot('1-empty')
     await page.getByTestId('file-input').setInputFiles(
       ['First Song.mp3', 'Second Song.flac', 'Video Clip.mp4'].map((n) => join(fixtures, n)),
@@ -38,9 +44,24 @@ test('screenshots', async () => {
     await page.getByRole('button', { name: 'Settings' }).click()
     await page.waitForTimeout(500)
     await shot('7-settings')
+    if (theme === 'light') {
+      // The quick-drop window follows the pick, with the stems of the last song.
+      await clickTray(app)
+      const popup = await trayPage(app)
+      await popup.waitForTimeout(600)
+      await popup.screenshot({ path: join(out, `${prefix}tray.png`) })
+    }
   } finally {
     await app.close()
   }
+}
+
+test('screenshots', async () => {
+  await mainViews('dark')
+})
+
+test('screenshots in light', async () => {
+  await mainViews('light')
 })
 
 test('screenshots of the quick-drop window', async () => {

@@ -6,6 +6,15 @@
   repository when a newer yt-dlp is out, the usual sign that pasted links need an update
   (`.github/workflows/links-check.yml`, `scripts/check_ytdlp.py`).
 
+## 0.3.3 (2026-11-23)
+
+- **Light mode.** Pick Light, Dark or System with the three icons at the foot of the
+  sidebar, or under Settings > Appearance. System follows the computer's setting as it
+  changes. The quick-drop window follows the same pick. Stem colors and waveforms get
+  deeper shades on a light page so each stays visible. The app stays dark until you pick
+  otherwise. On Windows and on a Mac alike (not seen on a Mac yet).
+  `docs/adr/0020-light-mode.md`.
+
 ## 0.3.2 (2026-11-23)
 
 - **The tempo and key can be corrected.** A song that waits in the queue shows two small

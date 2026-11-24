@@ -13,6 +13,7 @@ import { TempoKey } from './TempoKey'
 import { useToast } from './toast'
 import { Button, IconButton, Tooltip } from './ui'
 import { Waveform, useSharedGain } from './Waveform'
+import { useTheme } from '@/lib/theme'
 
 export interface StemsPanelProps {
   title: string
@@ -252,7 +253,7 @@ export function StemsPanel({ title, subtitle, directory, stems, analysis, notes,
 }
 
 const TOGGLE = 'press h-6 w-6 rounded-[5px] border border-transparent text-[11px] font-bold text-muted'
-const SOLO_ON = 'border-accent/50 bg-accent/15 !text-accent'
+const SOLO_ON = 'border-accent-fg/50 bg-accent/15 !text-accent-fg'
 const MUTE_ON = 'border-danger/50 bg-danger/15 !text-danger'
 
 interface StemRowProps {
@@ -267,7 +268,8 @@ interface StemRowProps {
 }
 
 function StemRow({ stem, player, state, dragging, onDragging, getProgress, onSeek, gain }: StemRowProps) {
-  const color = stemColor(stem.name)
+  const theme = useTheme()
+  const color = stemColor(stem.name, theme)
   const audible = player.isAudible(stem.name)
   const soloed = state.soloed.has(stem.name)
   const muted = state.muted.has(stem.name)
