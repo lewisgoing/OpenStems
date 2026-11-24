@@ -53,7 +53,7 @@ Engine (run from `engine/`):
   edit that file by hand). A model's `memory_gb` comes from `MEMORY_GB` in that script,
   copied from the Peak VRAM column of `docs/benchmarks.md`
 
-Site (the landing page on GitHub Pages, `site/`, `docs/adr/0024-site.md`):
+Site (the landing page on GitHub Pages, `site/`, `docs/adr/0025-site.md`):
 
 - `node scripts/build-site.mjs [OUT]`: assemble the site into `_site/` (or OUT) with the
   changelog, the icon and two README pictures; serve it with `python -m http.server -d OUT`
