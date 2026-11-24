@@ -47,9 +47,36 @@ export function fakeManualBackend(version: string, onOpen: (url: string) => void
   return { check: async () => version, url, open: async (page) => onOpen(page) }
 }
 
-/** What `codesign -dv --verbose=2` prints for an app signed with a Developer ID certificate. */
-export function isDeveloperIdSigned(codesignOutput: string): boolean {
-  return /^Authority=Developer ID Application:/m.test(codesignOutput)
+/**
+ * Whether an app with this signature can install an update, from what `codesign -dv
+ * --verbose=2` prints for it. macOS puts a new version in place only when it is signed by
+ * whoever signed the running one, so the signature has to name somebody, the same somebody
+ * in every release. Two kinds do:
+ *
+ * - a Developer ID certificate, from Apple;
+ * - a certificate the project made itself (self-signed): one authority, and no Apple root.
+ *   It asks nothing of Apple. macOS still asks before the first open, as for an unsigned app.
+ *
+ * An ad hoc signature names nobody and is different in every build. An Apple development
+ * certificate is for one developer's machines, not for releases.
+ */
+export function canInstallUpdates(codesignOutput: string): boolean {
+  if (/^Signature=adhoc$/m.test(codesignOutput)) return false
+  const authorities = [...codesignOutput.matchAll(/^Authority=(.+)$/gm)].map((match) => match[1]?.trim() ?? '')
+  if (authorities.length === 0) return false
+  if (authorities[0]?.startsWith('Developer ID Application:')) return true
+  return authorities.length === 1 && !/^(Apple |Mac Developer|Developer ID |3rd Party Mac |iPhone )/.test(authorities[0] ?? '')
+}
+
+/**
+ * Where to read updates from in place of the GitHub releases: OPENSTEMS_UPDATE_FEED, for
+ * trying an update with two builds served from a folder (`python3 -m http.server`), on a
+ * Mac by hand or in CI (`app/scripts/mac-update-test.sh`). Only an http(s) address counts;
+ * anything else is ignored and the releases are read as always.
+ */
+export function testFeedUrl(env: Record<string, string | undefined>): string | null {
+  const url = env.OPENSTEMS_UPDATE_FEED?.trim()
+  return url && /^https?:\/\/\S+$/i.test(url) ? url : null
 }
 
 /**

@@ -10,7 +10,8 @@ import {
   Updater,
   fakeBackend,
   fakeManualBackend,
-  isDeveloperIdSigned,
+  canInstallUpdates,
+  testFeedUrl,
   isMissingUpdateFile,
 } from '../../electron/updatelogic'
 import { ToastProvider } from '@/components/toast'
@@ -233,7 +234,7 @@ describe('a release without a Mac build', () => {
 })
 
 describe('the signature of a Mac app', () => {
-  it('counts only a Developer ID as able to update itself', () => {
+  it('counts a Developer ID or a certificate of our own as able to update itself', () => {
     const signed = [
       'Executable=/Applications/OpenStems.app/Contents/MacOS/OpenStems',
       'Identifier=ing.lewisgo.openstems',
@@ -242,13 +243,34 @@ describe('the signature of a Mac app', () => {
       'Authority=Apple Root CA',
       'TeamIdentifier=ABCDE12345',
     ].join('\n')
-    expect(isDeveloperIdSigned(signed)).toBe(true)
+    expect(canInstallUpdates(signed)).toBe(true)
     // What an unsigned build on Apple Silicon carries: an ad hoc signature, with no authority.
     const adhoc = ['Executable=/Applications/OpenStems.app/Contents/MacOS/OpenStems', 'Signature=adhoc', 'TeamIdentifier=not set'].join('\n')
-    expect(isDeveloperIdSigned(adhoc)).toBe(false)
-    expect(isDeveloperIdSigned('Authority=Apple Development: Someone (ABCDE12345)')).toBe(false)
-    expect(isDeveloperIdSigned('/Applications/OpenStems.app: code object is not signed at all')).toBe(false)
-    expect(isDeveloperIdSigned('')).toBe(false)
+    expect(canInstallUpdates(adhoc)).toBe(false)
+    expect(canInstallUpdates('Authority=Apple Development: Someone (ABCDE12345)')).toBe(false)
+    expect(canInstallUpdates('/Applications/OpenStems.app: code object is not signed at all')).toBe(false)
+    expect(canInstallUpdates('')).toBe(false)
+    // A certificate the project made itself: one authority, nothing from Apple, no team.
+    const selfSigned = [
+      'Executable=/Applications/OpenStems.app/Contents/MacOS/OpenStems',
+      'Identifier=ing.lewisgo.openstems',
+      'Authority=OpenStems Self-Signed',
+      'TeamIdentifier=not set',
+    ].join('\n')
+    expect(canInstallUpdates(selfSigned)).toBe(true)
+    // A chain that ends at Apple but is not a Developer ID is not a release signature.
+    expect(canInstallUpdates('Authority=Mac Developer: Someone (ABCDE12345)\nAuthority=Apple Root CA')).toBe(false)
+  })
+})
+
+describe('the test feed', () => {
+  it('reads an http(s) address from OPENSTEMS_UPDATE_FEED and nothing else', () => {
+    expect(testFeedUrl({ OPENSTEMS_UPDATE_FEED: 'http://localhost:8000/' })).toBe('http://localhost:8000/')
+    expect(testFeedUrl({ OPENSTEMS_UPDATE_FEED: ' https://example.com/feed ' })).toBe('https://example.com/feed')
+    expect(testFeedUrl({})).toBeNull()
+    expect(testFeedUrl({ OPENSTEMS_UPDATE_FEED: '' })).toBeNull()
+    expect(testFeedUrl({ OPENSTEMS_UPDATE_FEED: 'file:///tmp/feed' })).toBeNull()
+    expect(testFeedUrl({ OPENSTEMS_UPDATE_FEED: 'localhost:8000' })).toBeNull()
   })
 })
 
