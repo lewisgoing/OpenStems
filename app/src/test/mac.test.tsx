@@ -59,7 +59,7 @@ afterEach(() => {
 describe('the words and keys per system', () => {
   it('names things the Mac way on a Mac', () => {
     expect(isMac()).toBe(true)
-    expect(words()).toMatchObject({ fileManager: 'Finder', tray: 'menu bar', trayTitle: 'Menu bar', loginItem: 'Open at login', computer: 'Mac' })
+    expect(words()).toMatchObject({ fileManager: 'Finder', tray: 'menu bar', trayTitle: 'Menu bar', loginItem: 'Open at login', computer: 'Mac', drive: 'disk' })
     expect(shortcut('V')).toBe('⌘V')
     expect(shortcut('Enter')).toBe('⌘Enter')
     expect(modClick()).toBe('⌘-click')
@@ -68,7 +68,7 @@ describe('the words and keys per system', () => {
   it('keeps the Windows names on Windows', () => {
     bridge.info.platform = 'win32'
     expect(isMac()).toBe(false)
-    expect(words()).toMatchObject({ fileManager: 'Explorer', tray: 'tray', trayTitle: 'Tray', loginItem: 'Start with Windows', computer: 'PC' })
+    expect(words()).toMatchObject({ fileManager: 'Explorer', tray: 'tray', trayTitle: 'Tray', loginItem: 'Start with Windows', computer: 'PC', drive: 'drive' })
     expect(shortcut('V')).toBe('Ctrl+V')
     expect(modClick()).toBe('Ctrl+click')
   })

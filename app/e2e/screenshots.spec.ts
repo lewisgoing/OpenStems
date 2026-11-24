@@ -64,6 +64,36 @@ test('screenshots in light', async () => {
   await mainViews('light')
 })
 
+/** The welcome's three steps, dark and light. */
+test('screenshots of the welcome', async () => {
+  const out = process.env.SHOTS_DIR ?? join(import.meta.dirname, '..', 'test-results', 'shots')
+  mkdirSync(out, { recursive: true })
+  const { app, page } = await launch({ OPENSTEMS_E2E_WELCOME: '1' })
+  const welcome = page.getByTestId('welcome')
+  try {
+    for (const theme of ['dark', 'light'] as const) {
+      const prefix = theme === 'light' ? 'light-' : ''
+      if (theme === 'light') {
+        await page.evaluate(() => window.openstems.setShell({ theme: 'light' }))
+        await page.waitForTimeout(300)
+      }
+      await welcome.getByTestId('free-space').first().waitFor()
+      await page.waitForTimeout(400)
+      await page.screenshot({ path: join(out, `${prefix}welcome-1-folders.png`) })
+      await welcome.getByRole('button', { name: 'Continue' }).click()
+      await page.waitForTimeout(400)
+      await page.screenshot({ path: join(out, `${prefix}welcome-2-format.png`) })
+      await welcome.getByRole('button', { name: 'Continue' }).click()
+      await page.waitForTimeout(400)
+      await page.screenshot({ path: join(out, `${prefix}welcome-3-models.png`) })
+      await welcome.getByRole('button', { name: 'Back' }).click()
+      await welcome.getByRole('button', { name: 'Back' }).click()
+    }
+  } finally {
+    await app.close()
+  }
+})
+
 test('screenshots of the quick-drop window', async () => {
   const out = process.env.SHOTS_DIR ?? join(import.meta.dirname, '..', 'test-results', 'shots')
   mkdirSync(out, { recursive: true })

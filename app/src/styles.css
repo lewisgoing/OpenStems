@@ -928,8 +928,71 @@
   transition-delay: 0ms;
 }
 
+/* ---- the welcome: seen once, so its steps may move ------------------------- */
+
+.dialog.welcome {
+  width: min(560px, calc(100vw - 48px));
+  padding: 22px 22px 18px;
+}
+/* Every step is at least this tall: Continue and Back stay where the pointer is. */
+.welcome-body {
+  min-height: 318px;
+}
+/* A step enters from the side it lies on: forward from the right, back from the left.
+   One reached from the keyboard is there at once. */
+.welcome-body[data-animate='true'] {
+  transition:
+    opacity 220ms var(--ease-out),
+    transform 220ms var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: translateX(calc(var(--welcome-dir, 1) * 12px));
+  }
+}
+.welcome-body[data-dir='-1'] {
+  --welcome-dir: -1;
+}
+.welcome-step-mark {
+  width: 18px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-line-strong);
+  transition: background-color 200ms ease;
+}
+.welcome-step-mark[data-done='true'] {
+  background: var(--color-accent);
+}
+/* A format to pick. The ring follows the choice at once; only the press eases. */
+.format-choice {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--color-line);
+  background: var(--color-bg);
+  cursor: default;
+}
+.format-choice[data-checked='true'] {
+  border-color: var(--color-accent-fg);
+  box-shadow: inset 0 0 0 1px var(--color-accent-fg);
+}
+.format-choice:has(input:focus-visible) {
+  outline: 2px solid var(--color-accent-fg);
+  outline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .format-choice:hover:not([data-checked='true']) {
+    border-color: var(--color-line-strong);
+  }
+}
+
 /* Reduced motion: keep fades that aid comprehension, drop movement. */
 @media (prefers-reduced-motion: reduce) {
+  .welcome-body[data-animate='true'] {
+    transition-property: opacity;
+    @starting-style {
+      transform: none;
+    }
+  }
   .pressable:active:not(:disabled),
   .press:active:not(:disabled),
   .stem-pill:active,

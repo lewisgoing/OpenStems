@@ -20,6 +20,8 @@ export interface PlatformWords {
   computer: string
   /** Where first-run setup puts the engine. */
   profile: string
+  /** What holds folders, for free space: "120 GB free on this drive". */
+  drive: string
 }
 
 const WINDOWS: PlatformWords = {
@@ -29,6 +31,7 @@ const WINDOWS: PlatformWords = {
   loginItem: 'Start with Windows',
   computer: 'PC',
   profile: 'your user profile',
+  drive: 'drive',
 }
 
 const MAC: PlatformWords = {
@@ -38,6 +41,7 @@ const MAC: PlatformWords = {
   loginItem: 'Open at login',
   computer: 'Mac',
   profile: 'your Library folder',
+  drive: 'disk',
 }
 
 export function words(): PlatformWords {

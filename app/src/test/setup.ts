@@ -47,7 +47,8 @@ export const bridge = {
   clipboardText: vi.fn(async () => ''),
   revealInExplorer: vi.fn(async () => undefined),
   openFolder: vi.fn(async () => undefined),
-  pickFolder: vi.fn(async () => null),
+  pickFolder: vi.fn(async (_defaultPath?: string): Promise<string | null> => null),
+  folderSpace: vi.fn(async (_path: string) => ({ free: 120 * 1024 ** 3, total: 1000 * 1024 ** 3 })),
   pickFile: vi.fn(async () => null),
   showMain: vi.fn(async () => undefined),
   hidePopup: vi.fn((_viaKeyboard?: boolean) => undefined),
@@ -59,7 +60,7 @@ export const bridge = {
   checkForUpdates: vi.fn(async (): Promise<UpdateStatus> => updateStatus),
   downloadUpdate: vi.fn(async (): Promise<UpdateStatus> => updateStatus),
   installUpdate: vi.fn(async (_force?: boolean) => ({ started: true, activeJobs: 0 })),
-  info: { version: '0.0.0-test', platform: 'win32', e2e: false },
+  info: { version: '0.0.0-test', platform: 'win32', e2e: false, welcome: undefined as boolean | undefined },
 } satisfies OpenStemsBridge
 
 window.openstems = bridge
