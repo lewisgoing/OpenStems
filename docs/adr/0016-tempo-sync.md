@@ -38,7 +38,8 @@ So FL Studio reads the tempo and ignores the beat count, and the count is left a
 
 ## Limits
 
-- WAV only. FLAC and MP3 cannot carry the chunk, and the setting does nothing for them.
+- WAV only. FL Studio reads tempo from WAV files alone (its manual: the tempo "meta-data" is
+  "only saved in .wav files"), so FLAC and MP3 stems carry none. See "Saying so" below.
 - The stems are only as in time as the detected tempo is right. The detector rounds to a
   whole number within 0.25 BPM; an error of 0.1 BPM at 120 is about 0.15 s after three
   minutes, and a song played without a click has no single tempo. There is no way to
@@ -48,3 +49,27 @@ So FL Studio reads the tempo and ignores the beat count, and the count is left a
   act on it. Not tried in FL Studio on a Mac; the bytes written are the same there.
 - The option is part of a run's cache key only when it is on, so earlier results stay
   cached.
+
+## Saying so (2026-11-23)
+
+The owner found that FL Studio often showed no tempo for stems written with the setting on.
+Of the 241 stems in the output folder, every WAV written with the setting on carried the
+chunk (6 of 6, and their mix); the other 130 written with it on were MP3, the format the
+owner had chosen, and carried none. The setting did nothing for them, without a word, and
+the hint that said so sat under a different control from the format picker.
+
+The owner chose to keep the chosen format and to warn, rather than to write WAV regardless
+or a WAV beside each MP3:
+
+- The format list, on the drop bar and in Settings, marks MP3 and FLAC "No tempo" while the
+  setting is on, and Settings says under the switch when the chosen format cannot carry it.
+- A song written with the setting on and no tempo in its stems carries a note, on the job
+  and in its manifest (`domain/tempo.py`): the format cannot hold it, or no tempo was found.
+  The second goes when the user types a tempo in (`retag.set_analysis`); a tempo taken away
+  on purpose brings no note.
+- The hint names FL Studio's "Read sample tempo information" option (General settings),
+  which must be on for FL to read any tempo from a sample.
+
+FL Studio does not read a tempo from a file name or from MP3 or FLAC tags, as far as its
+manual says, so there is nothing to write into those formats.
+

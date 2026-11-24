@@ -184,7 +184,10 @@ the naming template.
   the tempo FL Studio reads follow, without separating the song again.
 - **Tempo-synced stems for FL Studio.** With "Tempo-sync for FL Studio" on in Settings, WAV
   stems and mixes carry the detected tempo, and FL Studio stretches them to your project's
-  tempo when you drop them in. WAV only, and as accurate as the detected tempo.
+  tempo when you drop them in. WAV only: FL Studio reads tempo from WAV files alone, so MP3
+  and FLAC stems carry none, and the app says so on the format list and on the song. FL's
+  "Read sample tempo information" (General settings) must be on. As accurate as the detected
+  tempo.
 - **Watch folder.** New files that appear in a folder are queued with the default recipe and
   quality once they have finished copying.
 - **Stem to MIDI.** A draggable `.mid` next to vocal, bass and melody stems ("Write MIDI" in

@@ -289,7 +289,11 @@ overlap. `docs/adr/0017-every-stem.md`.
 Tempo sync: with the `tempo_sync` setting on, `write_audio` appends an `acid` chunk with the
 detected tempo to WAV stems and mixes (`audio/write.py`, `tempo_chunk`), which FL Studio
 reads to stretch them to the project's tempo. FL reads the tempo field only; the beat count
-stays 0. The option enters a run's cache key only when on. `docs/adr/0016-tempo-sync.md`.
+stays 0. The option enters a run's cache key only when on. FL reads tempo from WAV only:
+`domain/tempo.py` holds which formats carry it (`TEMPO_FORMATS`, the same set as
+`TEMPO_FORMATS` in `app/src/components/FormatSelect.tsx`: change both together) and the notes
+a job gets when its stems carry none (an MP3 or FLAC run, or no tempo found; the second goes
+when a tempo is typed in). `docs/adr/0016-tempo-sync.md`.
 
 Tempo and key by hand: a job's `bpm` and `key` options replace what detection finds for
 that run (`pipeline/extras.py`); they are not in the cache key, and a cached result is

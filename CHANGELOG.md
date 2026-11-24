@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Tempo sync says when it cannot work.** FL Studio reads a sample's tempo from WAV files
+  only, so MP3 and FLAC stems never carried one, and nothing said so: with MP3 chosen, most
+  stems reached FL with no tempo. Now the format list marks MP3 and FLAC "No tempo" while
+  tempo sync is on, Settings says so under the switch, and a song written that way carries
+  a note saying why its stems have no tempo. A song in which no tempo was found says that
+  too, and the note goes once you type a tempo in. FL Studio also needs "Read sample tempo
+  information" on in its General settings; the hint names it. `docs/adr/0016-tempo-sync.md`.
+
 ## 0.3.3 (2026-11-23)
 
 - **Light mode.** Pick Light, Dark or System with the three icons at the foot of the
