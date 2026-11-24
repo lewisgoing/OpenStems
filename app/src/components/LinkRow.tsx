@@ -3,6 +3,7 @@ import type { Link } from '@/api/client'
 import { useLinkActions, useLinks } from '@/api/queries'
 import { cn, formatPercent } from '@/lib/format'
 import { linkHost } from '@/lib/link'
+import { RowMenu, linkMenuItems } from './RowMenu'
 import { useToast } from './toast'
 import { IconButton, ProgressBar } from './ui'
 
@@ -34,14 +35,24 @@ export function LinkRow({ link, compact }: { link: Link; compact?: boolean }) {
   const toast = useToast()
   const failed = link.state === 'failed'
   const fetching = link.state === 'downloading'
+  const menu = linkMenuItems(link, {
+    retry: () => actions.retry.mutate(link.id, { onError: toast.error }),
+    remove: () => actions.remove.mutate(link.id, { onError: toast.error }),
+  })
   return (
-    <li
-      data-testid="link-row"
-      data-state={link.state}
-      className={cn(
-        'group/row row-hover',
-        compact ? 'mb-0.5 rounded-[10px] px-2.5 py-2' : 'row-enter relative mb-1 rounded-[10px] border border-transparent px-3 py-2.5',
-      )}
+    <RowMenu
+      items={menu}
+      label={`${link.name} actions`}
+      render={
+        <li
+          data-testid="link-row"
+          data-state={link.state}
+          className={cn(
+            'group/row row-hover',
+            compact ? 'mb-0.5 rounded-[10px] px-2.5 py-2' : 'row-enter relative mb-1 rounded-[10px] border border-transparent px-3 py-2.5',
+          )}
+        />
+      }
     >
       <div className="flex items-center gap-2.5">
         {failed ? (
@@ -72,7 +83,7 @@ export function LinkRow({ link, compact }: { link: Link; compact?: boolean }) {
           <ProgressBar value={link.progress} indeterminate={!fetching || link.progress < 0.02} />
         </div>
       )}
-    </li>
+    </RowMenu>
   )
 }
 

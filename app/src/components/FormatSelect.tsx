@@ -23,6 +23,20 @@ export const TEMPO_FORMATS: ReadonlySet<Format> = new Set<Format>(['wav32f', 'wa
 export const carriesTempo = (format: Format) => TEMPO_FORMATS.has(format)
 
 /**
+ * About how large one stem of a song this long is in each format: stereo at 44.1 kHz, the
+ * rate the models run at. WAV and MP3 are exact; FLAC depends on the music and is taken as
+ * 60 percent of WAV 24-bit, a usual figure for mixed material. For the welcome's choice of
+ * format, where it is always shown as "about".
+ */
+export function stemBytes(format: Format, seconds: number): number {
+  const frames = seconds * 44_100
+  if (format === 'wav32f') return frames * 2 * 4
+  if (format === 'wav24') return frames * 2 * 3
+  if (format === 'flac') return frames * 2 * 3 * 0.6
+  return seconds * (320_000 / 8)
+}
+
+/**
  * The formats to pick from. With "Tempo-sync for FL Studio" on, the ones that cannot carry
  * the tempo say so at the moment of choosing: the stems would reach FL with no tempo.
  */

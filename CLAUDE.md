@@ -58,8 +58,13 @@ App (run from `app/`):
 - `SHOTS=1 SHOTS_DIR=<folder> pnpm e2e -g screenshots`: capture every view for design review,
   the quick-drop window included (`tray-on-screen.png` is the real screen around it)
   and a machine with little memory (`memory-1-queue.png` to `memory-7-settings.png`).
-  The main views are taken in light as well (`light-1-empty.png` to `light-tray.png`)
+  The main views are taken in light as well (`light-1-empty.png` to `light-tray.png`),
+  the welcome's steps in both (`welcome-1-folders.png` to `light-welcome-3-models.png`) and
+  the row menus (`3b-row-menu.png`, `tray-4b-row-menu.png`)
 - `pnpm e2e theme`: the theme switch, both windows, the pick across a restart
+- `pnpm e2e welcome`: the welcome on a first start (`OPENSTEMS_E2E_WELCOME=1` forces it,
+  since the FakeEngine has every model; `__openstemsE2E.pickFolder` stands in for the folder
+  picker). `pnpm e2e row-menu`: the right-click menu on queue rows, both windows
 - `pnpm e2e low-memory`: the CPU note and the marks of an 8 GB machine, with the FakeEngine
   (`OPENSTEMS_FAKE_OOM`, `OPENSTEMS_MEMORY_GB`)
 - `README_SHOTS=1 pnpm e2e -g "readme pictures"`: retake the README's pictures into
@@ -258,6 +263,20 @@ Python package and keys, `OPENSTEMS_*` for environment variables. The app was le
 0.2.0; `settings.adopt_legacy_settings` carries a user's settings over once, and that name
 survives only there, in the changelog and in `docs/adr/0009-rename-openstems.md`. The folder
 `D:\lew-stems` on the development machine is a real folder and keeps its name.
+
+Welcome: the first start with the engine ready, nothing installed and the key
+`openstems.welcome.v1` (or the older `openstems.seed-offer.v1`) not in local storage opens
+`components/Welcome.tsx`: folders with free space, format and auto start, the recommended
+models. Every choice is the setting itself, saved at once. Free space is `fs:space` in the
+main process (`statfs`; the folder walk is `electron/space.ts`, pure). Settings > Getting
+started calls `showWelcomeAgain`. `OPENSTEMS_OUTPUT_DIR` and `OPENSTEMS_MODELS_DIR` win over
+the folders picked there. `docs/adr/0021-welcome.md`.
+
+Row menus: a right-click on a queue row (both windows) and a link row opens
+`components/RowMenu.tsx`. `jobMenuItems` decides the items from the job's state and the
+handlers a window passes (the quick-drop window has no reordering); `moveQueued` in
+`QueueView.tsx` is the reorder shared with dragging. `shell:reveal` answers whether the file
+was there. Nothing in the menu deletes a file. `docs/adr/0022-row-menus.md`.
 
 Manual start: a queued job can be held (`held` on a job; `JobManager.release` lets it go,
 `POST /v1/jobs/start` and `/v1/jobs/{id}/start`). Whether a new job is held follows the

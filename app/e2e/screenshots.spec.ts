@@ -31,6 +31,11 @@ async function mainViews(theme: 'dark' | 'light') {
     await page.getByTestId('stem-row').nth(5).waitFor()
     await page.waitForTimeout(700)
     await shot('3-stems')
+    // The menu a right-click opens on a finished song.
+    await page.locator('[data-testid="job-row"][data-state="done"]').first().click({ button: 'right' })
+    await page.waitForTimeout(300)
+    await shot('3b-row-menu')
+    await page.keyboard.press('Escape')
     await page.getByRole('combobox', { name: 'Recipe' }).click()
     await page.waitForTimeout(400)
     await shot('4-recipes')
@@ -62,6 +67,46 @@ test('screenshots', async () => {
 
 test('screenshots in light', async () => {
   await mainViews('light')
+})
+
+/** The welcome's three steps, dark and light. */
+test('screenshots of the welcome', async () => {
+  const out = process.env.SHOTS_DIR ?? join(import.meta.dirname, '..', 'test-results', 'shots')
+  mkdirSync(out, { recursive: true })
+  const { app, page } = await launch({ OPENSTEMS_E2E_WELCOME: '1' })
+  const welcome = page.getByTestId('welcome')
+  // What a real first start has: no models yet. The FakeEngine has them all, so the list is
+  // read as if none were there; the change of format below makes the app read it again.
+  await page.route(/\/v1\/models$/, async (route) => {
+    const response = await route.fetch()
+    const body = (await response.json()) as { models: { status: string }[] }
+    for (const model of body.models) model.status = 'missing'
+    await route.fulfill({ response, json: body })
+  })
+  try {
+    for (const theme of ['dark', 'light'] as const) {
+      const prefix = theme === 'light' ? 'light-' : ''
+      if (theme === 'light') {
+        await page.evaluate(() => window.openstems.setShell({ theme: 'light' }))
+        await page.waitForTimeout(300)
+      }
+      await welcome.getByTestId('free-space').first().waitFor()
+      await page.waitForTimeout(400)
+      await page.screenshot({ path: join(out, `${prefix}welcome-1-folders.png`) })
+      await welcome.getByRole('button', { name: 'Continue' }).click()
+      await page.waitForTimeout(400)
+      await welcome.getByText('WAV 24-bit').click()
+      await welcome.getByText('WAV 32-bit float').click()
+      await page.screenshot({ path: join(out, `${prefix}welcome-2-format.png`) })
+      await welcome.getByRole('button', { name: 'Continue' }).click()
+      await page.waitForTimeout(400)
+      await page.screenshot({ path: join(out, `${prefix}welcome-3-models.png`) })
+      await welcome.getByRole('button', { name: 'Back' }).click()
+      await welcome.getByRole('button', { name: 'Back' }).click()
+    }
+  } finally {
+    await app.close()
+  }
 })
 
 test('screenshots of the quick-drop window', async () => {
@@ -99,6 +144,10 @@ test('screenshots of the quick-drop window', async () => {
     await page.locator('[data-testid="quick-row"][data-state="done"]').nth(2).waitFor()
     await page.waitForTimeout(700)
     await shot('tray-4-done')
+    await page.locator('[data-testid="quick-row"][data-state="done"]').first().click({ button: 'right' })
+    await page.waitForTimeout(300)
+    await shot('tray-4b-row-menu')
+    await page.keyboard.press('Escape')
     // The real screen: frame, shadow and where the window sits by the taskbar or under the
     // menu bar. A Mac lets an app see the screen only with the screen recording permission:
     // without it this one picture is left out and the rest go on.

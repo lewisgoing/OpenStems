@@ -6,6 +6,7 @@ import { keys, useJobActions, useJobs, useSetAnalysis } from '@/api/queries'
 import { JobNotes } from '@/components/Fit'
 import { LinkRow, useOpenLinks } from '@/components/LinkRow'
 import { RecipeBar } from '@/components/RecipeBar'
+import { type MenuItem, RowMenu, jobMenuItems, revealHandlers } from '@/components/RowMenu'
 import { SourceTitle } from '@/components/SourceTitle'
 import { TempoKey } from '@/components/TempoKey'
 import { useToast } from '@/components/toast'
@@ -16,6 +17,15 @@ import { tempoKeyOf } from '@/lib/tempokey'
 import { modKey, shortcut } from '@/platform'
 
 export const ACTIVE = new Set<Job['state']>(['preparing', 'running', 'writing'])
+
+/** The queued songs in their new order, with `id` moved to `to` (clamped). Unchanged if absent. */
+export function moveQueued(queued: string[], id: string, to: number): string[] {
+  const from = queued.indexOf(id)
+  if (from < 0) return queued
+  const order = [...queued]
+  order.splice(Math.max(0, Math.min(to, order.length - 1)), 0, ...order.splice(from, 1))
+  return order
+}
 const JOB_DRAG_TYPE = 'application/x-openstems-job'
 let queueShownOnce = false
 
@@ -47,13 +57,11 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
   const finished = jobs.filter((j) => j.state === 'done' || j.state === 'failed' || j.state === 'cancelled').length
   const held = jobs.filter((j) => j.held).length
 
-  const drop = (targetId: string) => {
-    if (!dragged || dragged === targetId) return
-    const queued = jobs.filter((j) => j.state === 'queued').map((j) => j.id)
-    const from = queued.indexOf(dragged)
-    const to = queued.indexOf(targetId)
-    if (from < 0 || to < 0) return
-    queued.splice(to, 0, ...queued.splice(from, 1))
+  const queuedIds = jobs.filter((j) => j.state === 'queued').map((j) => j.id)
+  // Put one queued song at a place among the queued ones: by drag, or from its menu.
+  const moveTo = (id: string, to: number) => {
+    const queued = moveQueued(queuedIds, id, to)
+    if (queued.every((value, i) => value === queuedIds[i])) return
     // Move the row at once; the server confirms (or the list is refetched on error).
     queryClient.setQueryData<Job[]>(keys.jobs, (current = []) => {
       const byId = new Map(current.map((job) => [job.id, job]))
@@ -61,6 +69,10 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
       return current.map((job) => (job.state === 'queued' ? (byId.get(order.shift() ?? '') ?? job) : job))
     })
     actions.reorder.mutate(queued, { onError: toast.error })
+  }
+  const drop = (targetId: string) => {
+    if (!dragged || dragged === targetId || !queuedIds.includes(targetId)) return
+    moveTo(dragged, queuedIds.indexOf(targetId))
   }
 
   return (
@@ -91,10 +103,27 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
             </div>
           </div>
           <ul className="m-0 flex-1 list-none overflow-y-auto px-3 pt-1 pb-4" aria-label="Jobs">
-            {jobs.map((job, index) => (
+            {jobs.map((job, index) => {
+              const remove = () => {
+                if (job.id === selectedJob) onSelect(null)
+                actions.remove.mutate(job.id, { onError: toast.error })
+              }
+              const menu = jobMenuItems(job, {
+                start: () => actions.start.mutate(job.id, { onError: toast.error }),
+                cancel: () => actions.cancel.mutate(job.id, { onError: toast.error }),
+                retry: () => actions.retry.mutate(job.id, { onError: toast.error }),
+                showStems: job.id === selectedJob ? undefined : () => onSelect(job),
+                ...revealHandlers(job, (message) => toast.show(message)),
+                // Only where there is somewhere to move it.
+                moveTop: queuedIds.indexOf(job.id) > 0 ? () => moveTo(job.id, 0) : undefined,
+                moveBottom: queuedIds.indexOf(job.id) < queuedIds.length - 1 ? () => moveTo(job.id, queuedIds.length - 1) : undefined,
+                remove,
+              })
+              return (
               <JobRow
                 key={job.id}
                 job={job}
+                menu={menu}
                 index={cascade.current ? index : 0}
                 selected={job.id === selectedJob}
                 dropTarget={over === job.id && dragged !== job.id}
@@ -102,10 +131,7 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
                 onStart={() => actions.start.mutate(job.id, { onError: toast.error })}
                 onCancel={() => actions.cancel.mutate(job.id, { onError: toast.error })}
                 onRetry={() => actions.retry.mutate(job.id, { onError: toast.error })}
-                onRemove={() => {
-                  if (job.id === selectedJob) onSelect(null)
-                  actions.remove.mutate(job.id, { onError: toast.error })
-                }}
+                onRemove={remove}
                 onDragStart={() => setDragged(job.id)}
                 onDragEnd={() => {
                   setDragged(null)
@@ -118,7 +144,8 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
                   setOver(null)
                 }}
               />
-            ))}
+              )
+            })}
             {/* Songs still being fetched come last: that is where their jobs will appear. */}
             {links.map((link) => (
               <LinkRow key={link.id} link={link} />
@@ -183,6 +210,8 @@ function EmptyQueue() {
 
 interface JobRowProps {
   job: Job
+  /** What a right-click on the row offers. */
+  menu: MenuItem[]
   index: number
   selected: boolean
   dropTarget: boolean
@@ -197,7 +226,7 @@ interface JobRowProps {
   onDrop: () => void
 }
 
-function JobRow({ job, index, selected, dropTarget, onSelect, onStart, onCancel, onRetry, onRemove, onDragStart, onDragEnd, onDragOver, onDrop }: JobRowProps) {
+function JobRow({ job, menu, index, selected, dropTarget, onSelect, onStart, onCancel, onRetry, onRemove, onDragStart, onDragEnd, onDragOver, onDrop }: JobRowProps) {
   const active = ACTIVE.has(job.state)
   const done = job.state === 'done'
   const queued = job.state === 'queued'
@@ -208,27 +237,33 @@ function JobRow({ job, index, selected, dropTarget, onSelect, onStart, onCancel,
   const toast = useToast()
 
   return (
-    <li
-      data-testid="job-row"
-      data-state={job.state}
-      className={cn(
-        'row-enter group/row row-hover relative mb-1 rounded-[10px] border border-transparent px-3 py-2.5',
-        selected && '!border-line-strong bg-raised',
-        done && 'cursor-pointer',
-        dropTarget && 'shadow-[0_-2px_0_var(--color-accent-fg)]',
-      )}
-      style={{ ['--stagger' as string]: `${Math.min(index, 6) * 30}ms` }}
-      onClick={onSelect}
-      onDragOver={(event) => {
-        if (!event.dataTransfer.types.includes(JOB_DRAG_TYPE)) return
-        event.preventDefault()
-        onDragOver()
-      }}
-      onDrop={(event) => {
-        if (!event.dataTransfer.types.includes(JOB_DRAG_TYPE)) return
-        event.preventDefault()
-        onDrop()
-      }}
+    <RowMenu
+      items={menu}
+      label={`${job.track_name} actions`}
+      render={
+        <li
+          data-testid="job-row"
+          data-state={job.state}
+          className={cn(
+            'row-enter group/row row-hover relative mb-1 rounded-[10px] border border-transparent px-3 py-2.5',
+            selected && '!border-line-strong bg-raised',
+            done && 'cursor-pointer',
+            dropTarget && 'shadow-[0_-2px_0_var(--color-accent-fg)]',
+          )}
+          style={{ ['--stagger' as string]: `${Math.min(index, 6) * 30}ms` }}
+          onClick={onSelect}
+          onDragOver={(event) => {
+            if (!event.dataTransfer.types.includes(JOB_DRAG_TYPE)) return
+            event.preventDefault()
+            onDragOver()
+          }}
+          onDrop={(event) => {
+            if (!event.dataTransfer.types.includes(JOB_DRAG_TYPE)) return
+            event.preventDefault()
+            onDrop()
+          }}
+        />
+      }
     >
       <div className="flex items-center gap-2.5">
         {queued ? (
@@ -327,7 +362,7 @@ function JobRow({ job, index, selected, dropTarget, onSelect, onStart, onCancel,
           <ProgressBar value={job.progress} indeterminate={job.state === 'preparing' && job.progress < 0.02} />
         </div>
       )}
-    </li>
+    </RowMenu>
   )
 }
 

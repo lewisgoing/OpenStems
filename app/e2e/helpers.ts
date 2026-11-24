@@ -94,7 +94,10 @@ export async function launch(
     },
   })
   const page = await app.firstWindow()
-  if (options.window !== 'tray') await page.getByRole('navigation', { name: 'Views' }).waitFor({ timeout: 90_000 })
+  // The welcome (`OPENSTEMS_E2E_WELCOME`) is a modal: the sidebar behind it is hidden from roles.
+  if (options.window !== 'tray') {
+    await page.getByRole('navigation', { name: 'Views' }).or(page.getByTestId('welcome')).first().waitFor({ timeout: 90_000 })
+  }
   return { app, page, outputDir, fixtures: fixtures() }
 }
 

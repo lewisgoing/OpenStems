@@ -10,6 +10,7 @@ import { UpdateSettings } from '@/components/Update'
 import { Button, CommitInput, Dialog, IconButton, Segmented, Select, Switch } from '@/components/ui'
 import { FitChip } from '@/components/Fit'
 import { ThemeSetting } from '@/components/ThemeSwitch'
+import { showWelcomeAgain } from '@/components/Welcome'
 import { cn, previewName } from '@/lib/format'
 import { type Machine, budgetHint, formatGb } from '@/lib/memory'
 import { useMachine } from '@/state/machine'
@@ -48,6 +49,12 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
           <Group title="Appearance">
             <Row label="Theme" hint="System follows your computer's setting as it changes. Also at the foot of the sidebar.">
               <ThemeSetting />
+            </Row>
+          </Group>
+
+          <Group title="Getting started">
+            <Row label="Welcome" hint="Walk through the folders, the format and the recommended models again. Nothing changes until you pick something.">
+              <Button onClick={showWelcomeAgain}>Show the welcome again</Button>
             </Row>
           </Group>
 

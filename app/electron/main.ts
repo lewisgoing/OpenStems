@@ -1,5 +1,6 @@
 import { existsSync, statSync } from 'node:fs'
-import { extname } from 'node:path'
+import { statfs } from 'node:fs/promises'
+import { dirname, extname } from 'node:path'
 import { BrowserWindow, Menu, app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from 'electron'
 import type { ShellStatus } from './bridge'
 import { EngineProcess } from './engine'
@@ -7,6 +8,7 @@ import { log } from './log'
 import { APP_NAME } from './platform'
 import { Prefs } from './prefs'
 import { EngineSetup } from './setup'
+import { existingAncestor, spaceOf } from './space'
 import { TrayController } from './tray'
 import {
   TRAFFIC_LIGHTS_INSET,
@@ -85,6 +87,8 @@ const e2eState = {
   notices: [] as string[],
   /** Stands in for the system clipboard, which tests must not read or change. */
   clipboard: '',
+  /** Stands in for the folder picker, which a test cannot drive: the folder it returns. */
+  pickFolder: null as string | null,
   tray: () => ({
     icon: tray.presentation.icon,
     tooltip: tray.presentation.tooltip,
@@ -252,13 +256,17 @@ function registerIpc(): void {
     return String(text).slice(0, 4096)
   })
 
+  // Says whether the file was there to show: an original moved away since is told, not ignored.
   ipcMain.handle('shell:reveal', (_event, path: string) => {
-    if (typeof path === 'string' && existsSync(path)) shell.showItemInFolder(path)
+    if (typeof path !== 'string' || !existsSync(path)) return false
+    shell.showItemInFolder(path)
+    return true
   })
   ipcMain.handle('shell:open-folder', async (_event, path: string) => {
     if (typeof path === 'string' && existsSync(path)) await shell.openPath(path)
   })
   ipcMain.handle('dialog:pick-folder', async (event, defaultPath?: string) => {
+    if (E2E && e2eState.pickFolder !== null) return e2eState.pickFolder
     const owner = BrowserWindow.fromWebContents(event.sender)
     if (!owner) return null
     const result = await dialog.showOpenDialog(owner, {
@@ -266,6 +274,16 @@ function registerIpc(): void {
       properties: ['openDirectory', 'createDirectory'],
     })
     return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+  ipcMain.handle('fs:space', async (_event, path: string) => {
+    if (typeof path !== 'string' || path.length === 0) return null
+    const folder = existingAncestor(path, existsSync, dirname)
+    if (!folder) return null
+    try {
+      return spaceOf(await statfs(folder))
+    } catch {
+      return null
+    }
   })
   ipcMain.handle('dialog:pick-file', async (event, options: { title: string; extensions: string[] }) => {
     const owner = BrowserWindow.fromWebContents(event.sender)

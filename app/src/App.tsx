@@ -5,20 +5,19 @@ import type { SetupStatus, TorchVariant } from '../electron/bridge'
 import { VARIANT_CARDS, VARIANT_DOWNLOAD, VARIANT_LABEL, variantsFor } from '../electron/variant'
 import type { Job, Model, Recipe, StemSet } from './api/client'
 import { EngineProvider } from './api/engine'
-import { useJobs, useModelActions, useModels, useRecipes, useSettings } from './api/queries'
+import { useJobs, useModels, useRecipes, useSettings } from './api/queries'
 import { useEngineStatus } from './api/status'
 import { DropOverlay } from './components/DropOverlay'
 import { StemsPanel, type StemsPanelProps } from './components/StemsPanel'
 import { ThemeSwitch } from './components/ThemeSwitch'
 import { ToastProvider, useToast } from './components/toast'
-import { Button, Dialog, Segmented, TooltipProvider } from './components/ui'
+import { Button, Segmented, TooltipProvider } from './components/ui'
 import { UpdatePill } from './components/Update'
+import { Welcome } from './components/Welcome'
 import { Wordmark } from './components/Wordmark'
-import { cn, formatBytes } from './lib/format'
-import { recommendedModels, recommendedReason } from './lib/memory'
+import { cn } from './lib/format'
 import { isMac, modKey, shortcut, words } from './platform'
 import { PendingDownload, useDropFlow, usePaste } from './state/dropflow'
-import { useMachine } from './state/machine'
 import { SelectionProvider } from './state/selection'
 import { HistoryView } from './views/HistoryView'
 import { ModelsView } from './views/ModelsView'
@@ -352,60 +351,8 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
       </main>
 
       <DropOverlay onDrop={addFiles} onLink={addLink} label={flow.label} manual={settings ? !settings.auto_start : false} />
-      <SeedOffer models={models} onStarted={() => setView({ id: 'models', animate: true })} />
+      <Welcome models={models} onDownloaded={() => setView({ id: 'models', animate: true })} />
       <PendingDownload flow={flow} models={models} />
     </div>
-  )
-}
-
-/* ---- first run: offer the recommended models -------------------------------------- */
-
-const SEED_OFFER_KEY = 'openstems.seed-offer.v1'
-
-export function SeedOffer({ models, onStarted }: { models: Model[]; onStarted: () => void }) {
-  const actions = useModelActions()
-  const toast = useToast()
-  const nothingInstalled = models.every((m) => m.status !== 'installed' && !m.download)
-  const [open, setOpen] = useState(() => nothingInstalled && localStorage.getItem(SEED_OFFER_KEY) === null)
-  const machine = useMachine()
-  // What the engine recommends for this machine. Where it is not the usual set, say why.
-  const seed = recommendedModels(models)
-  const reason = recommendedReason(models, machine)
-  const close = () => {
-    localStorage.setItem(SEED_OFFER_KEY, 'seen')
-    setOpen(false)
-  }
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => !next && close()}
-      title="Download the recommended models?"
-      description={`${seed.length} models, ${formatBytes(seed.reduce((sum, m) => sum + m.bytes, 0))} in total. ${reason ?? 'They cover every standard recipe: full song, vocals, drum kit, melody and cleanup.'} You can also download models one at a time later.`}
-      footer={
-        <>
-          <Button onClick={close}>Not now</Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-              for (const model of seed) actions.pull.mutate(model.id, { onError: toast.error })
-              close()
-              onStarted()
-            }}
-          >
-            <Download size={14} />
-            Download
-          </Button>
-        </>
-      }
-    >
-      <ul className="m-0 flex max-h-[200px] list-none flex-col gap-1 overflow-y-auto p-0 text-[12.5px] text-muted">
-        {seed.map((model) => (
-          <li key={model.id} className="flex justify-between gap-4">
-            <span className="truncate">{model.name}</span>
-            <span className="tabular flex-none font-mono text-faint">{formatBytes(model.bytes)}</span>
-          </li>
-        ))}
-      </ul>
-    </Dialog>
   )
 }

@@ -314,6 +314,9 @@ The rest has not been seen at all.
   System following the Mac's appearance as it changes, and the quick-drop panel in light. Also the reverse: with the
   pick on Dark (the default) on a light Mac, the Control-click menu of the menu bar item is
   now drawn dark, and the template icon must still follow the light menu bar.
+- **The welcome and the row menus** (ADRs 0021, 0022): free space read with `statfs` on
+  APFS, the word "disk", Control-click opening the row menu, Show in Finder, and Escape in the
+  menu bar panel. Covered on Windows with the platform patched; the steps are below.
 
 Not built: dropping files on the menu bar item itself. Queuing lives in the windows, and the
 quick-drop window is one click away.
@@ -353,6 +356,18 @@ Appearance: the app should follow within a second, without a restart. Quit and r
 pick should still hold. Then pick Dark with the Mac set to Light: Control-click the menu bar
 item (its menu should be dark) and check that the icon in the menu bar is still drawn for a
 light bar.
+
+The welcome (ADR 0021): Settings > Getting started > "Show the welcome again". The two
+folders should show the free space of their disk (an APFS volume reports what is free to
+this user; compare with Finder's Get Info). Pick a folder on a nearly full volume or a small
+USB stick: the models folder should warn "Not enough room on this disk". Change the format
+and close with Escape: the format where files are dropped should be the one picked.
+
+The row menus (ADR 0022): with a finished song in the queue, Control-click it and
+right-click it, in the full window and in the panel under the menu bar. Both should open the
+menu at the pointer. "Show in Finder" should open Finder with the first stem selected, and
+"Show the original in Finder" the song's own file. In the panel, Escape should close the
+menu and leave the panel open; a second Escape puts the panel away.
 
 If the GPU misbehaves, Settings > System > "Use the GPU" off (or `OPENSTEMS_DEVICE=cpu`) runs
 everything on the CPU.

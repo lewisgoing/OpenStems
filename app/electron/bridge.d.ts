@@ -126,9 +126,12 @@ export interface OpenStemsBridge {
   startDrag(paths: string[]): void
   /** The text on the clipboard, for pasting a link with a button. */
   clipboardText(): Promise<string>
-  revealInExplorer(path: string): Promise<void>
+  /** Show a file in Explorer or Finder. False when it is not there. */
+  revealInExplorer(path: string): Promise<boolean>
   openFolder(path: string): Promise<void>
   pickFolder(defaultPath?: string): Promise<string | null>
+  /** Free space on the drive a folder is (or will be) on. Null when it cannot be told. */
+  folderSpace(path: string): Promise<import('./space').FolderSpace | null>
   pickFile(options: { title: string; extensions: string[] }): Promise<string | null>
   /** Bring the full app to the front, opening its window if it was closed to the tray. */
   showMain(): Promise<void>
@@ -148,7 +151,8 @@ export interface OpenStemsBridge {
    * says how many, unless `force` is set.
    */
   installUpdate(force?: boolean): Promise<{ started: boolean; activeJobs: number }>
-  info: { version: string; platform: string; e2e: boolean }
+  /** `welcome`: end-to-end tests only (`OPENSTEMS_E2E_WELCOME=1`), show the welcome although the FakeEngine has every model. */
+  info: { version: string; platform: string; e2e: boolean; welcome?: boolean }
 }
 
 declare global {
