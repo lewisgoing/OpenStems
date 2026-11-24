@@ -351,7 +351,7 @@ function ModelsStep({ models, seed, seedBytes, settings }: { models: Model[]; se
       <StepTitle title="Download the recommended models?">
         {`${seed.length} models, ${formatBytes(seedBytes)} in total. ${reason ?? 'They cover every standard recipe: full song, vocals, drum kit, melody and cleanup.'} You can also download models one at a time later.`}
       </StepTitle>
-      <ul className="m-0 mt-4 flex max-h-[200px] list-none flex-col gap-1 overflow-y-auto p-0 text-[12.5px] text-muted">
+      <ul className="m-0 mt-4 mb-4 flex min-h-0 flex-1 list-none flex-col gap-1 overflow-y-auto p-0 text-[12.5px] text-muted" data-testid="welcome-models">
         {seed.map((model) => (
           <li key={model.id} className="flex justify-between gap-4">
             <span className="truncate">{model.name}</span>
@@ -373,7 +373,7 @@ function Chosen({ settings }: { settings: Settings }) {
     ['New songs', settings.auto_start ? 'Start as soon as they are added' : 'Wait for Start'],
   ]
   return (
-    <dl className="m-0 mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 border-t border-line pt-3 text-[12.5px]" data-testid="welcome-chosen">
+    <dl className="m-0 mt-auto grid flex-none grid-cols-[auto_1fr] gap-x-4 gap-y-1 border-t border-line pt-3 text-[12.5px]" data-testid="welcome-chosen">
       {rows.map(([term, value]) => (
         <div key={term} className="contents">
           <dt className="text-faint">{term}</dt>

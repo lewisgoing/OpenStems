@@ -63,3 +63,17 @@ test('the quick-drop window has the menu, and Escape closes the menu, not the wi
   await popup.getByTestId('row-menu').getByRole('menuitem', { name: 'Remove from the list' }).click()
   await expect(popup.getByTestId('quick-row')).toHaveCount(0)
 })
+
+test('Shift+F10 on a button in a row opens the menu at the row', async () => {
+  ctx = await launch()
+  const { page, fixtures } = ctx
+  await page.getByTestId('file-input').setInputFiles([join(fixtures, 'First Song.mp3')])
+  const row = page.locator('[data-testid="job-row"][data-state="done"]')
+  await row.getByRole('button', { name: 'Remove from the list' }).focus()
+  await page.keyboard.press('Shift+F10')
+  const menu = page.getByTestId('row-menu')
+  await expect(menu).toBeVisible()
+  // At the row, not in a corner of the window.
+  const [rowBox, menuBox] = [await row.boundingBox(), await menu.boundingBox()]
+  expect(menuBox && rowBox && menuBox.y >= rowBox.y && menuBox.y <= rowBox.y + rowBox.height).toBe(true)
+})

@@ -75,6 +75,14 @@ test('screenshots of the welcome', async () => {
   mkdirSync(out, { recursive: true })
   const { app, page } = await launch({ OPENSTEMS_E2E_WELCOME: '1' })
   const welcome = page.getByTestId('welcome')
+  // What a real first start has: no models yet. The FakeEngine has them all, so the list is
+  // read as if none were there; the change of format below makes the app read it again.
+  await page.route(/\/v1\/models$/, async (route) => {
+    const response = await route.fetch()
+    const body = (await response.json()) as { models: { status: string }[] }
+    for (const model of body.models) model.status = 'missing'
+    await route.fulfill({ response, json: body })
+  })
   try {
     for (const theme of ['dark', 'light'] as const) {
       const prefix = theme === 'light' ? 'light-' : ''
@@ -87,6 +95,8 @@ test('screenshots of the welcome', async () => {
       await page.screenshot({ path: join(out, `${prefix}welcome-1-folders.png`) })
       await welcome.getByRole('button', { name: 'Continue' }).click()
       await page.waitForTimeout(400)
+      await welcome.getByText('WAV 24-bit').click()
+      await welcome.getByText('WAV 32-bit float').click()
       await page.screenshot({ path: join(out, `${prefix}welcome-2-format.png`) })
       await welcome.getByRole('button', { name: 'Continue' }).click()
       await page.waitForTimeout(400)
