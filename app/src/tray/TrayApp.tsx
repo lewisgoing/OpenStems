@@ -477,6 +477,7 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
               <QuickRow
                 key={job.id}
                 job={job}
+                separatePart={Boolean(settings?.separate_selection)}
                 expanded={job.id === expanded}
                 fresh={picked === null && job.id === finishedId}
                 onPick={() => setPick({ id: job.id, since: finishedId })}
@@ -551,6 +552,8 @@ function DropTarget({ recipes, models }: { recipes: Recipe[]; models: Model[] })
 
 interface QuickRowProps {
   job: Job
+  /** The separate_selection setting: a waiting song's part is all that Start separates. */
+  separatePart?: boolean
   /** This job's stems are laid out for dragging. */
   expanded: boolean
   /** The stems arrived just now, so they may make an entrance. */
@@ -576,7 +579,7 @@ function startDrag(event: React.DragEvent, paths: string[]): void {
   window.openstems.startDrag(paths)
 }
 
-export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mixer = null, onMix, onStart, onCancel, onRetry, menu = [] }: QuickRowProps) {
+export function QuickRow({ job, separatePart = false, expanded, fresh, onPick, audition, onListen, mixer = null, onMix, onStart, onCancel, onRetry, menu = [] }: QuickRowProps) {
   const theme = useTheme()
   const active = ACTIVE.has(job.state)
   const queued = job.state === 'queued'
@@ -608,7 +611,7 @@ export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mix
             <SourceTitle name={job.track_name} source={job.track_path} />
           </div>
           <div className="truncate text-[12px] text-muted" data-testid="quick-status">
-            {done ? `${job.recipe_name} · ${job.quality}${job.cached ? ' · from the cache' : ''}` : statusText(job)}
+            {done ? `${job.recipe_name} · ${job.quality}${job.cached ? ' · from the cache' : ''}` : statusText(job, separatePart)}
           </div>
         </div>
 

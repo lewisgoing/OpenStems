@@ -112,6 +112,12 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
             >
               <Switch label="Start songs automatically" checked={settings.auto_start} onChange={(v) => save({ auto_start: v })} />
             </Row>
+            <Row
+              label="Separate only the trimmed part"
+              hint="When a waiting song has a part chosen in the trimmer, Start separates just that part: faster, and its stems come out trimmed. Off: the whole song is separated, and the part can be dragged from it afterwards."
+            >
+              <Switch label="Separate only the trimmed part" checked={settings.separate_selection} onChange={(v) => save({ separate_selection: v })} />
+            </Row>
           </Group>
 
           <Group title="Defaults">
