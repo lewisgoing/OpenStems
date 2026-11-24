@@ -31,7 +31,7 @@ test('real update: an older build finds the latest release and downloads it', as
   const env: Record<string, string> = { ...(process.env as Record<string, string>), ...account.env }
   for (const key of ['OPENSTEMS_E2E', 'OPENSTEMS_E2E_UPDATE', 'OPENSTEMS_E2E_UPDATE_MANUAL', 'OPENSTEMS_ENGINE']) delete env[key]
 
-  const app = await electron.launch({ executablePath: exe, args: [`--user-data-dir=${account.userData}`], env })
+  const app = await electron.launch({ executablePath: exe, args: [`--user-data-dir=${account.userData}`], env, colorScheme: null })
   try {
     const page = await app.firstWindow()
     await page.waitForFunction(() => typeof window.openstems?.updates === 'function')

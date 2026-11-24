@@ -9,6 +9,7 @@ import { useToast } from '@/components/toast'
 import { UpdateSettings } from '@/components/Update'
 import { Button, CommitInput, Dialog, IconButton, Segmented, Select, Switch } from '@/components/ui'
 import { FitChip } from '@/components/Fit'
+import { ThemeSetting } from '@/components/ThemeSwitch'
 import { cn, previewName } from '@/lib/format'
 import { type Machine, budgetHint, formatGb } from '@/lib/memory'
 import { useMachine } from '@/state/machine'
@@ -44,6 +45,12 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
       </header>
       <div className="flex-1 overflow-y-auto px-5 py-4">
         <div className="mx-auto flex max-w-[720px] flex-col gap-6">
+          <Group title="Appearance">
+            <Row label="Theme" hint="System follows your computer's setting as it changes. Also at the foot of the sidebar.">
+              <ThemeSetting />
+            </Row>
+          </Group>
+
           <Group title="Folders">
             <FolderRow label="Output folder" hint="One folder per track and recipe." value={settings.output_dir} onPick={() => pickFolder('output_dir')} />
             <FolderRow label="Models folder" hint="Downloaded weights. Uninstalling the app leaves it alone." value={settings.models_dir} onPick={() => pickFolder('models_dir')} />

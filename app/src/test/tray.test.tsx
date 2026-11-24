@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -24,6 +25,10 @@ import {
   trayMenuTemplate,
   trayPresentation,
   windowChrome,
+  titleBarOverlay,
+  WINDOW_COLORS,
+  THEME_PREFS,
+  isThemePref,
 } from '../../electron/traylogic'
 import type { Job, Link, Model, Recipe, StemFile, SystemInfo } from '@/api/client'
 import { ToastProvider } from '@/components/toast'
@@ -339,17 +344,35 @@ describe('the quick-drop window position on a Mac', () => {
 
 describe('what differs between Windows and a Mac', () => {
   it('keeps the frame of the full window on Windows, and puts the three buttons in the title bar on a Mac', () => {
-    expect(windowChrome('win32', '#0c0d0f')).toEqual({
+    expect(windowChrome('win32', 'dark')).toEqual({
       titleBarStyle: 'hidden',
       titleBarOverlay: { color: '#0c0d0f', symbolColor: '#8b8f98', height: 40 },
     })
-    const chrome = windowChrome('darwin', '#0c0d0f')
+    const chrome = windowChrome('darwin', 'dark')
     expect(chrome).toEqual({ titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 12 } })
     expect(chrome).not.toHaveProperty('titleBarOverlay')
     // A button's frame is 16 points high: centered in the title bar.
     expect(TRAFFIC_LIGHTS.y + 16 / 2).toBe(TITLE_BAR_HEIGHT / 2)
     // Three frames of 14, 6 apart, end before the room the page leaves for them.
     expect(TRAFFIC_LIGHTS.x + 3 * 14 + 2 * 6).toBeLessThan(TRAFFIC_LIGHTS_INSET)
+  })
+
+  it('paints the Windows title bar buttons for the theme, and leaves a Mac its own', () => {
+    expect(windowChrome('win32', 'light').titleBarOverlay).toEqual({ color: '#f7f8f9', symbolColor: '#5b616b', height: 40 })
+    expect(titleBarOverlay('dark')).toEqual({ color: WINDOW_COLORS.dark.background, symbolColor: WINDOW_COLORS.dark.symbol, height: 40 })
+    expect(windowChrome('darwin', 'light')).toEqual(windowChrome('darwin', 'dark'))
+  })
+
+  it('matches the window background and title bar buttons to the page, in both themes', () => {
+    const css = readFileSync('src/styles.css', 'utf8') // vitest runs from app/
+    const block = (selector: string) => css.slice(css.indexOf(selector), css.indexOf('}', css.indexOf(selector)))
+    const token = (text: string, name: string) => new RegExp(`--color-${name}:\\s*(#[0-9a-f]{6});`).exec(text)?.[1]
+    const dark = block('@theme {')
+    const light = block(":root[data-theme='light'] {")
+    expect(token(dark, 'bg')).toBe(WINDOW_COLORS.dark.background)
+    expect(token(dark, 'muted')).toBe(WINDOW_COLORS.dark.symbol)
+    expect(token(light, 'bg')).toBe(WINDOW_COLORS.light.background)
+    expect(token(light, 'muted')).toBe(WINDOW_COLORS.light.symbol)
   })
 
   it('makes the quick-drop window a tool window on Windows and a panel on a Mac', () => {
@@ -534,8 +557,18 @@ describe('the shell preferences', () => {
       trayNoticeShown: true,
       checkForUpdates: true,
       notifyReady: false,
+      theme: 'dark',
     })
     expect(parsePrefs('{"closeToTray": "no", "extra": 1}')).toEqual(DEFAULT_PREFS)
+  })
+
+  it('stay dark until the user picks a theme, and keep only a theme they could pick', () => {
+    expect(DEFAULT_PREFS.theme).toBe('dark')
+    expect(parsePrefs('{"theme": "light"}').theme).toBe('light')
+    expect(parsePrefs('{"theme": "system"}').theme).toBe('system')
+    expect(parsePrefs('{"theme": "sepia"}').theme).toBe('dark')
+    expect(parsePrefs('{"theme": true}').theme).toBe('dark')
+    expect(THEME_PREFS.every(isThemePref)).toBe(true)
   })
 })
 
@@ -1050,6 +1083,7 @@ describe('the tray settings', () => {
       closeToTray: true,
       checkForUpdates: true,
       notifyReady: true,
+      theme: 'dark',
       startAtLogin: false,
       canStartAtLogin: false,
     })

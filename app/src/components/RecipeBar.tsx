@@ -11,6 +11,7 @@ import { MODEL_PREFIX, useSelection } from '@/state/selection'
 import { FitChip } from './Fit'
 import { FormatSelect } from './FormatSelect'
 import { Button, Segmented, Select, type SelectOption, Switch, Tooltip } from './ui'
+import { useTheme } from '@/lib/theme'
 
 export const QUALITY = [
   { value: 'fast' as const, label: 'Fast', hint: 'One pass. About 15x real time for a full song.' },
@@ -120,6 +121,7 @@ export function useRecipeOptions(recipes: Recipe[], models: Model[]): SelectOpti
 }
 
 export function RecipeBar({ recipes, models, onAddFiles, onPasteLink, quietAdd }: RecipeBarProps) {
+  const theme = useTheme()
   const { selection, update } = useSelection()
   const { recipe, stems, missing } = useCurrentRecipe(recipes, models)
   const input = useRef<HTMLInputElement>(null)
@@ -159,7 +161,7 @@ export function RecipeBar({ recipes, models, onAddFiles, onPasteLink, quietAdd }
       <div className="hidden min-w-0 flex-1 items-center gap-1 overflow-hidden @[900px]:flex" aria-label="Stems this will write">
         {shownChips.slice(0, 8).map((chip) => (
           <span key={chip.name} className="chip">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: stemColor(chip.name) }} />
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: stemColor(chip.name, theme) }} />
             {chip.name}
             {chip.parts > 1 && <span className="tabular text-faint">{chip.parts}</span>}
           </span>

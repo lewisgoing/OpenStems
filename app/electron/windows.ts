@@ -1,10 +1,34 @@
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { type BrowserWindow, type WebPreferences, app, shell } from 'electron'
+import { type BrowserWindow, type WebPreferences, app, nativeTheme, shell } from 'electron'
+import { type Theme, WINDOW_COLORS, titleBarOverlay } from './traylogic'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
-export const BACKGROUND = '#0c0d0f'
+/**
+ * The theme the windows show now. `nativeTheme.themeSource` holds the user's pick, so this is
+ * the pick, or the system's theme when the pick is `system`.
+ */
+export function currentTheme(): Theme {
+  return nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
+}
+
+/** What a window paints before its page does, so opening it never flashes the other theme. */
+export function background(): string {
+  return WINDOW_COLORS[currentTheme()].background
+}
+
+/**
+ * Repaint what Electron draws itself after the theme changed. The page follows on its own
+ * (`prefers-color-scheme` answers `nativeTheme`). `overlay`: the window has the title bar
+ * buttons Windows draws over the page, which only the full window has, and only on Windows.
+ */
+export function recolor(window: BrowserWindow | null | undefined, overlay: boolean): void {
+  if (!window || window.isDestroyed()) return
+  const theme = currentTheme()
+  window.setBackgroundColor(WINDOW_COLORS[theme].background)
+  if (overlay && process.platform !== 'darwin') window.setTitleBarOverlay(titleBarOverlay(theme))
+}
 
 export function iconPath(name: string): string {
   return app.isPackaged ? join(process.resourcesPath, 'icons', name) : join(app.getAppPath(), 'resources', name)

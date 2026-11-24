@@ -56,13 +56,45 @@ const STEM_COLORS: Record<string, string> = {
 }
 const FALLBACK = ['#c8f04a', '#5eead4', '#f472b6', '#a78bfa', '#fbbf24', '#60a5fa', '#fb923c']
 
+/**
+ * The same colors for a light page. The bright ones above nearly vanish on white (a pale
+ * yellow hi-hat, the lime), so each gets a deeper shade of its own hue, at least 3:1 against
+ * the light background: a waveform or a dot is a shape, not text. No two share a shade, so
+ * stems that differ on a dark page still differ on a light one.
+ */
+const ON_LIGHT: Record<string, string> = {
+  '#f472b6': '#db2777',
+  '#f9a8d4': '#e0559e',
+  '#d4a94a': '#92400e',
+  '#94a3b8': '#64748b',
+  '#fbbf24': '#cf7006',
+  '#fb923c': '#ea580c',
+  '#f59e0b': '#b45309',
+  '#fde68a': '#ad8200',
+  '#fcd34d': '#8a8500',
+  '#fef08a': '#a66f00',
+  '#60a5fa': '#2563eb',
+  '#a78bfa': '#7c3aed',
+  '#34d399': '#059669',
+  '#5eead4': '#0d9488',
+  '#c8f04a': '#5f9a0a',
+}
+
+/** Every color a stem or the stem bars of the mark can take, for the tests. */
+export const STEM_PALETTE: readonly string[] = Object.keys(ON_LIGHT)
+
+/** One of the palette's colors, as it shows on the given theme. */
+export function paletteColor(color: string, theme: 'light' | 'dark' = 'dark'): string {
+  return theme === 'light' ? (ON_LIGHT[color] ?? color) : color
+}
+
 /** A stable color per stem name: known stems get their usual mixer color. */
-export function stemColor(name: string): string {
+export function stemColor(name: string, theme: 'light' | 'dark' = 'dark'): string {
   const known = STEM_COLORS[name.toLowerCase()]
-  if (known) return known
+  if (known) return paletteColor(known, theme)
   let hash = 0
   for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
-  return FALLBACK[hash % FALLBACK.length] ?? '#c8f04a'
+  return paletteColor(FALLBACK[hash % FALLBACK.length] ?? '#c8f04a', theme)
 }
 
 /** Fill a naming template the way the engine does, for the settings preview. */
