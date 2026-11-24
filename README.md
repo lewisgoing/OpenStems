@@ -210,10 +210,10 @@ while jobs are running. Settings > Updates can check on request and can turn the
 check off. After an update the app brings its Python environment up to date by itself, in a
 few seconds.
 
-On a Mac the app updates itself the same way once it is a build signed with the project's
-own certificate. The builds up to 0.3.1 are not: there the button opens the release page and
-you install the new version yourself, once. A self-signed app updating itself has been seen
-on a CI Mac, not yet on a Mac with a person at it.
+On a Mac the app updates itself the same way from 0.3.2 on, the first version signed with the
+project's own certificate: on an M1 Max, 0.3.2 installed 0.3.3 by itself. The builds up to
+0.3.1 cannot: there the button opens the release page and you install the new version
+yourself, once.
 
 How a release is published: [`docs/adr/0010-self-update.md`](docs/adr/0010-self-update.md).
 
