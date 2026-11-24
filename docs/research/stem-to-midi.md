@@ -408,9 +408,13 @@ Gain and cost are judgments, to be confirmed in stage M0.
   Datasets are downloaded by hand to `D:` and never committed.
 - **Sets,** fetched by `scripts/midi_bench_data.py` into `D:\lew-stems\bench`. All are CC BY 4.0
   (Zenodo, checked 2026-11-23), and downloads are verified against Zenodo's md5.
-  - **25 Slakh2100 test songs:** stems, mix and MIDI. The archive is one 104 GB `.tar.gz` with
-    its splits interleaved, so it is streamed and stopped once 25 test songs are in. That costs
-    about 15 to 20 GB of download. Slakh has no vocals.
+  - **Slakh2100's test split:** stems, mix and MIDI. The archive is one 104 GB `.tar.gz` with
+    its files in no order, so no song is complete before nearly the end: it is downloaded
+    whole (resuming after drops), checked, the 151 test songs extracted (8 GB) and the archive
+    deleted. 150 are used: one stem of Track01954 was damaged on this PC by a power loss while
+    it was being written. Slakh has no vocals. Its bass renders sound an octave below the
+    written MIDI, so the scorer moves the bass reference down 12 semitones (measured: 140 of
+    142 songs; Track01931 and Track01937 sit 14 down and are left in).
   - **vocadito,** for vocals in M3: 40 solo vocal excerpts with f0 and note annotations, 58 MB.
     Mixed over Slakh backing, it also gives separated vocals to test.
   - **Later:** an E-GMD subset (one 96 GB zip; the server takes range requests, so single files
@@ -459,6 +463,65 @@ Gain and cost are judgments, to be confirmed in stage M0.
     for the wrong reason.
 - **Machine:** separation runs go in batches, and the harness caps its CPU workers. Each run of
   `openstems selftest` with models is still asked for first.
+
+### Results so far (CPU only, 2026-11-23 and 24)
+
+GPU runs wait on the machine (the notes in `CLAUDE.md`), so these are the clean-audio
+condition only. Scores are mir_eval's defaults; "+offset" also needs the note's end.
+
+**Vocals,** all 40 vocadito excerpts:
+
+| Method | Onset F1 | +Offset F1 |
+| --- | --- | --- |
+| Today's YIN (`track_notes`) | 0.392 | 0.240 |
+| pYIN, the engine's segmentation | 0.491 | 0.314 |
+| SwiftF0, the engine's segmentation | 0.499 | 0.328 |
+| **SwiftF0 with its own segmenter (`segment_notes`, MIT)** | **0.778** | **0.646** |
+| vocadito's second annotator against the first (the human ceiling) | 0.740 | 0.642 |
+
+**Guitar,** 30 GuitarSet solos (monophonic trackers on mostly single-note lines):
+
+| Method | Onset F1 | +Offset F1 | Octave errors |
+| --- | --- | --- | --- |
+| Today's YIN | 0.350 | 0.192 | 119 |
+| pYIN | 0.555 | 0.359 | 86 |
+| SwiftF0, the engine's segmentation | 0.645 | 0.420 | 11 |
+| SwiftF0 with its own segmenter | 0.649 | 0.427 | 5 |
+
+What this shows:
+
+- **Segmentation matters more than the tracker on vocals.** A better tracker alone moves onset
+  F1 from 0.39 to 0.50; SwiftF0's segmenter takes it to 0.78, level with a second human. M3
+  starts from that segmenter, not from a new HMM. The HMM from the Tony paper stays the
+  fallback if per-note curves need a different split.
+- **SwiftF0 nearly removes octave errors on guitar** (119 to 5).
+- Melodyne's and NeuralNote's numbers on the same files come from the baseline pack.
+
+**Bass,** Slakh's own bass stems (oracle), 142 songs, 68,350 notes:
+
+| Method | Onset F1 | +Offset F1 | Octave errors |
+| --- | --- | --- | --- |
+| Today's YIN | 0.648 | 0.382 | 1,322 |
+| SwiftF0, the engine's segmentation | 0.804 | 0.658 | 8 |
+| SwiftF0 with its own segmenter | 0.825 | 0.710 | 8 |
+
+No Slakh bass note is below SwiftF0's 46.9 Hz floor (all are G1 or higher after the octave
+shift), so this set does not test it: a real bass's low E (41 Hz) still needs the pYIN or
+torchcrepe fallback that M3 plans.
+
+**Drums,** Slakh's own kit stems (oracle), 150 songs, timing only (hits within 50 ms; hits
+closer than 30 ms counted once):
+
+| Method | Precision | Recall | Onset F1 | Kick | Snare | Toms | Hi-hat | Ride | Crash |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| librosa spectral flux | 0.996 | 0.731 | 0.827 | 0.974 | 0.978 | 0.890 | 0.786 | 0.757 | 0.932 |
+| SuperFlux | 0.998 | 0.716 | 0.817 | 0.966 | 0.973 | 0.871 | 0.773 | 0.730 | 0.918 |
+
+The part columns are recall per part. Almost every hit found is real, but about a quarter are
+missed, mostly hi-hats and ride: fast, quiet hits inside louder ones. That fits the published
+picture M2a was planned on: kick and snare are easy, cymbals are not. Detecting per part on
+DrumSep's split stems, as M2a plans, is the next measurement and needs the GPU for the split.
+SuperFlux's vibrato suppression buys nothing on drums.
 
 ## 8. MIDI export and DAWs
 
@@ -563,6 +626,13 @@ Effort: S is days, M one to two weeks, L several weeks.
   - MPE invariants: bend before Note On, RPN 0 on every member channel, voice limit;
   - the sidecar schema.
 - **Mac:** pure Python, no platform branch.
+- **Status (2026-11-24):** built and tested (`engine/tests/test_notes_midi.py`): the note
+  object, tuning estimation and rounding, velocity from level, the version 1 notes file, and
+  the format 1 writer in all three pitch modes. mido reads its output in each mode. Still to
+  do:
+  - writing `<stem>.notes.json` beside each stem in the pipeline (the manifest, the API and
+    renaming by tempo and key carry it);
+  - the drift and modulation split and the polyphony rule, which wait for M3's curves.
 
 ### M2: drums from the drum parts (S to M for M2a; M for M2b; highest gain per effort)
 
