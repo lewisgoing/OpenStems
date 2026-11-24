@@ -247,10 +247,7 @@ const day = (iso) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric',
 
 function showVersion(v, fromApi = false) {
   fill('version', v)
-  const top = document.getElementById('top-version')
-  if (fromApi) top.dataset.fromApi = '1'
-  top.setAttribute('aria-label', `version ${v}`)
-  setSeg(top, v)
+  if (fromApi) document.getElementById('top-version').dataset.fromApi = '1'
 }
 
 async function loadRelease() {
@@ -260,7 +257,7 @@ async function loadRelease() {
     const rel = await res.json()
     const version = String(rel.tag_name).replace(/^v/, '')
     showVersion(version, true)
-    fill('released', `Version ${version}, ${day(rel.published_at)}.`)
+    fill('released', `${version}, ${day(rel.published_at)}`)
     const win = rel.assets.find((a) => /^OpenStems-Setup-.*\.exe$/.test(a.name))
     const mac = rel.assets.find((a) => /-arm64\.dmg$/.test(a.name))
     if (win) {
@@ -353,7 +350,7 @@ async function loadChangelog() {
           : `<details><summary class="press">${count} ${count === 1 ? 'change' : 'changes'} <span class="mono">show</span></summary>${renderItems(r.items)}</details>`
         return `<article class="release reveal" style="--i:${Math.min(i, 4)}">
           <div class="release-id">
-            <p class="v"><span class="seg" data-seg="${esc(r.version)}" aria-label="version ${esc(r.version)}"></span></p>
+            <p class="v">${esc(r.version)}</p>
             <time class="mono" datetime="${esc(r.date)}">${esc(r.date)}</time>
             ${i === 0 ? '<span class="latest mono">latest</span>' : ''}
           </div>
@@ -361,7 +358,6 @@ async function loadChangelog() {
         </article>`
       })
       .join('')
-    log.querySelectorAll('[data-seg]').forEach((el) => setSeg(el, el.dataset.seg))
     setupReveal()
   } catch {
     // The fallback paragraph links to the file on GitHub.

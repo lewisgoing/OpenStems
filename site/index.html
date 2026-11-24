@@ -40,7 +40,7 @@
   <div class="status" aria-live="polite">
     <span class="led" aria-hidden="true"></span>
     <span class="mono">ver</span>
-    <span class="seg" data-seg="0.4.0" id="top-version" aria-label="version 0.4.0"></span>
+    <span class="ver" id="top-version" data-fill="version">0.4.0</span>
   </div>
 </header>
 
@@ -115,40 +115,40 @@
 <!-- Features: a spec sheet -->
 <section class="features" id="features" aria-labelledby="features-title">
   <div class="section-head">
-    <p class="eyebrow"><b>02</b> what it does</p>
-    <h2 id="features-title">Built for the DAW, not the browser.</h2>
+    <p class="eyebrow"><b>02</b></p>
+    <h2 id="features-title">What it does</h2>
   </div>
 
   <div class="sheet">
     <article class="cell reveal" style="--i:0;--c:var(--vocals)">
       <p class="cell-code mono">f.01</p>
-      <h3>Hear them before you take them</h3>
-      <p>A waveform per stem, solo and mute, and playback that starts every stem together. Tempo and key are detected for each song.</p>
+      <h3>Preview before you export</h3>
+      <p>Each stem gets a waveform with solo and mute, and they all play in sync. Tempo and key are detected per song.</p>
     </article>
     <article class="cell reveal" style="--i:1;--c:var(--drums)">
       <p class="cell-code mono">f.02</p>
-      <h3>A drum track, split into its kit</h3>
-      <p>The Drum kit recipe takes the drums out, then splits them into kick, snare, toms, hi-hat, ride and crash.</p>
+      <h3>Split drums into the kit</h3>
+      <p>The drum-kit recipe pulls out the drums, then splits them into kick, snare, toms, hi-hat, ride and crash.</p>
     </article>
     <article class="cell reveal" style="--i:2;--c:var(--bass)">
       <p class="cell-code mono">f.03</p>
-      <h3>Any mix, as one file</h3>
-      <p>Mute or solo stems and what you hear leaves as one file, such as the song without its vocals.</p>
+      <h3>Export a mix</h3>
+      <p>Mute or solo stems and drag out what you hear as a single file, e.g. the song without vocals.</p>
     </article>
     <article class="cell reveal" style="--i:3;--c:var(--lime)">
       <p class="cell-code mono">f.04</p>
-      <h3>Trim to the bar</h3>
-      <p>Choose a part on a grid that snaps to bars and beats, fix the grid where detection got it wrong, and drag the clip out.</p>
+      <h3>Cut parts on a grid</h3>
+      <p>Select a section that snaps to bars and beats, correct the grid if detection is off, and drag the clip out.</p>
     </article>
     <article class="cell reveal" style="--i:4;--c:var(--guitar)">
       <p class="cell-code mono">f.05</p>
-      <h3>Tempo that FL Studio reads</h3>
-      <p>With tempo sync on, WAV stems carry the detected tempo. FL Studio stretches a short clip by itself; a whole stem takes its clip menu's Fit to tempo.</p>
+      <h3>Tempo sync for FL Studio</h3>
+      <p>WAV stems can carry the detected tempo. FL Studio stretches short clips automatically; for a full stem, use Fit to tempo in the clip menu.</p>
     </article>
     <article class="cell reveal" style="--i:5;--c:var(--piano)">
       <p class="cell-code mono">f.06</p>
-      <h3>Paste a link</h3>
-      <p>A web address is fetched, queued and separated like a file. The quick-drop window in the tray or menu bar takes them too.</p>
+      <h3>Separate from a link</h3>
+      <p>Paste a URL and it is downloaded and queued like a file. The tray (menu bar on a Mac) window accepts links and files too.</p>
     </article>
   </div>
 
@@ -181,15 +181,15 @@
     <div><dt class="mono">drum-kit</dt><dd>kick, snare, toms, hh, ride, crash, drums</dd></div>
     <div><dt class="mono">vocals-instrumental</dt><dd>vocals, instrumental</dd></div>
     <div><dt class="mono">acapella-clean</dt><dd>dry vocals, lead, backing</dd></div>
-    <div><dt class="mono">melody · drumless · cleanup</dt><dd>and more, with your own recipes as TOML files</dd></div>
+    <div><dt class="mono">melody · drumless · cleanup</dt><dd>plus custom recipes as TOML files</dd></div>
   </dl>
 </section>
 
 <!-- Download -->
 <section class="download" id="download" aria-labelledby="download-title">
   <div class="section-head">
-    <p class="eyebrow"><b>03</b> download</p>
-    <h2 id="download-title">Free. <span class="muted" data-fill="released">Version 0.4.0.</span></h2>
+    <p class="eyebrow"><b>03</b></p>
+    <h2 id="download-title">Download <span class="muted" data-fill="released">0.4.0</span></h2>
   </div>
 
   <div class="platforms">
@@ -223,7 +223,7 @@
       </a>
       <ul class="reqs">
         <li><b>Apple Silicon</b> M1 or later, macOS 14 or later. Intel Macs are not supported.</li>
-        <li><b>A preview</b> run on one Mac so far, an M1 Max. Reports from other Macs are welcome.</li>
+        <li><b>Status</b> preview, tested on one M1 Max so far. Reports from other Macs are welcome.</li>
         <li><b>First launch</b> sets up Python and PyTorch, about 350 MB, then the recommended models.</li>
       </ul>
       <details class="steps-mac">
@@ -248,15 +248,15 @@
     <span aria-hidden="true">·</span>
     <a href="https://github.com/lewisgoing/OpenStems#development">build from source</a>
     <span aria-hidden="true">·</span>
-    <span>installed apps update themselves</span>
+    <span>the app updates itself</span>
   </p>
 </section>
 
 <!-- Changelog -->
 <section class="changelog" id="changelog" aria-labelledby="changelog-title">
   <div class="section-head">
-    <p class="eyebrow"><b>04</b> changelog</p>
-    <h2 id="changelog-title">What changed.</h2>
+    <p class="eyebrow"><b>04</b></p>
+    <h2 id="changelog-title">Changelog</h2>
   </div>
   <div class="log" id="log">
     <p class="log-fallback">The changelog is in <a href="https://github.com/lewisgoing/OpenStems/blob/main/CHANGELOG.md">CHANGELOG.md</a>.</p>
@@ -269,16 +269,16 @@
 <!-- Support -->
 <section class="support" id="support" aria-labelledby="support-title">
   <div class="support-inner reveal">
-    <p class="eyebrow"><b>05</b> support</p>
-    <h2 id="support-title">Free, and staying free.</h2>
-    <p>OpenStems has no subscription, no account and no ads, and its source is open. If it saves you an afternoon, you can support the developer.</p>
+    <p class="eyebrow"><b>05</b></p>
+    <h2 id="support-title">Support</h2>
+    <p>OpenStems is free and open source under the MIT license. Tips help fund its development.</p>
     <div class="cta">
       <!-- The Ko-fi page: put its address in href and the button appears (main.js). -->
       <a class="btn btn-solid press" id="support-link" href="" rel="noopener" hidden>support the developer on ko-fi</a>
       <a class="btn press" href="https://github.com/lewisgoing/OpenStems">star on github</a>
       <a class="btn press" href="https://github.com/lewisgoing/OpenStems/issues/new">report a bug</a>
     </div>
-    <p class="mono soon" id="support-soon">a ko-fi page for tips is on its way</p>
+    <p class="mono soon" id="support-soon">ko-fi page coming soon</p>
   </div>
 </section>
 
@@ -291,7 +291,7 @@
   </div>
   <p class="mono foot-meta">
     <span>mit license</span>
-    <span>no cookies, no analytics: this page asks github for the newest release and nothing else</span>
+    <span>no cookies or analytics</span>
   </p>
 </footer>
 
