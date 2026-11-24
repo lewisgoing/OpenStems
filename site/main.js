@@ -194,7 +194,7 @@ const N = 'no'
 const CARD_NOTE = 'Measured on an RTX 5070 Ti. The figures for other sizes follow from those measurements.'
 const MACHINES = {
   nvidia: {
-    hint: 'NVIDIA GTX 16 series, RTX 20 series and later',
+    hint: 'GTX 16 series, RTX 20 series and later',
     pick: '8',
     sizes: { '4': [F, T, F, N], '6': [F, F, F, N], '8': [F, F, F, N], '10–11': [F, F, F, T], '12+': [F, F, F, F] },
     note: () => CARD_NOTE,
@@ -215,7 +215,7 @@ const MACHINES = {
       'Estimates: nothing has been measured on a Mac yet, so it may do better than this. Tested on an M1 Max with 32 GB so far.',
   },
   pascal: {
-    hint: 'NVIDIA GTX 900 and 10 series',
+    hint: 'GTX 900 and 10 series',
     pick: '8',
     sizes: { '4': [T, N, F, N], '6': [F, N, F, N], '8': [F, T, F, N], '11': [F, F, F, N] },
     verdict: (size) => (size === '4' ? 'Only just, if at all.' : undefined),
