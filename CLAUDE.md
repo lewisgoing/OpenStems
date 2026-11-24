@@ -331,7 +331,10 @@ Component classes live in `@layer components` so Tailwind utilities can override
   while the stem-to-MIDI benchmark ran CREPE on the GPU (batch 512) with pYIN on 4 CPU
   threads and a network download: far lighter than the self-test. Ask before running any GPU
   model work here, the benchmark's `crepe` method and `separate` subcommand included, until
-  the cause (power supply, GPU, drivers) is found.
+  the cause is found. Lead suspect (2026-11-23): the memory overclock. Two of the four
+  crashes that day were bugcheck 0x124 with a WHEA "fatal hardware error, Component: Memory,
+  Machine Check Exception" at different addresses, and the DDR5 (V-Color, rated 4800) runs at
+  6400 MT/s through EXPO. Kernel-Power 41 events go back to 2026-11-06.
 
 - Test songs (CC-BY, Kevin MacLeod) are in `D:\lew-stems\test-audio`; they are never committed.
 - Target: Windows, NVIDIA RTX 5070 Ti (16 GB). C: is nearly full; keep models and outputs on D:
