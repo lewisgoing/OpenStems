@@ -7,8 +7,8 @@
   folder, like a stem. A song fetched from a link drags out in the format the site sent
   (often `.webm` or `.m4a`), before or after it is separated, so OpenStems also works as a
   song downloader. Letting go over OpenStems itself does not queue the song again. A title
-  whose file was moved or deleted stays plain text. On Windows and on a Mac alike (not seen
-  on a Mac yet).
+  whose file was moved or deleted stays plain text. On Windows and on a Mac alike; seen
+  working on the owner's M1 Max with 0.3.6.
 
 ## 0.3.5 (2026-11-23)
 

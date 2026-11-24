@@ -266,6 +266,9 @@ Setup failed once before that, at its first step, with "EACCES: permission denie
 root, a fault on the machine that stops any new app. `sudo chown` on the folder fixed it. Setup
 now explains that case and gives the command (`platform.explainSetupError`).
 
+Later, with 0.3.6: dragging a song's title out (its original file, the feature added in
+that version) worked on the same Mac. Reported without detail of which views or formats.
+
 Not recorded from that run: how long a separation takes, whether the STFT check passed
 natively or the CPU patch went in, the doctor's output, and the self-test with a model.
 
