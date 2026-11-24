@@ -12,6 +12,10 @@ Methods:
 - ``yin``: today's engine transcriber (``openstems.audio.analysis.track_notes``), the
   baseline to beat. Monophonic, so polyphonic guitar is expected to score low.
 - ``annotator2``: vocadito's second annotator scored against the first, the human ceiling.
+- ``pyin``, ``swiftf0``, ``swiftf0-notes``, ``crepe``: pitch trackers (see below).
+- ``onsets``, ``superflux``: drum hits with no weights, librosa's spectral flux and its
+  SuperFlux variant. Drum stems are scored on timing alone (onset within 50 ms, hits closer
+  than 30 ms counted once), with recall per drum part read from the General MIDI notes.
 - ``melodyne``, ``neuralnote``: MIDI the owner exported for the pack, read from
   ``<bench>/baseline-pack/midi/<item>.<tool>.mid``. Each file is read with its own tempo map
   and shifted by one global offset found by matching onsets (Melodyne starts its export at the
@@ -143,7 +147,12 @@ RECIPE_FOR = {
     **{kind: "full-song" for kind in ("drums", "bass", "guitar", "piano", "other")},
     **{part: "drum-kit" for part in DRUM_PARTS},
 }
+# Slakh renders its bass patches an octave below the written MIDI (the usual bass
+# convention). Measured on the 142 test songs with bass: 140 sit exactly 12 semitones down
+# and two (Track01931, Track01937) 14 down, a quirk of those renders left in on purpose.
+SOUNDS_AT = {"bass": -12}
 SLAKH_CONDITIONS = ["separated", "oracle"]
+SLAKH_KINDS: set[str] = set()  # empty: every class
 
 
 def slakh_songs(bench: Path) -> list[Path]:
@@ -168,8 +177,9 @@ def slakh_reference(song: Path, meta: dict) -> dict[str, list[Note]]:
     for sid, stem in sorted(meta["stems"].items()):
         if not stem.get("audio_rendered"):
             continue
-        notes = read_midi(song / "MIDI" / f"{sid}.mid")
         kind = _slakh_class(stem)
+        shift = SOUNDS_AT.get(kind, 0)
+        notes = [(a, b, p + shift, v) for a, b, p, v in read_midi(song / "MIDI" / f"{sid}.mid")]
         refs.setdefault(kind, []).extend(notes)
         if kind == "drums":
             for part, keys in DRUM_PARTS.items():
@@ -227,6 +237,8 @@ def load_slakh(bench: Path, ids: list[str] | None) -> list[Item]:
             continue
         meta = _slakh_meta(song)
         for kind, notes in slakh_reference(song, meta).items():
+            if SLAKH_KINDS and kind not in SLAKH_KINDS:
+                continue
             for condition in SLAKH_CONDITIONS:
                 if condition == "separated":
                     audio = _separated_audio(bench, song, kind)
@@ -357,6 +369,37 @@ def method_crepe(item: Item, bench: Path) -> list[Note] | None:
     return notes_from_f0(np.arange(hz.size) * hop / 16000, hz, voiced)
 
 
+# Drum hits with no weights (stage M2a's starting point): spectral-flux onsets from librosa
+# (ISC). Each hit is written as one note; the kit stem is scored on timing alone.
+
+
+def _hits(item: Item, superflux: bool) -> list[Note]:
+    import librosa
+
+    rate = 22050
+    mono = _mono(item, rate)
+    if superflux:  # Boeck and Widmer 2013: a maximum filter across bands suppresses vibrato
+        hop = 220
+        strength = librosa.onset.onset_strength(
+            y=mono, sr=rate, hop_length=hop, lag=2, max_size=3, n_mels=138, fmin=27.5
+        )
+    else:
+        hop = 256
+        strength = librosa.onset.onset_strength(y=mono, sr=rate, hop_length=hop)
+    times = librosa.onset.onset_detect(
+        onset_envelope=strength, sr=rate, hop_length=hop, units="time"
+    )
+    return [(float(t), float(t) + 0.05, 36.0, 100) for t in times]
+
+
+def method_onsets(item: Item, bench: Path) -> list[Note] | None:
+    return _hits(item, superflux=False)
+
+
+def method_superflux(item: Item, bench: Path) -> list[Note] | None:
+    return _hits(item, superflux=True)
+
+
 def read_midi(path: Path) -> list[Note]:
     """Notes in seconds, read through the file's own tempo map. Pitch bends are ignored."""
     import mido
@@ -414,6 +457,8 @@ METHODS: dict[str, Callable[[Item, Path], list[Note] | None]] = {
     "swiftf0": method_swiftf0,
     "swiftf0-notes": method_swiftf0_notes,
     "crepe": method_crepe,
+    "onsets": method_onsets,
+    "superflux": method_superflux,
     "melodyne": external("melodyne"),
     "neuralnote": external("neuralnote"),
 }
@@ -462,7 +507,42 @@ def score(reference: list[Note], estimate: list[Note]) -> dict[str, float]:
     return row
 
 
+def _onset_times(notes: list[Note], merge: float = 0.03) -> np.ndarray:
+    """Note starts, with hits closer than ``merge`` taken as one (a kick and a hi-hat played
+    together are one onset to a detector that does not name the drum)."""
+    times = np.sort(np.array([n[0] for n in notes]))
+    if times.size == 0:
+        return times
+    keep = np.concatenate([[True], np.diff(times) > merge])
+    return times[keep]
+
+
+def score_hits(reference: list[Note], estimate: list[Note]) -> dict[str, float]:
+    """Timing only, for drum stems: mir_eval's onset F-measure within 50 ms, plus recall per
+    drum part, read from the reference's General MIDI notes."""
+    import mir_eval
+
+    ref = _onset_times(reference)
+    est = _onset_times(estimate)
+    row: dict[str, float] = {"ref_notes": int(ref.size), "est_notes": int(est.size)}
+    nan = float("nan")
+    if ref.size == 0 or est.size == 0:
+        row.update(onset_p=0.0, onset_r=0.0, onset_f=0.0, offset_f=nan, octave_errors=0)
+        return row
+    f, p, r = mir_eval.onset.f_measure(ref, est, window=0.05)
+    row.update(onset_p=p, onset_r=r, onset_f=f, offset_f=nan, octave_errors=0)
+    for part, keys in DRUM_PARTS.items():
+        hits = np.array([n[0] for n in reference if int(n[2]) in keys])
+        if hits.size:
+            index = np.searchsorted(est, hits)
+            after = np.abs(est[np.clip(index, 0, est.size - 1)] - hits)
+            before = np.abs(est[np.clip(index - 1, 0, est.size - 1)] - hits)
+            row[f"recall_{part}"] = float(np.mean(np.minimum(after, before) <= 0.05))
+    return row
+
+
 PITCH_TRACKERS = {"yin", "pyin", "swiftf0", "swiftf0-notes", "crepe"}  # not for drum stems
+HIT_DETECTORS = {"onsets", "superflux"}  # drum stems only
 
 
 def cmd_score(args: argparse.Namespace) -> None:
@@ -470,6 +550,7 @@ def cmd_score(args: argparse.Namespace) -> None:
     sets = [s for s in args.sets.split(",") if s]
     methods = [m for m in args.methods.split(",") if m]
     SLAKH_CONDITIONS[:] = [c for c in args.conditions.split(",") if c]
+    SLAKH_KINDS.update(k for k in args.kinds.split(",") if k)
     rows = []
     for set_name in sets:
         ids = PACK.get(set_name) if args.pack_only else None
@@ -477,7 +558,8 @@ def cmd_score(args: argparse.Namespace) -> None:
         items = items[: args.limit or None]
         for item in items:
             for name in methods:
-                if name in PITCH_TRACKERS and item.kind in DRUM_KINDS:
+                drum = item.kind in DRUM_KINDS
+                if (name in PITCH_TRACKERS and drum) or (name in HIT_DETECTORS and not drum):
                     continue
                 started = time.time()
                 estimate = METHODS[name](item, bench)
@@ -491,7 +573,7 @@ def cmd_score(args: argparse.Namespace) -> None:
                     "condition": condition,
                     "method": name,
                 }
-                row.update(score(item.reference, estimate))
+                row.update((score_hits if drum else score)(item.reference, estimate))
                 row["seconds"] = round(time.time() - started, 2)
                 offset = item.extra.get(f"{name}-offset")
                 row["offset"] = round(offset[0][0], 3) if offset else ""
@@ -500,6 +582,9 @@ def cmd_score(args: argparse.Namespace) -> None:
                     f"{set_name:10} {item.id:28} {name:11} onset F {row['onset_f']:.3f}  "
                     f"+offset F {row['offset_f']:.3f}  notes {row['est_notes']}/{row['ref_notes']}"
                     + (f"  shift {row['offset']} s" if row["offset"] != "" else "")
+                    + "".join(
+                        f"  {k[7:]} {v:.2f}" for k, v in row.items() if k.startswith("recall_")
+                    )
                 )
     if not rows:
         print("nothing scored")
@@ -508,10 +593,24 @@ def cmd_score(args: argparse.Namespace) -> None:
     out.mkdir(exist_ok=True)
     path = out / f"score-{time.strftime('%Y%m%d-%H%M%S')}.csv"
     with path.open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        fields = list(dict.fromkeys(k for r in rows for k in r))
+        writer = csv.DictWriter(fh, fieldnames=fields)
         writer.writeheader()
         writer.writerows(rows)
     print(f"\nrows written to {path}\n")
+    drum_rows = [r for r in rows if r["kind"] in DRUM_KINDS]
+    if drum_rows:
+        print("Drum hits, recall per part (whole-kit stem, timing only):\n")
+        print("| Condition | Method | " + " | ".join(DRUM_PARTS) + " |")
+        print("| --- | --- | " + " | ".join("---" for _ in DRUM_PARTS) + " |")
+        for condition, name in sorted({(r["condition"], r["method"]) for r in drum_rows}):
+            group = [r for r in drum_rows if (r["condition"], r["method"]) == (condition, name)]
+            cells = []
+            for part in DRUM_PARTS:
+                values = [r[f"recall_{part}"] for r in group if f"recall_{part}" in r]
+                cells.append(f"{np.mean(values):.3f}" if values else "")
+            print(f"| {condition} | {name} | " + " | ".join(cells) + " |")
+        print()
     print(
         "| Set | Stem | Condition | Method | Items | Onset P | Onset R | Onset F1 | +Offset F1 "
         "| Octave errors |"
@@ -530,7 +629,7 @@ def cmd_score(args: argparse.Namespace) -> None:
                 continue
 
             def mean(key: str, group: list[dict] = group) -> float:
-                return float(np.mean([r[key] for r in group]))
+                return float(np.nanmean([r[key] for r in group]))
 
             print(
                 f"| {set_name} | {kind} | {condition} | {name} | {len(group)} | "
@@ -626,6 +725,7 @@ def main() -> None:
     s.add_argument("--pack-only", action="store_true", help="only the items in the pack")
     s.add_argument("--match", default="", help="only items whose id contains this")
     s.add_argument("--conditions", default="separated,oracle", help="Slakh: separated, oracle")
+    s.add_argument("--kinds", default="", help="Slakh: only these classes, e.g. bass,drums")
     sub.add_parser("pack", help="copy the pack's audio and write its instructions")
     sep = sub.add_parser("separate", help="run the app's recipes on the Slakh mixes")
     sep.add_argument("--recipes", default="full-song,drum-kit")
