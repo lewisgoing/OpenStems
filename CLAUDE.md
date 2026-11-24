@@ -293,7 +293,9 @@ stays 0. The option enters a run's cache key only when on. FL reads tempo from W
 `domain/tempo.py` holds which formats carry it (`TEMPO_FORMATS`, the same set as
 `TEMPO_FORMATS` in `app/src/components/FormatSelect.tsx`: change both together) and the notes
 a job gets when its stems carry none (an MP3 or FLAC run, or no tempo found; the second goes
-when a tempo is typed in). `docs/adr/0016-tempo-sync.md`.
+when a tempo is typed in). FL stretches a sample by itself only up to about a minute (60 s
+yes, 90 s no, measured on 2026-11-23, not in its manual); a full stem needs the clip menu's
+"Fit to tempo" with the "(embedded)" tempo, which the hint says. `docs/adr/0016-tempo-sync.md`.
 
 Tempo and key by hand: a job's `bpm` and `key` options replace what detection finds for
 that run (`pipeline/extras.py`); they are not in the cache key, and a cached result is

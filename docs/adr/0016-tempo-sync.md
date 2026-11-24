@@ -34,7 +34,9 @@ the user, in a project at 115 BPM (2026-11-23):
 | tempo 150, 16 beats, 24-bit | yes |
 | a whole song, tempo 105, 98.93 beats long | yes |
 
-So FL Studio reads the tempo and ignores the beat count, and the count is left at 0.
+So FL Studio reads the tempo and ignores the beat count, and the count is left at 0. (The
+"whole song" was 98.93 beats at 105 BPM: 56 seconds. That is why it synced; see "Long
+samples" below.)
 
 ## Limits
 
@@ -72,4 +74,27 @@ or a WAV beside each MP3:
 
 FL Studio does not read a tempo from a file name or from MP3 or FLAC tags, as far as its
 manual says, so there is nothing to write into those formats.
+
+## Long samples (2026-11-23)
+
+A stem written as WAV with the chunk still did not stretch: FL showed its tempo ("155 BPM")
+but loaded it with Mode "Resample" and the TIME knob at none. The owner dropped test files
+cut from that stem into a project at 140 BPM, each changing one thing:
+
+- Eight variants of the whole 198 s stem (32-bit float, 24-bit, 16-bit; flags 4 or 0; a
+  beat count of 0 or 512, as Edison writes it) all loaded unstretched. 20 s cuts of it,
+  float and 16-bit, stretched. So the file's contents do not decide it.
+- Lengths at 155 BPM: 25, 30, 35, 45 and 60 s stretched; 90, 120 and 150 s did not. At
+  80 BPM: 45 and 60 s stretched; 90 s (only 30 bars) did not. So the limit is in seconds,
+  somewhere between 60 and 90, not in bars.
+- "Keep on disk", which FL turns on for samples over 30 s when "Auto keep long audio on
+  disk" is set, is not the cause: a 24-bit file cannot be kept on disk and still did not
+  stretch.
+
+FL's manual says nothing of this limit. For a longer sample FL still knows the tempo: the
+clip menu's "Fit to tempo" offers it as "(embedded)", and picking it stretches the stem to the
+project, which the owner found works "almost flawlessly". Picking "(project)" instead tells FL
+the sample is already at the project's tempo, so nothing stretches. The tempo sync hint in
+Settings gives this step. A full-length stem is almost always over 90 seconds, so this is the
+ordinary way stems are used with the setting, not an edge case.
 

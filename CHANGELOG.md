@@ -9,6 +9,11 @@
   a note saying why its stems have no tempo. A song in which no tempo was found says that
   too, and the note goes once you type a tempo in. FL Studio also needs "Read sample tempo
   information" on in its General settings; the hint names it. `docs/adr/0016-tempo-sync.md`.
+- **Full-length stems in FL Studio: use Fit to tempo.** FL Studio stretches a sample to the
+  project's tempo by itself only when it is about a minute long or less (measured: 60 seconds
+  stretch, 90 do not). A whole stem is longer, so FL reads its tempo but leaves it unstretched.
+  Open the clip's menu, choose Fit to tempo and pick the tempo marked "(embedded)": the stem
+  then follows the project. The tempo sync hint in Settings says so.
 
 ## 0.3.3 (2026-11-23)
 

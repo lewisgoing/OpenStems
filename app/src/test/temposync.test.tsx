@@ -26,6 +26,8 @@ describe('tempo sync and the output format', () => {
     const { rerender } = render(<TempoSyncHint settings={settings('mp3')} />)
     expect(screen.getByRole('note')).toHaveTextContent('Your format is MP3, so no tempo is written. Choose WAV to embed it.')
     expect(document.body).toHaveTextContent('Read sample tempo information')
+    // FL stretches only samples up to about a minute by itself; a whole stem needs one step.
+    expect(document.body).toHaveTextContent('choose Fit to tempo and pick the tempo marked "(embedded)"')
     rerender(<TempoSyncHint settings={settings('wav24')} />)
     expect(screen.queryByRole('note')).not.toBeInTheDocument()
     rerender(<TempoSyncHint settings={settings('flac', false)} />)

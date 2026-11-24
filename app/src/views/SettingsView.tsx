@@ -454,14 +454,18 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 
 /**
  * What tempo sync does, and when it cannot: FL Studio reads tempo from WAV files only, so with
- * MP3 or FLAC chosen the hint says plainly that nothing is written.
+ * MP3 or FLAC chosen the hint says plainly that nothing is written. FL also stretches a sample
+ * by itself only up to about a minute (measured, not in its manual: ADR 0016), so the hint
+ * gives the one step a full-length stem needs.
  */
 export function TempoSyncHint({ settings }: { settings: Settings }) {
   const format = FORMATS.find((f) => f.value === settings.output_format)
   return (
     <>
-      Writes the detected tempo into WAV stems and mixes, so FL Studio stretches them to your project's tempo. FL Studio
-      reads tempo only from WAV files, and only with "Read sample tempo information" on in its General settings.
+      Writes the detected tempo into WAV stems and mixes for FL Studio. FL stretches a sample to your project's tempo by
+      itself only up to about a minute long: for a full-length stem, open the clip's menu, choose Fit to tempo and pick
+      the tempo marked "(embedded)". FL reads tempo only from WAV files, and only with "Read sample tempo information" on
+      in its General settings.
       {settings.tempo_sync && !carriesTempo(settings.output_format) && (
         <span className="mt-1 block text-warn" role="note">
           Your format is {format?.short ?? settings.output_format}, so no tempo is written. Choose WAV to embed it.
