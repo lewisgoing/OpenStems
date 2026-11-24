@@ -140,3 +140,16 @@ chunked inference at the same chunk and overlap, 45 s of audio (12 s for the 53-
 The four models not listed (Leap Xe instrumental, HyperACE v2 instrumental, becruily
 instrumental, Gabox denoise) returned near silence on the test excerpt and null at the float
 floor (-221 dB).
+
+## Mac: GitHub's runner only
+
+Measured on a `macos-15` runner (virtual Apple M1, 7 GB, MPS, full precision) by
+`scripts/mac_check.sh` on 2026-11-23, with a 192 s synthetic song. Not a benchmark of a real
+Mac: the GPU is virtual and the memory small. `docs/adr/0014-macos.md` has the details.
+
+| Model or recipe | Preset | Run (s) | x real time | GPU vs CPU |
+| --- | --- | --- | --- | --- |
+| bs-roformer-sw (self-test, 6 s signal) | the self-test's | 34.7 (CPU 82.5) | 0.17 | -127.2 dB |
+| full-song | fast | 1136 | 0.17 | |
+
+No real Mac has been timed yet. `bash scripts/mac_check.sh SONG` on one writes the figures.
