@@ -9,6 +9,7 @@ import { tempoKeyOf } from '@/lib/tempokey'
 import { modClick, modKey, words } from '@/platform'
 import { capitalize, groupsOf, mixLabel, partName, stemSections, useMixFile } from '@/state/mix'
 import { JobNotes } from './Fit'
+import { SourceTitle } from './SourceTitle'
 import { TempoKey } from './TempoKey'
 import { useToast } from './toast'
 import { Button, IconButton, Tooltip } from './ui'
@@ -17,6 +18,8 @@ import { useTheme } from '@/lib/theme'
 
 export interface StemsPanelProps {
   title: string
+  /** The song's own file, dragged out by the title. None when it was moved or deleted. */
+  source?: string
   subtitle: string
   directory: string
   stems: StemFile[]
@@ -78,7 +81,7 @@ function Clock({ player }: { player: StemPlayer }) {
   return <span ref={ref}>0:00</span>
 }
 
-export function StemsPanel({ title, subtitle, directory, stems, analysis, notes, onRetagged, onClose }: StemsPanelProps) {
+export function StemsPanel({ title, source, subtitle, directory, stems, analysis, notes, onRetagged, onClose }: StemsPanelProps) {
   const setAnalysis = useSetAnalysis()
   const { player, state, playPause } = useStemPlayer(stems)
   const [dragging, setDragging] = useState<string | null>(null)
@@ -129,8 +132,8 @@ export function StemsPanel({ title, subtitle, directory, stems, analysis, notes,
     <aside className="flex h-full w-[460px] flex-none flex-col border-l border-line bg-surface" aria-label="Stems">
       <header className="flex items-start gap-3 px-4 pt-4 pb-3">
         <div className="min-w-0 flex-1">
-          <h2 className="m-0 truncate font-display text-[15px] font-semibold" title={title}>
-            {title}
+          <h2 className="m-0 truncate font-display text-[15px] font-semibold">
+            <SourceTitle name={title} source={source} />
           </h2>
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-muted">
             <span>{subtitle}</span>

@@ -13,6 +13,7 @@ import { JobNotes } from '@/components/Fit'
 import { FormatSelect } from '@/components/FormatSelect'
 import { LinkRow, useOpenLinks } from '@/components/LinkRow'
 import { QUALITY, useCurrentFit, useCurrentRecipe, useRecipeOptions } from '@/components/RecipeBar'
+import { SourceTitle } from '@/components/SourceTitle'
 import { ToastProvider, useToast } from '@/components/toast'
 import { Button, IconButton, ProgressBar, Segmented, Select, Tooltip, TooltipProvider } from '@/components/ui'
 import { UpdatePill } from '@/components/Update'
@@ -572,8 +573,8 @@ export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mix
       <div className="flex items-center gap-2.5">
         <StateIcon job={job} />
         <div className="min-w-0 flex-1">
-          <div className="truncate font-medium" title={job.track_path}>
-            {job.track_name}
+          <div className="truncate font-medium">
+            <SourceTitle name={job.track_name} source={job.track_path} />
           </div>
           <div className="truncate text-[12px] text-muted" data-testid="quick-status">
             {done ? `${job.recipe_name} · ${job.quality}${job.cached ? ' · from the cache' : ''}` : statusText(job)}

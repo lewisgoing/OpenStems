@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { linkFrom } from '@/lib/link'
+import { isOwnSourceDrop } from '@/lib/sourcedrag'
 
 interface DropOverlayProps {
   onDrop: (files: File[]) => void
@@ -56,7 +57,10 @@ export function DropOverlay({ onDrop, onLink, label, manual }: DropOverlayProps)
       depth.current = 0
       setActive(false)
       if (hasFiles(event)) {
-        onDrop([...(event.dataTransfer?.files ?? [])])
+        const files = [...(event.dataTransfer?.files ?? [])]
+        // A song's title dragged out and let go over the window again: not a new song.
+        if (isOwnSourceDrop(window.openstems.pathsForFiles(files))) return
+        onDrop(files)
         return
       }
       // A uri-list may carry comment lines; the first address is the link.

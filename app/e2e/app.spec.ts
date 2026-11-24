@@ -65,6 +65,22 @@ test('stems preview with solo and mute, and drag out as real files', async () =>
   for (const path of (await lastDrag(ctx.app)) ?? []) expect(existsSync(path)).toBe(true)
 })
 
+test('the title drags the original file out, in its own format', async () => {
+  // An MP4: the main process lets a song's original through in any format the engine takes.
+  await addFiles('Video Clip.mp4')
+  await doneJobs().click()
+  const panel = ctx.page.getByRole('complementary', { name: 'Stems' })
+  await panel.getByTestId('drag-source').dispatchEvent('dragstart')
+  await expect.poll(() => lastDrag(ctx.app)).toEqual([join(ctx.fixtures, 'Video Clip.mp4')])
+
+  // The queue row's title as well.
+  await ctx.app.evaluate(() => {
+    ;(globalThis as unknown as { __openstemsE2E: { lastDrag: string[] | null } }).__openstemsE2E.lastDrag = null
+  })
+  await jobs().getByTestId('drag-source').dispatchEvent('dragstart')
+  await expect.poll(() => lastDrag(ctx.app)).toEqual([join(ctx.fixtures, 'Video Clip.mp4')])
+})
+
 test('paths with spaces and non-ASCII characters work end to end', async () => {
   await addFiles(join('ünï cödé 日本語', 'Señor Ω – 夜の曲.wav'))
   await expect(doneJobs()).toContainText('Señor Ω – 夜の曲')
