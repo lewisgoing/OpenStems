@@ -928,6 +928,16 @@
   transition-delay: 0ms;
 }
 
+/* The quick-drop window's Recent header and list reserve the same scrollbar gutter, so the
+   header's button lines up with the rows whether or not the list scrolls. The header never
+   scrolls; hidden overflow is what lets it hold a gutter. */
+.recent-gutter {
+  scrollbar-gutter: stable;
+}
+div.recent-gutter {
+  overflow-y: hidden;
+}
+
 /* ---- the welcome: seen once, so its steps may move ------------------------- */
 
 .dialog.welcome {

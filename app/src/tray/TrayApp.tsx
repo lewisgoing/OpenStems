@@ -449,7 +449,10 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
               </button>
             </Tooltip>
           </div>
-          <div className="flex flex-none items-center justify-between pt-2 pr-2 pl-4 text-muted">
+          {/* The header keeps the same scrollbar gutter as the list below (10px on Windows, none
+              where scrollbars overlay, as on a Mac), so Clear finished ends where the rows end,
+              and a gap under it keeps its hover from touching the first row. */}
+          <div className="recent-gutter flex flex-none items-center justify-between pt-2 pr-2 pb-1 pl-4 text-muted">
             <span className="text-[11.5px] font-semibold tracking-wide uppercase">
               Recent <span className="tabular ml-1 font-normal text-faint">{jobs.length + links.length}</span>
             </span>
@@ -465,7 +468,7 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
               </Button>
             </div>
           </div>
-          <ul className="m-0 min-h-0 flex-1 list-none overflow-y-auto px-2 pb-2" aria-label="Recent jobs">
+          <ul className="recent-gutter m-0 min-h-0 flex-1 list-none overflow-y-auto px-2 pb-2" aria-label="Recent jobs">
             {/* Newest first: a song still being fetched is newer than every job. */}
             {[...links].reverse().map((link) => (
               <LinkRow key={link.id} link={link} compact />
