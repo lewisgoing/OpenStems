@@ -1,0 +1,62 @@
+name: links-check
+
+# Pasted links are fetched with yt-dlp, pinned in engine/pyproject.toml. When a site changes,
+# fetching from it breaks until yt-dlp is updated, and a new yt-dlp release is the sign of
+# that. Every day this compares the pin with the newest release and keeps one issue open
+# while the pin is behind, so the repository's owner hears about it by e-mail.
+#
+# It does not fetch a real song: sites turn away the addresses these runners use, so a failed
+# fetch here would say nothing about the app on someone's own computer.
+#
+# GitHub turns scheduled workflows off after 60 days without activity in the repository;
+# "Enable workflow" on the Actions page turns it back on.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: links-check
+  cancel-in-progress: false
+
+jobs:
+  yt-dlp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare the pin with the newest release
+        id: check
+        run: python3 scripts/check_ytdlp.py --issue-body "$RUNNER_TEMP/issue.md"
+      - name: Keep the issue in step
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          OUTDATED: ${{ steps.check.outputs.outdated }}
+          LATEST: ${{ steps.check.outputs.latest }}
+          PINNED: ${{ steps.check.outputs.pinned }}
+        run: |
+          prefix="Update yt-dlp to "
+          title="$prefix$LATEST"
+          found=$(gh issue list --state open --limit 200 --json number,title \
+            --jq "[.[] | select(.title | startswith(\"$prefix\"))][0] | select(. != null) | \"\(.number) \(.title)\"")
+          number=${found%% *}
+          current=${found#* }
+          if [ "$OUTDATED" = "true" ]; then
+            if [ -z "$number" ]; then
+              gh issue create --title "$title" --body-file "$RUNNER_TEMP/issue.md"
+            elif [ "$current" != "$title" ]; then
+              gh issue edit "$number" --title "$title" --body-file "$RUNNER_TEMP/issue.md"
+              gh issue comment "$number" --body "yt-dlp $LATEST is out now."
+            else
+              echo "issue #$number already says so"
+            fi
+          elif [ -n "$number" ]; then
+            gh issue close "$number" --comment "The pin is yt-dlp $PINNED, the newest release."
+          else
+            echo "nothing to do"
+          fi
