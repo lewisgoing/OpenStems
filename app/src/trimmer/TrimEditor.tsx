@@ -24,7 +24,7 @@ import {
 import { type Peaks, fileUrl, unwrap } from '@/api/client'
 import { useEngine } from '@/api/engine'
 import { type NewJobRange, useSettings, useSourcePreview } from '@/api/queries'
-import { type PeaksPart, PeaksWave, type Pyramid, type WaveSource, pyramidOf, readyPyramid, sharedGain } from '@/audio/pyramid'
+import { type PeaksPart, PeaksWave, type Pyramid, type WaveLayer, type WaveSource, pyramidOf, readyPyramid, sharedGain } from '@/audio/pyramid'
 import { type TrimTrack, TrimPlayer } from '@/audio/trimplayer'
 import { useToast } from '@/components/toast'
 import { Button, CommitInput, IconButton, Segmented, Tooltip } from '@/components/ui'
@@ -84,7 +84,7 @@ import {
   wholeNear,
 } from './model'
 import { type Figures, type GridChange, type SongGrid, type TrimSong, gridChange, moveRange, resetChange, songGrid, songSeconds } from './song'
-import { Overview, Stage } from './Stage'
+import { Overview, Stage, type WaveLayers } from './Stage'
 
 export interface TrimEditorProps {
   song: TrimSong
@@ -123,8 +123,8 @@ const NUDGE_SAVE_MS = 400
 const ALL: Target = { kind: 'all' }
 
 /**
- * The waveform's colors: a stem's own, or for the song and a mix of stems a quiet neutral
- * that turns to nearly full ink inside the part.
+ * The colors of the target: a stem's own, or for the song and a mix of stems a quiet neutral
+ * that turns to nearly full ink inside the part. Several stems are drawn each in its own.
  */
 function colorsOf(target: Target, theme: Theme, tokens: Tokens): { wave: string; part: string } {
   if (target.kind === 'stem') return { wave: stemColor(target.name, theme), part: stemColor(target.name, theme) }
@@ -159,28 +159,26 @@ function useTrimPlayer(tracks: TrimTrack[]) {
 }
 
 /**
- * What the waveform is drawn from for a target: its decoded audio once every track of it is
- * there, its coarse peaks until then.
+ * What the waveform's layers are drawn from, each the sum of its tracks: the decoded audio
+ * once every track is there, the coarse peaks until then. All of them change together, so
+ * the scale they share never jumps from peaks to audio one layer at a time.
  */
-function useTargetWave(player: TrimPlayer, ids: string[], ready: boolean, placeholder: WaveSource | null): WaveSource | null {
-  const key = ids.join('|')
-  const [built, setBuilt] = useState<{ key: string; pyramid: Pyramid } | null>(null)
+function useTargetWaves(player: TrimPlayer, layers: string[][], ready: boolean, placeholders: WaveSource[] | null): WaveSource[] | null {
+  const key = JSON.stringify(layers)
+  const [built, setBuilt] = useState<{ key: string; waves: Pyramid[] } | null>(null)
   useEffect(() => {
     if (!ready) return
-    const buffers = key
-      .split('|')
-      .map((id) => player.buffer(id))
-      .filter((buffer): buffer is AudioBuffer => buffer !== null)
-    if (buffers.length === 0) return
-    const known = readyPyramid(buffers)
-    if (known) {
-      setBuilt({ key, pyramid: known })
+    const groups = (JSON.parse(key) as string[][]).map((ids) => ids.map((id) => player.buffer(id)).filter((buffer): buffer is AudioBuffer => buffer !== null))
+    if (groups.length === 0 || groups.some((buffers) => buffers.length === 0)) return
+    const known = groups.map((buffers) => readyPyramid(buffers))
+    if (known.every((pyramid): pyramid is Pyramid => pyramid !== null)) {
+      setBuilt({ key, waves: known })
       return
     }
     let stale = false
-    pyramidOf(buffers).then(
-      (pyramid) => {
-        if (!stale) setBuilt({ key, pyramid })
+    Promise.all(groups.map((buffers) => pyramidOf(buffers))).then(
+      (waves) => {
+        if (!stale) setBuilt({ key, waves })
       },
       () => undefined,
     )
@@ -188,7 +186,7 @@ function useTargetWave(player: TrimPlayer, ids: string[], ready: boolean, placeh
       stale = true
     }
   }, [player, key, ready])
-  return built?.key === key ? built.pyramid : placeholder
+  return built?.key === key ? built.waves : placeholders
 }
 
 /**
@@ -276,22 +274,37 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
 
   /* ---- the waveform ---- */
 
+  // Several stems are layered, each in its own color, so what plays where can be seen; the
+  // song or one stem is one waveform. The parts come in the song's order of stems, as do
+  // the layers.
   const placeholderParts = peaksOf(song, pick, preview.data?.peaks ?? null)
+  const layerNames = pick.kind === 'stems' && placeholderParts.length > 1 ? song.stems.filter((stem) => pick.names.includes(stem.name)).map((stem) => stem.name) : null
+  const layerKey = layerNames?.join('|') ?? ''
   const peaks = usePeaksFiles(placeholderParts.map((part) => part.path))
   const peaksKey = peaks.map((p) => (p ? 1 : 0)).join('')
-  const placeholder = useMemo<WaveSource | null>(() => {
+  const placeholders = useMemo<WaveSource[] | null>(() => {
     const parts: PeaksPart[] = []
     peaks.forEach((p, i) => {
       if (p) parts.push({ peaks: p, start: placeholderParts[i]?.start ?? 0 })
     })
-    return parts.length === peaks.length && parts.length > 0 ? new PeaksWave(parts) : null
+    if (parts.length !== peaks.length || parts.length === 0) return null
+    return layerNames ? parts.map((part) => new PeaksWave([part])) : [new PeaksWave(parts)]
     // The peaks are fetched once each; what changes is which are there, and what is chosen.
-  }, [peaksKey, audibleKey, song.stems])
+  }, [peaksKey, audibleKey, layerKey, song.stems])
   const ready = audible.every((id) => state.tracks[id]?.state === 'ready')
-  const wave = useTargetWave(player, audible, ready, placeholder)
+  const waves = useTargetWaves(player, layerNames ? layerNames.map((name) => [stemTrack(name)]) : [audible], ready, placeholders)
   // The loudest stretch reaches about three quarters of the height: room above the peaks.
-  const gain = useMemo(() => (wave ? sharedGain([wave]) * 0.82 : 1), [wave])
+  const gain = useMemo(() => (waves ? sharedGain(waves) * 0.82 : 1), [waves])
   const colors = colorsOf(target, theme, tokens)
+  const layers = useMemo<WaveLayers>(() => {
+    if (!waves) return { rest: [], part: [] }
+    if (layerNames) {
+      const each = waves.map((source, i): WaveLayer => ({ source, color: stemColor(layerNames[i] ?? '', theme) }))
+      return { rest: each, part: each }
+    }
+    return { rest: waves.map((source) => ({ source, color: colors.wave })), part: waves.map((source) => ({ source, color: colors.part })) }
+    // The names are in the key; the colors are strings.
+  }, [waves, layerKey, theme, colors.wave, colors.part])
   const failedTrack = audible.map((id) => state.tracks[id]).find((track) => track?.state === 'error')
 
   /* ---- the grid: the song's own, saved when a gesture ends ---- */
@@ -602,7 +615,7 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
   const startNote = separating && sel && song.range && wantedPart === sentPart.current ? `Start separates only ${song.range.label}.` : null
 
   const status: ReactNode = (() => {
-    if (wave) return null
+    if (waves) return null
     if (pick.kind === 'source') {
       if (preview.isError) return <ReadFailed error={preview.error} />
       if (!preview.data) return <Reading />
@@ -632,7 +645,7 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
       data-downbeat={grid.downbeat}
       data-found={saved.found}
       data-sel={sel ? `${sel.start},${sel.end}` : ''}
-      data-wave={wave ? (wave instanceof PeaksWave ? 'peaks' : 'audio') : 'none'}
+      data-wave={waves ? (waves.some((source) => source instanceof PeaksWave) ? 'peaks' : 'audio') : 'none'}
     >
       <TopBar song={song} pick={pick} preview={preview} onPick={setChosen} onBack={onBack} />
       {known ? (
@@ -665,8 +678,7 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
           <div className="flex min-h-0 flex-1 flex-col px-5 pt-3">
             <Stage
               duration={duration}
-              wave={wave}
-              colors={colors}
+              layers={layers}
               gain={gain}
               tokens={tokens}
               grid={grid}
@@ -716,7 +728,7 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
                   {saved.found ? 'bar 1.1' : 'no tempo'}
                 </span>
               </div>
-              <Overview duration={duration} wave={wave} color={colors.wave} gain={gain} view={view} onView={setView} sel={sel} player={player} />
+              <Overview duration={duration} layers={layers.rest} gain={gain} view={view} onView={setView} sel={sel} player={player} />
               <div className="flex flex-none items-center gap-0.5">
                 <Tooltip label={sel ? 'Show just the selection (F)' : 'Choose a part to show just that'}>
                   <Button size="sm" variant="ghost" aria-disabled={!sel} onClick={fitSelection}>

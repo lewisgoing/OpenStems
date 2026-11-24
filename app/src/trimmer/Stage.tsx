@@ -8,7 +8,7 @@
 
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
-import { type WaveSource, drawWave } from '@/audio/pyramid'
+import { type WaveLayer, drawLayers } from '@/audio/pyramid'
 import type { TrimPlayer } from '@/audio/trimplayer'
 import { cn } from '@/lib/format'
 import {
@@ -46,20 +46,18 @@ function seekTo(player: TrimPlayer, t: number): void {
   player.seek(t)
 }
 
-/** A canvas showing `t0`..`t1` of a waveform; nothing while there is nothing to draw. */
+/** A canvas showing `t0`..`t1` of a waveform, or of several layered; nothing while there is nothing to draw. */
 function Wave({
-  source,
+  layers,
   t0,
   t1,
-  color,
   gain = 1,
   className,
   style,
 }: {
-  source: WaveSource | null
+  layers: readonly WaveLayer[]
   t0: number
   t1: number
-  color: string
   gain?: number
   className?: string
   style?: CSSProperties
@@ -68,21 +66,29 @@ function Wave({
   useCanvas(
     canvas,
     (ctx, w, h) => {
-      if (source && t1 > t0) drawWave(ctx, source, 0, 0, w, h, { t0, t1, color, gain })
+      if (t1 > t0) drawLayers(ctx, layers, 0, 0, w, h, { t0, t1, gain })
     },
-    [source, t0, t1, color, gain],
+    [layers, t0, t1, gain],
   )
   return <canvas ref={canvas} className={className} style={{ display: 'block', ...style }} aria-hidden="true" />
 }
 
 /* ---- the stage: ruler and waveform ------------------------------------------------ */
 
+/** A waveform's layers outside the part, and inside it. */
+export interface WaveLayers {
+  rest: readonly WaveLayer[]
+  part: readonly WaveLayer[]
+}
+
 interface StageProps {
   duration: number
-  /** What the waveform is drawn from: the decoded audio, or its coarse peaks until then. */
-  wave: WaveSource | null
-  /** The waveform's color, and its color inside the part. */
-  colors: { wave: string; part: string }
+  /**
+   * What the waveform is drawn from (the decoded audio, or its coarse peaks until then): one
+   * layer for the song or a stem, one a stem in its own color when several are chosen. Its
+   * colors outside the part and inside it.
+   */
+  layers: WaveLayers
   gain: number
   tokens: Tokens
   grid: Grid
@@ -121,7 +127,7 @@ type WaveDrag =
   | { kind: 'move'; from: Range; origin: number; x0: number; moved: boolean }
 
 export function Stage(props: StageProps) {
-  const { duration, wave: source, colors, gain, tokens, grid, hint, status, onGrid, onGridDone, onGridNudge, view, onView, sel, onSel, onSelDone, onGesture, snap, player, playing, label } = props
+  const { duration, layers, gain, tokens, grid, hint, status, onGrid, onGridDone, onGridNudge, view, onView, sel, onSel, onSelDone, onGesture, snap, player, playing, label } = props
   const stage = useRef<HTMLDivElement>(null)
   const wave = useRef<HTMLDivElement>(null)
   const ruler = useRef<HTMLDivElement>(null)
@@ -601,13 +607,12 @@ export function Stage(props: StageProps) {
       >
         {selVisible && <div className="trim-sel" style={{ left: xs, width: Math.max(1, xe - xs) }} aria-hidden="true" />}
         {/* Outside the part the waveform steps back; inside it, a second copy shows it whole. */}
-        <Wave source={source} t0={view.t0} t1={view.t1} color={colors.wave} gain={gain} className={cn('pointer-events-none absolute inset-0 h-full w-full', sel && 'wave-rest')} />
+        <Wave layers={layers.rest} t0={view.t0} t1={view.t1} gain={gain} className={cn('pointer-events-none absolute inset-0 h-full w-full', sel && 'wave-rest')} />
         {sel && (
           <Wave
-            source={source}
+            layers={layers.part}
             t0={view.t0}
             t1={view.t1}
-            color={colors.part}
             gain={gain}
             className="pointer-events-none absolute inset-0 h-full w-full"
             style={{ clipPath: `inset(0 ${Math.max(0, width - xe)}px 0 ${Math.max(0, xs)}px)` }}
@@ -665,8 +670,7 @@ export function Stage(props: StageProps) {
 
 interface OverviewProps {
   duration: number
-  wave: WaveSource | null
-  color: string
+  layers: readonly WaveLayer[]
   gain: number
   view: View
   onView: (view: View) => void
@@ -676,7 +680,7 @@ interface OverviewProps {
 
 type OverviewDrag = { kind: 'pan'; grab: number } | { kind: 'left' } | { kind: 'right' }
 
-export function Overview({ duration, wave, color, gain, view, onView, sel, player }: OverviewProps) {
+export function Overview({ duration, layers, gain, view, onView, sel, player }: OverviewProps) {
   const box = useRef<HTMLDivElement>(null)
   const head = useRef<HTMLDivElement>(null)
   const width = useWidth(box)
@@ -750,7 +754,7 @@ export function Overview({ duration, wave, color, gain, view, onView, sel, playe
       onPointerUp={onUp}
       onPointerCancel={onUp}
     >
-      <Wave source={wave} t0={0} t1={duration} color={color} gain={gain} className="trim-overview-wave pointer-events-none absolute inset-0 h-full w-full" />
+      <Wave layers={layers} t0={0} t1={duration} gain={gain} className="trim-overview-wave pointer-events-none absolute inset-0 h-full w-full" />
       {sel && <div className="trim-overview-sel" style={{ left: sel.start * scale, width: Math.max(1, (sel.end - sel.start) * scale) }} aria-hidden="true" />}
       <div className="trim-viewport" style={{ left: vx0, width: Math.max(4, vx1 - vx0) }} aria-hidden="true">
         <span className="trim-viewport-grip trim-viewport-grip-left" />

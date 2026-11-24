@@ -286,27 +286,95 @@ export function sharedGain(sources: WaveSource[]): number {
   return loudest > 0 ? Math.min(40, 0.9 / loudest) : 1
 }
 
+/** One waveform of those drawn together: the song, a stem, or a sum of stems, in its color. */
+export interface WaveLayer {
+  source: WaveSource
+  color: string
+}
+
 interface DrawOptions {
   t0: number
   t1: number
-  color: string
   gain?: number
 }
 
-/** Draw `t0`..`t1` of a waveform into the rectangle, one bar per pixel column. */
-export function drawWave(ctx: CanvasRenderingContext2D, source: WaveSource, x: number, y: number, w: number, h: number, o: DrawOptions): void {
+/**
+ * Draw `t0`..`t1` of one or more waveforms on one axis, each in its own color, one bar per
+ * device pixel.
+ *
+ * In every column the tallest is at the back and each shorter one in front of it, so no
+ * layer is ever hidden behind another: each shows as a band from its own peak to the next
+ * one's, and its outline is always its own. Bands end on whole device pixels, so two colors
+ * meet without a seam. One layer draws as a plain waveform.
+ */
+export function drawLayers(ctx: CanvasRenderingContext2D, layers: readonly WaveLayer[], x: number, y: number, w: number, h: number, o: DrawOptions): void {
+  const n = layers.length
+  if (n === 0 || w <= 0 || h <= 0 || o.t1 <= o.t0) return
   const gain = o.gain ?? 1
-  const middle = y + h / 2
-  const perPixel = ((o.t1 - o.t0) * source.sampleRate) / w
-  const start = o.t0 * source.sampleRate
-  ctx.fillStyle = o.color
-  for (let px = 0; px < w; px++) {
-    const i0 = start + px * perPixel
-    const i1 = i0 + Math.max(1, perPixel)
-    if (i1 <= 0 || i0 >= source.length) continue
-    const [lo, hi] = source.span(i0, i1)
-    const top = middle - Math.min(1, hi * gain) * (h / 2)
-    const bottom = middle - Math.max(-1, lo * gain) * (h / 2)
-    ctx.fillRect(x + px, top, 1, Math.max(1, bottom - top))
+  const ratio = ctx.getTransform().a || 1
+  const left = Math.round(x * ratio)
+  const width = Math.round(w * ratio)
+  const half = (h * ratio) / 2
+  const middle = Math.round(y * ratio + half)
+  // Silence still shows as a line, as thick as a CSS pixel.
+  const line = Math.max(1, Math.round(ratio))
+  const steps = layers.map(({ source }) => ({ start: o.t0 * source.sampleRate, per: ((o.t1 - o.t0) * source.sampleRate) / width }))
+  const up = new Float64Array(n)
+  const down = new Float64Array(n)
+  const order = Array.from({ length: n }, (_, k) => k)
+  const paths = layers.map(() => new Path2D())
+  const byUp = (a: number, b: number) => (up[b] ?? 0) - (up[a] ?? 0)
+  const byDown = (a: number, b: number) => (down[b] ?? 0) - (down[a] ?? 0)
+
+  for (let px = 0; px < width; px++) {
+    let any = false
+    for (let k = 0; k < n; k++) {
+      const { source } = layers[k] as WaveLayer
+      const { start, per } = steps[k] as { start: number; per: number }
+      const i0 = start + px * per
+      const i1 = i0 + Math.max(1, per)
+      if (i1 <= 0 || i0 >= source.length) {
+        up[k] = 0
+        down[k] = 0
+        continue
+      }
+      any = true
+      const [lo, hi] = source.span(i0, i1)
+      up[k] = Math.round(Math.min(1, Math.max(0, hi * gain)) * half)
+      down[k] = Math.round(Math.min(1, Math.max(0, -lo * gain)) * half)
+    }
+    if (!any) continue
+    const col = left + px
+    order.sort(byUp)
+    const tallest = order[0] ?? 0
+    for (let j = 0; j < n; j++) {
+      const k = order[j] ?? 0
+      const outer = up[k] ?? 0
+      const inner = j + 1 < n ? (up[order[j + 1] ?? 0] ?? 0) : 0
+      if (outer > inner) paths[k]?.rect(col, middle - outer, 1, outer - inner)
+    }
+    const peak = up[tallest] ?? 0
+    order.sort(byDown)
+    for (let j = 0; j < n; j++) {
+      const k = order[j] ?? 0
+      const outer = down[k] ?? 0
+      const inner = j + 1 < n ? (down[order[j + 1] ?? 0] ?? 0) : 0
+      if (outer > inner) paths[k]?.rect(col, middle + inner, 1, outer - inner)
+    }
+    const depth = down[order[0] ?? 0] ?? 0
+    if (peak + depth < line) {
+      const k = peak >= depth ? tallest : (order[0] ?? 0)
+      paths[k]?.rect(col, middle - Math.floor(line / 2), 1, line)
+    }
   }
+
+  ctx.save()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  layers.forEach((layer, k) => {
+    const path = paths[k]
+    if (!path) return
+    ctx.fillStyle = layer.color
+    ctx.fill(path)
+  })
+  ctx.restore()
 }
