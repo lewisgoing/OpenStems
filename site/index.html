@@ -189,40 +189,33 @@
   </div>
 
   <div class="checker reveal">
-    <div class="pick">
-      <p class="mono pick-label" id="machine-label">your machine</p>
-      <div class="keys" role="radiogroup" aria-labelledby="machine-label" id="machine-keys">
-        <button type="button" class="key press" role="radio" data-machine="nvidia">NVIDIA<small>GTX 16, RTX 20 and later</small></button>
-        <button type="button" class="key press" role="radio" data-machine="amd">AMD Radeon<small>RX 9000, RX 7900 XTX, RX 7700</small></button>
-        <button type="button" class="key press" role="radio" data-machine="mac">Mac<small>Apple Silicon</small></button>
-        <button type="button" class="key press" role="radio" data-machine="pascal">NVIDIA<small>GTX 900 and 10 series</small></button>
-        <button type="button" class="key press" role="radio" data-machine="other">Something else<small>Intel Mac, other graphics</small></button>
+    <div class="controls">
+      <p class="mono control-label" id="machine-label">machine</p>
+      <div class="seg" role="group" aria-labelledby="machine-label" id="machine-keys">
+        <button type="button" class="press" data-machine="nvidia">RTX</button>
+        <button type="button" class="press" data-machine="pascal">GTX 10</button>
+        <button type="button" class="press" data-machine="amd">Radeon</button>
+        <button type="button" class="press" data-machine="mac">Mac</button>
+        <button type="button" class="press" data-machine="other">Other</button>
       </div>
-      <p class="mono pick-label" id="memory-label">graphics memory</p>
-      <div class="keys keys-mem" role="radiogroup" aria-labelledby="memory-label" id="memory-keys"></div>
+      <p class="control-hint" id="machine-hint"></p>
+
+      <p class="mono control-label" id="memory-label">memory, gb</p>
+      <div class="seg" role="group" aria-labelledby="memory-label" id="memory-keys"></div>
+      <p class="control-hint" id="run-budget"></p>
     </div>
 
     <div class="result" aria-live="polite">
-      <div class="verdict">
-        <span class="led" id="run-led" aria-hidden="true"></span>
-        <p id="run-verdict">Pick your machine.</p>
-      </div>
-      <p class="mono budget" id="run-budget"></p>
-      <table class="fits" id="run-table">
-        <caption class="sr-only">Which recipes fit</caption>
-        <tbody>
-          <tr><th scope="row"><span>Main recipes</span><small class="mono">full-song, drum-kit, melody, drumless</small></th><td data-group="0"></td></tr>
-          <tr><th scope="row"><span>Larger vocal models</span><small class="mono">every-stem, vocals-instrumental, acapella-clean, full-song-best-vocals</small></th><td data-group="1"></td></tr>
-          <tr><th scope="row"><span>Cleanup</span><small class="mono">cleanup-dereverb, cleanup-denoise</small></th><td data-group="2"></td></tr>
-          <tr><th scope="row"><span>53 stems</span><small class="mono">mega-53, experimental</small></th><td data-group="3"></td></tr>
-        </tbody>
-      </table>
-      <p class="run-note" id="run-note"></p>
+      <p class="verdict" id="run-verdict">Pick your machine.</p>
+      <dl class="groups" id="run-table">
+        <div data-group="0"><dt>Main recipes</dt><dd class="mono">full-song, drum-kit, melody, drumless</dd><dd class="state"></dd></div>
+        <div data-group="1"><dt>Larger vocal models</dt><dd class="mono">every-stem, vocals-instrumental, acapella-clean, full-song-best-vocals</dd><dd class="state"></dd></div>
+        <div data-group="2"><dt>Cleanup</dt><dd class="mono">dereverb, denoise</dd><dd class="state"></dd></div>
+        <div data-group="3"><dt>53 stems</dt><dd class="mono">mega-53, experimental</dd><dd class="state"></dd></div>
+      </dl>
+      <p class="run-note"><span id="run-note"></span> <span id="run-always">"Too large" is an estimate, not a block: the app still tries the GPU first, and moves a model to the processor if memory runs out.</span></p>
     </div>
   </div>
-  <p class="aside mono">
-    <span>"too large" is an estimate, not a block: the app still tries the GPU first, and moves a model to the processor if memory runs out</span>
-  </p>
 </section>
 
 <!-- Download -->

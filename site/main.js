@@ -194,38 +194,39 @@ const N = 'no'
 const CARD_NOTE = 'Measured on an RTX 5070 Ti. The figures for other sizes follow from those measurements.'
 const MACHINES = {
   nvidia: {
-    memory: 'graphics memory',
-    pick: '8 GB',
-    sizes: { '4 GB': [F, T, F, N], '6 GB': [F, F, F, N], '8 GB': [F, F, F, N], '10–11 GB': [F, F, F, T], '12 GB+': [F, F, F, F] },
+    hint: 'NVIDIA GTX 16 series, RTX 20 series and later',
+    pick: '8',
+    sizes: { '4': [F, T, F, N], '6': [F, F, F, N], '8': [F, F, F, N], '10–11': [F, F, F, T], '12+': [F, F, F, F] },
     note: () => CARD_NOTE,
   },
   amd: {
-    memory: 'graphics memory',
-    pick: '16 GB+',
-    sizes: { '8 GB': [F, F, F, N], '12 GB': [F, F, F, F], '16 GB+': [F, F, F, F] },
+    hint: 'AMD Radeon RX 9000 series, RX 7900 XTX, RX 7700 and pro cards',
+    pick: '16+',
+    sizes: { '8': [F, F, F, N], '12': [F, F, F, F], '16+': [F, F, F, F] },
     note: () =>
       'Supported cards: RX 9070, RX 9070 XT, RX 9060 XT, RX 7900 XTX, RX 7700, PRO W7900 and AI PRO R9700, with AMD driver 26.2.2 or newer. AMD support is a preview: a user has reported it working, but it has not been tested on a Radeon by the project. Older Radeons and integrated graphics run on the processor, slowly.',
   },
   mac: {
-    memory: 'memory',
-    pick: '16 GB',
-    sizes: { '8 GB': [T, N, F, N], '16 GB': [F, F, F, N], '24 GB': [F, F, F, N], '32 GB+': [F, F, F, F] },
-    budget: (gb) => `The app plans with about ${((gb - 2) * 0.75).toFixed(1).replace(/\.0$/, '')} GB of it, since macOS and your other apps share the same memory.`,
+    hint: 'Apple Silicon, M1 or later, macOS 14 or later',
+    pick: '16',
+    sizes: { '8': [T, N, F, N], '16': [F, F, F, N], '24': [F, F, F, N], '32+': [F, F, F, F] },
+    budget: (gb) => `The app plans with about ${((gb - 2) * 0.75).toFixed(1).replace(/\.0$/, '')} GB of it: macOS and your other apps share the rest.`,
     note: () =>
-      'Estimates: nothing has been measured on a Mac yet, so it may do better than this. Tested on an M1 Max with 32 GB so far. Needs macOS 14 or later.',
+      'Estimates: nothing has been measured on a Mac yet, so it may do better than this. Tested on an M1 Max with 32 GB so far.',
   },
   pascal: {
-    memory: 'graphics memory',
-    pick: '8 GB',
-    sizes: { '4 GB': [T, N, F, N], '6 GB': [F, N, F, N], '8 GB': [F, T, F, N], '11 GB': [F, F, F, N] },
-    verdict: (size) => (size === '4 GB' ? 'Only just, if at all.' : undefined),
+    hint: 'NVIDIA GTX 900 and 10 series',
+    pick: '8',
+    sizes: { '4': [T, N, F, N], '6': [F, N, F, N], '8': [F, T, F, N], '11': [F, F, F, N] },
+    verdict: (size) => (size === '4' ? 'Only just, if at all.' : undefined),
     note: (size) =>
-      (size === '4 GB'
+      (size === '4'
         ? 'At 4 GB the main recipes are estimated at 3.99 GB, and a card reports a little under 4, so the app will most likely mark them too large. They can still be run. '
         : '') +
       'These cards get a build of their own, untested so far. They run the models at full precision, which needs more memory, so these figures are estimates.',
   },
   other: {
+    hint: 'Intel Mac, Intel graphics, older Radeon, no graphics card',
     note: () =>
       'Intel Macs are not supported: PyTorch has no build for them. On Windows, without a graphics card from the list, separation runs on the processor: the same stems, many times slower.',
   },
@@ -233,46 +234,48 @@ const MACHINES = {
 const WORDS = { [F]: 'fits', [T]: 'tight', [N]: 'too large' }
 
 function setupRun() {
-  const machineKeys = [...document.querySelectorAll('#machine-keys .key')]
+  const machineKeys = [...document.querySelectorAll('#machine-keys button')]
   const memoryBox = document.getElementById('memory-keys')
   const memoryLabel = document.getElementById('memory-label')
-  const cells = [...document.querySelectorAll('#run-table td')]
+  const hint = document.getElementById('machine-hint')
+  const groups = [...document.querySelectorAll('#run-table > div')]
   const table = document.getElementById('run-table')
-  const led = document.getElementById('run-led')
   const verdict = document.getElementById('run-verdict')
   const budget = document.getElementById('run-budget')
   const note = document.getElementById('run-note')
+  const always = document.getElementById('run-always')
   let machine = 'nvidia'
   let size = MACHINES.nvidia.pick
 
-  const check = (keys, on) => keys.forEach((k) => k.setAttribute('aria-checked', String(k === on)))
+  const press = (keys, on) => keys.forEach((k) => k.setAttribute('aria-pressed', String(k === on)))
 
   function render() {
     const m = MACHINES[machine]
-    check(machineKeys, machineKeys.find((k) => k.dataset.machine === machine))
-    memoryBox.innerHTML = ''
-    memoryLabel.hidden = !m.sizes
+    press(machineKeys, machineKeys.find((k) => k.dataset.machine === machine))
+    hint.textContent = m.hint
+    memoryBox.replaceChildren()
+    memoryLabel.hidden = memoryBox.hidden = !m.sizes
     if (m.sizes) {
-      memoryLabel.textContent = m.memory
       for (const label of Object.keys(m.sizes)) {
         const key = document.createElement('button')
         key.type = 'button'
-        key.className = 'key key-small press'
-        key.setAttribute('role', 'radio')
+        key.className = 'press'
         key.textContent = label
         key.addEventListener('click', () => { size = label; render() })
         memoryBox.append(key)
       }
-      check([...memoryBox.children], [...memoryBox.children].find((k) => k.textContent === size))
+      press([...memoryBox.children], [...memoryBox.children].find((k) => k.textContent === size))
     }
 
     const row = m.sizes?.[size]
-    table.hidden = !row
-    if (row) row.forEach((f, i) => { cells[i].innerHTML = `<span class="pill pill-${f}">${WORDS[f]}</span>` })
+    table.hidden = always.hidden = !row
+    row?.forEach((f, i) => {
+      groups[i].dataset.fit = f
+      groups[i].querySelector('.state').textContent = WORDS[f]
+    })
     const [main, larger] = row ?? []
-    led.dataset.state = !row ? 'slow' : main === F ? F : main === T ? T : N
     verdict.textContent = m.verdict?.(size) ?? (!row
-      ? 'On the processor, slowly. Or not at all on an Intel Mac.'
+      ? 'On the processor, slowly. Not at all on an Intel Mac.'
       : row.every((f) => f === F)
         ? 'Yes. Every recipe fits.'
         : main === F && larger === F
@@ -295,7 +298,6 @@ function setupRun() {
   )
   render()
 }
-
 /* ------------------------------------------------------------------ */
 /* Reveal on scroll, once                                              */
 /* ------------------------------------------------------------------ */
