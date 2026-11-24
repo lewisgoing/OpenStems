@@ -46,3 +46,6 @@ app/.vite/
 .DS_Store
 Thumbs.db
 .claude/settings.local.json
+
+# the built site (node scripts/build-site.mjs)
+_site/
