@@ -154,14 +154,15 @@ def _slakh_stems(metadata: str) -> dict[str, bool]:
 
 
 def slakh_complete(song: Path) -> bool:
-    """The mix, the metadata, and every stem's MIDI and (when rendered) audio are present."""
+    """The mix, the metadata, and the MIDI and audio of every rendered stem are present. The
+    archive has neither for a stem that was not rendered."""
     meta = song / "metadata.yaml"
     if not (meta.is_file() and (song / "mix.flac").is_file()):
         return False
     stems = _slakh_stems(meta.read_text("utf-8", errors="replace"))
     return bool(stems) and all(
-        (song / "MIDI" / f"{sid}.mid").is_file()
-        and (not rendered or (song / "stems" / f"{sid}.flac").is_file())
+        not rendered
+        or ((song / "MIDI" / f"{sid}.mid").is_file() and (song / "stems" / f"{sid}.flac").is_file())
         for sid, rendered in stems.items()
     )
 
