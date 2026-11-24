@@ -59,7 +59,8 @@ Site (the landing page on GitHub Pages, `site/`, `docs/adr/0024-site.md`):
   changelog, the icon and two README pictures; serve it with `python -m http.server -d OUT`
   (the page fetches `CHANGELOG.md`, so `file://` does not work)
 - `.github/workflows/pages.yml` deploys it on a push to `main` that touches it, the
-  changelog or those pictures, and on every published release. Its requirements and the
+  changelog or those pictures (a pull request only builds it). The support button is hidden
+  until `href` is set on `#support-link` in `site/index.html`. Its requirements and the
   Mac's first-open steps copy the README's: change both together
 
 App (run from `app/`):

@@ -212,6 +212,14 @@ function setupHow() {
   update()
 }
 
+/** The support button shows once index.html gives it an address. */
+function setupSupport() {
+  const link = document.getElementById('support-link')
+  if (!link.getAttribute('href')) return
+  link.hidden = false
+  document.getElementById('support-soon').hidden = true
+}
+
 /* ------------------------------------------------------------------ */
 /* Reveal on scroll, once                                              */
 /* ------------------------------------------------------------------ */
@@ -364,6 +372,7 @@ async function loadChangelog() {
 
 drawWaves(build())
 document.querySelectorAll('[data-seg]').forEach((el) => setSeg(el, el.dataset.seg))
+setupSupport()
 setupHow()
 setupReveal()
 loadChangelog()

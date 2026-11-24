@@ -1,7 +1,8 @@
 name: Site
 
 # The landing page on GitHub Pages: site/ plus the changelog, the icon and two README
-# pictures (scripts/build-site.mjs). A release republishes it so its changelog is current.
+# pictures (scripts/build-site.mjs). A release's changelog reaches main before its tag, so a
+# push redeploys it; downloads are looked up in the browser. Pull requests only build it.
 
 on:
   push:
@@ -14,8 +15,11 @@ on:
       - app/resources/icon.png
       - scripts/build-site.mjs
       - .github/workflows/pages.yml
-  release:
-    types: [published]
+  pull_request:
+    paths:
+      - site/**
+      - scripts/build-site.mjs
+      - .github/workflows/pages.yml
   workflow_dispatch:
 
 permissions:
@@ -37,11 +41,13 @@ jobs:
           node-version: 22
       - run: node scripts/build-site.mjs _site
       - uses: actions/configure-pages@v6
+        if: github.event_name != 'pull_request'
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:
