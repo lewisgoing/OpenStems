@@ -87,19 +87,23 @@ it, and electron-builder signed the app with it (`Authority=OpenStems`, valid). 
 designated requirement was `identifier "ing.lewisgo.openstems" and certificate leaf =
 H"86e0372e339292ddc79e6018db42490b7dfc2759"`.
 
+## On a real Mac
+
+- **0.3.2 was the first release signed this way** (2026-11-23): the release workflow took the
+  certificate for self-signed and the dmg and zip carry `Authority=OpenStems`.
+- **0.3.2 installed 0.3.3 by itself** on the owner's M1 Max the same evening: installed from
+  the dmg into Applications and allowed through System Settings, it offered 0.3.3, and
+  "Update", then "Restart to update", put the new version in place. That is the path a user
+  takes, quarantine mark and all, and the last part this decision had not seen.
+
 ## Not seen yet
 
-- **A real release.** The first release signed this way has not been made. The secrets are
-  set and were tried (above), so the next release is the first, if this change is in it.
-- **On a Mac with a person at it.** The CI app was built there and never downloaded, so it
-  carries no quarantine mark, and it ran from a folder, not from `/Applications`. An app
-  from a dmg, allowed through System Settings, moved to Applications and then updated has
-  not been tried. The owner's M1 Max is where to try it: install the first self-signed
-  release from its dmg, then either wait for the next release, or serve a newer build from
-  a folder (`python3 -m http.server 8000` in the folder that holds its zip and
-  `latest-mac.yml`) and start the app with
+- **Whether Gatekeeper asks again after an update.** The owner reported only that the update
+  worked; whether macOS asked anything when 0.3.3 first started was not recorded.
+- **To try an update by hand without a release**, serve a newer build from a folder
+  (`python3 -m http.server 8000` in the folder that holds its zip and `latest-mac.yml`) and
+  start the app with
   `OPENSTEMS_UPDATE_FEED=http://127.0.0.1:8000 /Applications/OpenStems.app/Contents/MacOS/OpenStems`.
-- **Whether Gatekeeper asks again after an update.** Not known.
 
 ## Consequences
 

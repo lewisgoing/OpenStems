@@ -168,7 +168,8 @@ Mac branch must be right by reading, and every Mac decision must be a plain func
 by a unit test that runs on Windows with the platform passed in or patched. The Electron glue
 that only carries those decisions is read, not tested: ADR 0014 names it ("Read, not
 tested"). The owner tests on an M1 Max with 32 GB: 0.3.0 was installed from the dmg there on
-2026-11-23 and setup, a separation and the menu bar item worked. Say what has been seen on a
+2026-11-23 and setup, a separation and the menu bar item worked; later that day 0.3.2
+installed 0.3.3 there by itself. Say what has been seen on a
 Mac and what has not wherever Mac support is described, and when a change cannot be proven
 from Windows give the owner steps to run on the Mac (`docs/adr/0014-macos.md`). On "mps" the engine checks the STFT against the CPU once per
 process and, if it fails, runs `torch.stft` and `torch.istft` on the CPU from then on
@@ -246,7 +247,8 @@ installed apps read its releases: `docs/adr/0010-self-update.md`. A Mac app upda
 only when it is signed with a certificate, a Developer ID or the project's own
 (`updater.updateBackend` asks `codesign` once at start; `updatelogic.canInstallUpdates`
 decides). One signed ad hoc takes the manual path: the offer is marked `manual`, "download"
-opens the release page, and the state stays `available`.
+opens the release page, and the state stays `available`. 0.3.2 is the first self-signed
+release, and it installed 0.3.3 by itself on the owner's M1 Max (ADR 0018).
 
 Names: `OpenStems` where people read it and for folders, `openstems` for the command, the
 Python package and keys, `OPENSTEMS_*` for environment variables. The app was lew-stems before
