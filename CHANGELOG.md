@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-11-24)
 
 - **Trim a part of a song.** Trim, on a song in the queue (waiting or separated, also in its
   right-click menu) or in the stems panel, opens the song in an editor across the window.
