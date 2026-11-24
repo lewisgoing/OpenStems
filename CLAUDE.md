@@ -42,6 +42,8 @@ Engine (run from `engine/`):
   `compare DIR DIR`: the same stems from two PyTorch builds (on the CPU)
 - `uv run pytest tests/test_links_mixes.py`: links and mixes, with a stand-in for the fetch
   (no test touches the network)
+- `uv run pytest tests/test_clips.py`: clips, bar 1 and the previews of songs' own files,
+  with the FakeEngine and synthetic beats
 - `uv run openstems serve`: start the local API (prints a JSON line with port and token)
 - `uv run openstems openapi --out openapi.json`: export the schema after any API change, then
   `pnpm gen:api` in `app/` (a test fails if `engine/openapi.json` is stale)
@@ -340,6 +342,27 @@ finished one is re-tagged) and `POST /v1/stemsets/analysis` (a folder). In the a
 `components/TempoKey.tsx` is the pair of fields, in the queue row of a waiting song and in
 the stems panel. What may be typed is decided in `retag.clean_bpm`/`clean_key` and in
 `app/src/lib/tempokey.ts`: change both together. `docs/adr/0019-edit-tempo-key.md`.
+
+Clips: a stretch of a song as a file of its own, to drag into a DAW. `POST /v1/clips`
+(`pipeline/clip.py`) cuts it from stems of one stem set, summed into one file or one file
+each, into `<stem folder>/Clips/`, or from the song's own file (`source`; a stem that was
+itself separated is both) into `<output>/<track>/Clips/`. Start and end are seconds of the
+song's timeline, a stem whose silence was trimmed keeps its place, and every clip of one
+request has the same length. Always WAV: wav24 when the stems are, float otherwise. Each
+clip carries `OpenStems clip <hash>` in its WAV's `LIST`/`INFO` comment and is found again by
+it; a file of its name that is newer than what it was cut from is never written over (the
+clip takes `(2)`, `(3)`), one that is older is replaced. `POST /v1/sources/preview`
+(`pipeline/preview.py`) makes a song in the queue or the history playable before separation:
+a FLAC, its peaks and the detected grid in `<cache>/previews/`, the 8 newest kept, which
+`is_served` serves. Bar 1 (`downbeat`, seconds into the song) is detected with the tempo
+(`analysis.detect_grid`) and set by hand like the tempo and key: `JobOptions.downbeat`,
+`SetAnalysis.downbeat`, `analysis.downbeat` in the manifest; bar 1 alone rewrites the
+manifest only. Stems carry `start` (offset / 44100). `clip_label` in `domain/grid.py` and
+`rangeLabel` in `app/src/lib/grid.ts` name a selection alike ("bars 9-16", "9.3-11.2",
+"0m21.40s-0m33.10s"), with JavaScript's rounding; the cases are in
+`engine/tests/fixtures/clip_labels.json`, which the app's tests are to read too: change both
+together. What may be typed for bar 1 is decided in `grid.clean_downbeat`, and in its
+TypeScript twin when the UI has one: change both together. `docs/adr/0023-trimmer.md`.
 
 Dependencies point inward: `domain` imports nothing from the other packages and never imports
 torch. `cli` and `api` are the only entry points.
