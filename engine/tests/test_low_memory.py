@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 import time
 from collections.abc import Iterator
@@ -358,6 +359,47 @@ def test_what_counts_as_out_of_memory() -> None:
         MemoryError()
     )
     assert not run_module._out_of_memory(RuntimeError("Invalid argument"))
+
+
+# A first import of torch that fails partway, as one does on Windows when a DLL will not
+# load, then the pipeline's question whether that error was memory running out.
+_FAILED_IMPORT = """
+import sys
+
+class Refuse:
+    def find_spec(self, name, path=None, target=None):
+        if name == "torch._C":
+            sys.meta_path.remove(self)
+            raise ImportError("DLL load failed while importing _C (test)")
+        return None
+
+sys.meta_path.insert(0, Refuse())
+try:
+    import torch
+except ImportError as exc:
+    first = exc
+else:
+    raise SystemExit("torch was imported: the failure was not acted out")
+left = sorted(name for name in sys.modules if name.startswith("torch."))
+assert left, "a failed import leaves torch's submodules behind"
+
+from openstems.pipeline.run import _out_of_memory
+
+assert not _out_of_memory(first) and not _out_of_memory(MemoryError())
+assert "torch" not in sys.modules, "torch was imported a second time"
+print("ok")
+"""
+
+
+def test_a_failed_import_of_torch_is_not_tried_again() -> None:
+    """A second import in the same process loads torch on top of what the first left, and
+    every job after it fails with "module 'torch' has no attribute 'device'" (seen on 0.4.0,
+    ADR 0024). The question whether an error was memory running out must not be that
+    second import."""
+    result = subprocess.run(
+        [sys.executable, "-c", _FAILED_IMPORT], capture_output=True, text=True, timeout=300
+    )
+    assert result.returncode == 0 and result.stdout.strip() == "ok", result.stderr[-2000:]
 
 
 class Scripted(FakeLoadedModel):

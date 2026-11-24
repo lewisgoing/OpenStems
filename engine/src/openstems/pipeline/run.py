@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import shutil
+import sys
 import time
 import uuid
 from collections.abc import Callable
@@ -620,7 +621,16 @@ _NO_MEMORY = (
 
 def _out_of_memory(exc: BaseException) -> bool:
     """Whether a load or a run failed for lack of memory, on any device."""
-    if isinstance(exc, (OutOfMemory, MemoryError)):
+    if isinstance(exc, OutOfMemory):
+        return True
+    # Without PyTorch loaded, what failed is its own import, or nothing of it ran: never a
+    # model short of memory, and never worth another try in this process. A failed import
+    # leaves half of PyTorch loaded, and importing it again (here, to ask) breaks every job
+    # after it with errors such as "module 'torch' has no attribute 'device'". The error
+    # goes out as it is and the worker lets the process end (`worker.process.run_job`).
+    if "torch" not in sys.modules:
+        return False
+    if isinstance(exc, MemoryError):
         return True
     # Imported here: the API process reads manifests through this module without torch.
     from openstems.engines.device import is_oom
