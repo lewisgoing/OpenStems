@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+# The app drags a song's original file out only in these formats (`DRAGGABLE` in
+# app/electron/main.ts): change both together.
 AUDIO_SUFFIXES = {
     ".wav", ".mp3", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".aif", ".aiff", ".wma",
     ".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v", ".wv", ".ape", ".alac", ".caf",

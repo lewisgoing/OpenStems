@@ -6,6 +6,7 @@ import { keys, useJobActions, useJobs, useSetAnalysis } from '@/api/queries'
 import { JobNotes } from '@/components/Fit'
 import { LinkRow, useOpenLinks } from '@/components/LinkRow'
 import { RecipeBar } from '@/components/RecipeBar'
+import { SourceTitle } from '@/components/SourceTitle'
 import { TempoKey } from '@/components/TempoKey'
 import { useToast } from '@/components/toast'
 import { Button, IconButton, ProgressBar, Tooltip } from '@/components/ui'
@@ -253,9 +254,7 @@ function JobRow({ job, index, selected, dropTarget, onSelect, onStart, onCancel,
 
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
-            <span className="truncate font-medium" title={job.track_path}>
-              {job.track_name}
-            </span>
+            <SourceTitle name={job.track_name} source={job.track_path} className="min-w-0 font-medium" />
             <span className="flex-none text-[12px] text-faint">
               {job.recipe_name} · {job.quality}
             </span>

@@ -4,9 +4,11 @@ import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Job, Link, Model, Recipe, StemFile, SystemInfo } from '@/api/client'
+import { DropOverlay } from '@/components/DropOverlay'
 import { StemsPanel } from '@/components/StemsPanel'
 import { ToastProvider, useToast } from '@/components/toast'
 import { CommitInput, ProgressBar, Segmented, TooltipProvider } from '@/components/ui'
+import { dragSource } from '@/lib/sourcedrag'
 import { SelectionProvider } from '@/state/selection'
 import { QueueView } from '@/views/QueueView'
 import { bridge } from './setup'
@@ -195,6 +197,18 @@ describe('QueueView', () => {
     expect(onSelect).toHaveBeenCalledWith(done)
   })
 
+  it('drags the original song by its title, before and after separation', async () => {
+    const onSelect = vi.fn()
+    jobs = [job({ id: 'q', track_path: 'D:/out/_links/Song.m4a' })]
+    view(onSelect)
+    const title = screen.getByRole('button', { name: 'Drag the original file of Song' })
+    fireEvent.dragStart(title)
+    expect(bridge.startDrag).toHaveBeenLastCalledWith(['D:/out/_links/Song.m4a'])
+    // A click on the title still opens the job.
+    await userEvent.click(title)
+    expect(onSelect).toHaveBeenCalled()
+  })
+
   it('shows a song that waits for Start, and starts all of them or one', () => {
     jobs = [job({ id: 'a', held: true }), job({ id: 'b', held: true }), job({ id: 'c' })]
     view()
@@ -319,6 +333,16 @@ describe('QueueView', () => {
   })
 })
 
+const onDrop = vi.fn()
+function dropFiles(...names: string[]): void {
+  const files = names.map((name) => new File(['x'], name))
+  const event = new Event('drop', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'], files } })
+  act(() => {
+    window.dispatchEvent(event)
+  })
+}
+
 describe('StemsPanel', () => {
   const stems = ['vocals', 'drums', 'bass'].map(stem)
   const panel = () =>
@@ -349,6 +373,34 @@ describe('StemsPanel', () => {
     expect(bridge.startDrag).toHaveBeenLastCalledWith([stems[1]!.path])
     fireEvent.dragStart(screen.getByRole('button', { name: 'Drag all stems' }))
     expect(bridge.startDrag).toHaveBeenLastCalledWith(stems.map((s) => s.path))
+  })
+
+  it('drags the original song by its title, and keeps a plain title without one', () => {
+    wrap(<StemsPanel title="Song" source={'C:/in/Song.webm'} subtitle="Full song" directory="D:/out" stems={stems} onClose={vi.fn()} />)
+    const title = screen.getByRole('button', { name: 'Drag the original file of Song' })
+    expect(title.closest('h2')).toHaveTextContent('Song')
+    fireEvent.dragStart(title)
+    expect(bridge.startDrag).toHaveBeenLastCalledWith(['C:/in/Song.webm'])
+    cleanup()
+    panel()
+    expect(screen.queryByTestId('drag-source')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Song' })).toBeInTheDocument()
+  })
+
+  it('does not queue the original again when its drag is let go over the window', () => {
+    render(<DropOverlay onDrop={onDrop} label="Full song" />)
+    dragSource({ preventDefault: vi.fn() }, 'C:/in/Song.mp3')
+    dropFiles('Song.mp3')
+    expect(onDrop).not.toHaveBeenCalled()
+    // Once that drag is over, the same file dropped from outside is a song to separate.
+    dropFiles('Song.mp3')
+    expect(onDrop).toHaveBeenCalledTimes(1)
+    dragSource({ preventDefault: vi.fn() }, 'C:/in/Song.mp3')
+    act(() => {
+      window.dispatchEvent(new MouseEvent('pointermove', { buttons: 0 }))
+    })
+    dropFiles('Song.mp3')
+    expect(onDrop).toHaveBeenCalledTimes(2)
   })
 
   it('toggles solo and mute per stem', async () => {

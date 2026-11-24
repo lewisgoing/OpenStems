@@ -23,7 +23,14 @@ import { updateBackend } from './updater'
 import { isVariant } from './variant'
 import { background, currentTheme, iconPath, loadRenderer, recolor, webPreferences } from './windows'
 
-const DRAGGABLE = new Set(['.wav', '.flac', '.mp3', '.mid'])
+// What may be dragged out: stems, mixes and MIDI, and a song's original file, which is any
+// format the engine takes (`AUDIO_SUFFIXES` in engine/src/openstems/cli_inputs.py: change
+// both together). A fetched link keeps the site's format, often .webm or .m4a.
+const DRAGGABLE = new Set([
+  '.mid',
+  ...['.wav', '.mp3', '.flac', '.m4a', '.aac', '.ogg', '.opus', '.aif', '.aiff', '.wma'],
+  ...['.mp4', '.mov', '.mkv', '.webm', '.avi', '.m4v', '.wv', '.ape', '.alac', '.caf'],
+])
 
 process.env.OPENSTEMS_APP_VERSION = app.getVersion()
 

@@ -91,7 +91,8 @@ playback that starts every stem together. Space plays and pauses. Each track's t
 are detected and shown with its stems.
 
 Drag one stem, or "Drag all", straight into your DAW or a folder. Reveal in Explorer opens the
-folder.
+folder. Drag the song's title (in the stems panel, the queue, History or the quick-drop
+window) and the original file goes out the same way.
 
 ### A drum track, split into its kit
 
@@ -116,6 +117,8 @@ the song without its vocals. Mixes are kept in a `Mixes` folder beside the stems
 Paste a link to a song (Ctrl+V, or Paste link), or drag one in from a browser. OpenStems
 fetches the audio from YouTube, SoundCloud, Bandcamp and many other sites and queues it like a
 file. Playlists and live streams are refused. Fetch only what you have the right to use.
+The fetched song itself drags out by its title, in the format the site sent, separated or
+not.
 
 The fetcher is yt-dlp. Sites change, so a fetch that stops working usually needs a newer
 OpenStems ([`docs/adr/0013-links-and-mixes.md`](docs/adr/0013-links-and-mixes.md)).
