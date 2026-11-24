@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.2 (2026-11-23)
 
 - **The tempo and key can be corrected.** A song that waits in the queue shows two small
   fields, "auto" until you type the tempo or the key yourself. Finished stems show the same
