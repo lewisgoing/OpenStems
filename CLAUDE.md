@@ -327,6 +327,11 @@ Component classes live in `@layer components` so Tailwind utilities can override
   self-test ran real models on the GPU and then on every CPU core. Do not run `openstems
   selftest` with models, the Settings button or `PACKAGED_SELFTEST=1` here without asking.
   `selftest --ops-only` is light.
+- It lost power twice more on 2026-11-23 (Kernel-Power 41 at the 15:52 and 16:13 boots)
+  while the stem-to-MIDI benchmark ran CREPE on the GPU (batch 512) with pYIN on 4 CPU
+  threads and a network download: far lighter than the self-test. Ask before running any GPU
+  model work here, the benchmark's `crepe` method and `separate` subcommand included, until
+  the cause (power supply, GPU, drivers) is found.
 
 - Test songs (CC-BY, Kevin MacLeod) are in `D:\lew-stems\test-audio`; they are never committed.
 - Target: Windows, NVIDIA RTX 5070 Ti (16 GB). C: is nearly full; keep models and outputs on D:
