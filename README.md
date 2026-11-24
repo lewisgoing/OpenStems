@@ -193,6 +193,9 @@ the naming template.
   longer line up at bar 1 and normalized stems no longer sit at their level in the mix.
 - **Keyboard.** Ctrl+1 to Ctrl+4 switch between Queue, History, Models and Settings; Ctrl+V
   pastes a link; Ctrl+Enter starts the queue; Space plays and pauses.
+- **Light or dark.** The three icons at the foot of the sidebar pick Light, Dark or System,
+  which follows the computer's setting. Dark until you pick otherwise. Also under Settings >
+  Appearance.
 
 ### Updates
 

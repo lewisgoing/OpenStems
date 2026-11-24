@@ -57,7 +57,9 @@ App (run from `app/`):
   must be current
 - `SHOTS=1 SHOTS_DIR=<folder> pnpm e2e -g screenshots`: capture every view for design review,
   the quick-drop window included (`tray-on-screen.png` is the real screen around it)
-  and a machine with little memory (`memory-1-queue.png` to `memory-7-settings.png`)
+  and a machine with little memory (`memory-1-queue.png` to `memory-7-settings.png`).
+  The main views are taken in light as well (`light-1-empty.png` to `light-tray.png`)
+- `pnpm e2e theme`: the theme switch, both windows, the pick across a restart
 - `pnpm e2e low-memory`: the CPU note and the marks of an 8 GB machine, with the FakeEngine
   (`OPENSTEMS_FAKE_OOM`, `OPENSTEMS_MEMORY_GB`)
 - `README_SHOTS=1 pnpm e2e -g "readme pictures"`: retake the README's pictures into
@@ -208,6 +210,17 @@ and `bin/openstems` where Windows has `Scripts` and `.exe`. The engine decides t
 `settings.py` and the app in `electron/platform.ts` (pure functions with the platform passed
 in, no Node or Electron imports): change both together. Windows folders are unchanged. A Mac
 has no uninstaller, so `engine-env` stays until the user deletes it.
+
+Light and dark: the pick (`system`, `light`, `dark`; dark by default) is `theme` in
+`shell.json`. The main process sets `nativeTheme.themeSource` from it, and both windows read
+it back through `prefers-color-scheme` (`src/lib/theme.ts` sets `data-theme` on the root,
+`styles.css` swaps the tokens under `:root[data-theme='light']`). Use the color tokens and
+the variables beside them, never a raw color: `--color-accent-fg` for the accent as text or a
+thin line, `stemColor(name, useTheme())` for a stem. `WINDOW_COLORS` in `traylogic.ts` must
+match `--color-bg` and `--color-muted` (a test checks it). Playwright answers
+`prefers-color-scheme` with "light" unless a launch passes `colorScheme: null`, as every one
+in `e2e/` does. The switch sits at the foot of the sidebar and under Settings > Appearance.
+`docs/adr/0020-light-mode.md`.
 
 Words and keys in the UI: `src/platform.ts` holds what the renderer says and listens for
 differently on a Mac (Finder, menu bar, "Open at login", Cmd for Ctrl through `shortcut` and

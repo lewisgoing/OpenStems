@@ -305,6 +305,11 @@ The rest has not been seen at all.
 - **The test suites on a Mac.** No test has run on macOS. The engine tests that start a
   worker process, and the end-to-end suite, are the likeliest to need attention there.
 
+- **Light mode** (ADR 0020): the window buttons, scrollbars and menus following the pick,
+  System following the Mac's appearance as it changes, and the quick-drop panel in light. Also the reverse: with the
+  pick on Dark (the default) on a light Mac, the Control-click menu of the menu bar item is
+  now drawn dark, and the template icon must still follow the light menu bar.
+
 Not built: dropping files on the menu bar item itself. Queuing lives in the windows, and the
 quick-drop window is one click away.
 
@@ -335,6 +340,14 @@ In the installed app, the same program is at
    architectures.
 4. In the app: Settings > System > GPU self-test > Run, then Export diagnostics, and send the
    zip with the Mac's model and macOS version.
+
+Light mode: pick Light at the foot of the sidebar. The page, the three window buttons, the
+scrollbars and the right-click menus should all turn light, and the quick-drop panel under
+the menu bar too. Pick System, then switch the Mac between Light and Dark in System Settings >
+Appearance: the app should follow within a second, without a restart. Quit and reopen: the
+pick should still hold. Then pick Dark with the Mac set to Light: Control-click the menu bar
+item (its menu should be dark) and check that the icon in the menu bar is still drawn for a
+light bar.
 
 If the GPU misbehaves, Settings > System > "Use the GPU" off (or `OPENSTEMS_DEVICE=cpu`) runs
 everything on the CPU.
