@@ -94,6 +94,13 @@ function build() {
     const beat = c / PER_BEAT
     return (0.18 + 0.14 * Math.sin(beat / 5) + (beat >= 16 ? 0.12 : 0)) * n(0.2)
   })
+  // every-stem's split of the vocals, and what DrumSep leaves of the drums
+  s.lead = each((c) => s.vocals[c] * 0.92)
+  s.backing = each((c) => {
+    const beat = c / PER_BEAT
+    return (beat >= 12 && beat < 15) || (beat >= 28 && beat < 31.5) ? s.vocals[c] * 0.55 : 0.015
+  })
+  s.otherdrums = each((c) => (0.05 + 0.07 * r()) * (s.drums[c] > 0.4 ? 1.6 : 1))
   s.mix = each((c) =>
     Math.min(0.98, 0.18 + 0.62 * (s.vocals[c] + s.drums[c] * 0.9 + s.bass[c] + s.guitar[c] * 0.6 + s.piano[c] * 0.6 + s.other[c] * 0.6) / 2.4),
   )
@@ -299,6 +306,315 @@ function setupRun() {
   render()
 }
 /* ------------------------------------------------------------------ */
+/* Every stem: wires between the passes, drawn in when the chain is   */
+/* first seen; "Sum to mix" folds the 13 lanes into the song          */
+/* ------------------------------------------------------------------ */
+
+// [from, to, depth (when it draws), kind]: "model" between passes, "out" to a stem
+const WIRES = [
+  ['song', 'vox', 0, 'model'], ['song', 'sw', 0, 'model'],
+  ['vox', 'split', 1, 'down'], ['sw', 'kit', 1, 'down'],
+  ['split', 'lead', 2, 'out'], ['split', 'backing', 2, 'diff'],
+  ['sw', 'bass', 2, 'out'], ['sw', 'guitar', 2, 'out'], ['sw', 'piano', 2, 'out'], ['sw', 'other', 2, 'out'],
+  ['kit', 'kick', 3, 'out'], ['kit', 'snare', 3, 'out'], ['kit', 'toms', 3, 'out'], ['kit', 'hh', 3, 'out'],
+  ['kit', 'ride', 3, 'out'], ['kit', 'crash', 3, 'out'], ['kit', 'otherdrums', 3, 'diff'],
+]
+
+function setupChain() {
+  const chain = document.getElementById('chain')
+  const svg = document.getElementById('wires')
+  if (!chain || !svg) return
+  const node = (id) => chain.querySelector(`[data-node="${id}"]`)
+
+  function draw() {
+    const box = chain.getBoundingClientRect()
+    svg.setAttribute('viewBox', `0 0 ${box.width} ${box.height}`)
+    const at = (el) => {
+      const r = el.getBoundingClientRect()
+      return { l: r.left - box.left, r: r.right - box.left, t: r.top - box.top, b: r.bottom - box.top, m: r.top - box.top + r.height / 2 }
+    }
+    svg.innerHTML = WIRES.map(([from, to, depth, kind]) => {
+      const a = at(node(from))
+      const b = at(node(to))
+      let d
+      if (kind === 'down') {
+        const x = a.l + 18
+        d = `M${x} ${a.b} L${x} ${b.t}`
+      } else {
+        const x1 = a.r
+        const x2 = b.l - 10
+        const dx = (x2 - x1) * 0.5
+        d = `M${x1} ${a.m} C${x1 + dx} ${a.m}, ${x2 - dx} ${b.m}, ${x2} ${b.m}`
+      }
+      const color = kind === 'out' || kind === 'diff' ? getComputedStyle(node(to)).getPropertyValue('--c') : ''
+      return `<path class="wire wire-${kind}" style="--d:${depth}${color ? `;stroke:${color}` : ''}" d="${d}"/>`
+    }).join('')
+    for (const path of svg.querySelectorAll('path')) {
+      const len = Math.ceil(path.getTotalLength())
+      path.style.strokeDasharray = path.classList.contains('wire-diff') ? '3 4' : `${len} ${len}`
+      path.style.setProperty('--len', String(len))
+    }
+  }
+
+  draw()
+  let frame = 0
+  addEventListener('resize', () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(draw) })
+  document.fonts?.ready.then(draw)
+  const io = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) { chain.classList.add('in'); io.disconnect() }
+  }, { threshold: 0.25 })
+  io.observe(chain)
+}
+
+function setupSum() {
+  const toggle = document.getElementById('sum-toggle')
+  const box = document.getElementById('sum')
+  const read = document.getElementById('sum-read')
+  if (!toggle) return
+  toggle.addEventListener('click', () => {
+    const on = toggle.getAttribute('aria-pressed') !== 'true'
+    toggle.setAttribute('aria-pressed', String(on))
+    box.classList.toggle('summed', on)
+    read.textContent = on
+      ? 'summed: within −144.9 dB of the song (a test song)'
+      : '13 files, each sample in exactly one'
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* Trim studio: the editor's selection on a 16-bar demo song. The     */
+/* names follow the app: rangeLabel, rangeLength (lib/grid.ts) and    */
+/* mixLabel (state/mix.ts), with the default naming template.         */
+/* ------------------------------------------------------------------ */
+
+const GRID = { bpm: 128, downbeat: 0, beatsPerBar: 4 }
+const BEAT_S = 60 / GRID.bpm
+const BAR_S = BEAT_S * GRID.beatsPerBar
+const TRIM_BARS = 16
+const TRIM_DURATION = TRIM_BARS * BAR_S
+const EPS_S = 0.0015
+const TRIM_STEMS = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other']
+
+const beatAtT = (t) => (t - GRID.downbeat) / BEAT_S
+const isOn = (t, step) => { const n = beatAtT(t) / step; return Math.abs(n - Math.round(n)) * step * BEAT_S < EPS_S }
+const barAtT = (t) => Math.floor(beatAtT(t) / GRID.beatsPerBar + 1e-9) + 1
+function position(t) {
+  const beats = beatAtT(t)
+  const bar = Math.floor(beats / GRID.beatsPerBar + 1e-9) + 1
+  const inBar = beats - (bar - 1) * GRID.beatsPerBar
+  const beat = Math.floor(inBar + 1e-9) + 1
+  const sixteenth = Math.floor((inBar - (beat - 1)) * 4 + 1e-6) + 1
+  return sixteenth > 1 ? `${bar}.${beat}.${sixteenth}` : `${bar}.${beat}`
+}
+function fileTime(t) {
+  const cs = Math.round(Math.max(0, t) * 100)
+  return `${Math.floor(cs / 6000)}m${String(Math.floor((cs % 6000) / 100)).padStart(2, '0')}.${String(cs % 100).padStart(2, '0')}s`
+}
+function rangeLabel(r) {
+  if (isOn(r.start, GRID.beatsPerBar) && isOn(r.end, GRID.beatsPerBar)) {
+    const first = barAtT(r.start + EPS_S)
+    const last = barAtT(r.end - EPS_S)
+    return first === last ? `bar ${first}` : `bars ${first}-${last}`
+  }
+  if (isOn(r.start, 1) && isOn(r.end, 1)) return `${position(r.start)}-${position(r.end)}`
+  return `${fileTime(r.start)}-${fileTime(r.end)}`
+}
+function rangeLength(r) {
+  if (isOn(r.start, 1) && isOn(r.end, 1)) {
+    const beats = Math.round((r.end - r.start) / BEAT_S)
+    if (beats % GRID.beatsPerBar === 0) { const bars = beats / GRID.beatsPerBar; return `${bars} ${bars === 1 ? 'bar' : 'bars'}` }
+    return `${beats} ${beats === 1 ? 'beat' : 'beats'}`
+  }
+  return `${(r.end - r.start).toFixed(2)} s`
+}
+function mixLabel(chosen, every) {
+  const leftOut = every.filter((n) => !chosen.includes(n))
+  if (chosen.length === 1 && leftOut.length > 0) return chosen[0]
+  if (leftOut.length === 0) return 'mix'
+  if (leftOut.length === 1) return `no ${leftOut[0]}`
+  if (chosen.length <= 3) return chosen.join(' + ')
+  if (leftOut.length <= 3) return `no ${leftOut.join(', ')}`
+  return `${chosen.length} stems`
+}
+
+function setupTrim(stems) {
+  const canvas = document.getElementById('trim-canvas')
+  if (!canvas) return
+  const stage = canvas.parentElement
+  const selEl = document.getElementById('trim-sel')
+  const ruler = document.getElementById('ruler')
+  const chips = [...document.querySelectorAll('#trim-chips .chip')]
+  const snaps = [...document.querySelectorAll('#trim-snap button')]
+  const readout = document.getElementById('trim-readout')
+  const file = document.getElementById('trim-file')
+  const everyBtn = document.getElementById('trim-every')
+  const files = document.getElementById('trim-files')
+  const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
+  document.querySelectorAll('[data-mod]').forEach((el) => { el.textContent = isMac ? 'Cmd' : 'Ctrl' })
+
+  // 16 bars: the 8-bar groove twice
+  const song = Object.fromEntries([...TRIM_STEMS, 'mix'].map((n) => [n, [...stems[n], ...stems[n]]]))
+  const cols = song.mix.length
+  const css = getComputedStyle(document.documentElement)
+  const color = (n) => (n === 'mix' ? css.getPropertyValue('--ink').trim() : css.getPropertyValue(`--${n}`).trim())
+
+  let chosen = ['original']
+  let snap = 'bar'
+  let sel = { start: 4 * BAR_S, end: 8 * BAR_S }
+
+  for (let bar = 1; bar <= TRIM_BARS; bar++) {
+    const tick = document.createElement('span')
+    tick.className = bar === 1 ? 'tick tick-one' : 'tick'
+    tick.style.left = `${((bar - 1) / TRIM_BARS) * 100}%`
+    tick.textContent = String(bar)
+    ruler.append(tick)
+  }
+
+  function paint() {
+    const w = stage.clientWidth
+    const h = stage.clientHeight
+    const dpr = Math.min(2, devicePixelRatio || 1)
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+      canvas.width = Math.round(w * dpr)
+      canvas.height = Math.round(h * dpr)
+    }
+    const ctx = canvas.getContext('2d')
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, w, h)
+    // beat and bar lines
+    for (let b = 0; b <= TRIM_BARS * 4; b++) {
+      ctx.fillStyle = b % 4 === 0 ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)'
+      ctx.fillRect(Math.round((b / (TRIM_BARS * 4)) * w), 0, 1, h)
+    }
+    const layers = chosen[0] === 'original' ? ['mix'] : chosen
+    const colors = Object.fromEntries(layers.map((n) => [n, color(n)]))
+    const step = w / cols
+    const bw = Math.max(1, step * 0.62)
+    const s0 = (sel ? sel.start / TRIM_DURATION : 0) * w
+    const s1 = (sel ? sel.end / TRIM_DURATION : 0) * w
+    for (let c = 0; c < cols; c++) {
+      const x = c * step
+      const inside = sel && x + bw > s0 && x < s1
+      ctx.globalAlpha = inside || !sel ? 1 : 0.32
+      // larger first, so a quieter stem is never hidden behind a louder one
+      const order = [...layers].sort((a, b) => song[b][c] - song[a][c])
+      for (const n of order) {
+        const amp = Math.max(0.01, song[n][c]) * (h * 0.86)
+        ctx.fillStyle = colors[n]
+        ctx.fillRect(x, (h - amp) / 2, bw, amp)
+      }
+    }
+    ctx.globalAlpha = 1
+  }
+
+  function show() {
+    const target = chosen[0] === 'original' ? '' : mixLabel(chosen, TRIM_STEMS)
+    chips.forEach((ch) => ch.setAttribute('aria-pressed', String(chosen.includes(ch.dataset.target))))
+    snaps.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.snap === snap)))
+    const tint = chosen[0] === 'original' ? 'var(--ink)' : `var(--${chosen[0]})`
+    selEl.style.setProperty('--tint', tint)
+    if (sel) {
+      selEl.hidden = false
+      selEl.style.left = `${(sel.start / TRIM_DURATION) * 100}%`
+      selEl.style.width = `${((sel.end - sel.start) / TRIM_DURATION) * 100}%`
+      const label = rangeLabel(sel)
+      readout.innerHTML = `${label} <span class="muted">· ${rangeLength(sel)}</span>`
+      file.textContent = `Demo song - ${target ? `${target} - ` : ''}${label}.wav`
+      files.innerHTML = TRIM_STEMS.map((n) => `<li><i style="background:var(--${n})"></i>Demo song - ${n} - ${label}.wav</li>`).join('')
+    } else {
+      selEl.hidden = true
+      readout.innerHTML = '<span class="muted">drag across the waveform to choose a part</span>'
+      file.textContent = 'no part chosen'
+      files.innerHTML = ''
+    }
+    paint()
+  }
+
+  // ---- choosing what to trim
+  chips.forEach((ch) => ch.addEventListener('click', (e) => {
+    const t = ch.dataset.target
+    if (t === 'original' || !(e.ctrlKey || e.metaKey) || chosen[0] === 'original') chosen = [t]
+    else if (chosen.includes(t)) { if (chosen.length > 1) chosen = chosen.filter((n) => n !== t) }
+    else chosen = TRIM_STEMS.filter((n) => n === t || chosen.includes(n))
+    show()
+  }))
+  snaps.forEach((b) => b.addEventListener('click', () => { snap = b.dataset.snap; show() }))
+  everyBtn.addEventListener('click', () => {
+    const open = everyBtn.getAttribute('aria-expanded') !== 'true'
+    everyBtn.setAttribute('aria-expanded', String(open))
+    files.hidden = !open
+  })
+
+  // ---- the selection: drag to make one, its edges to change it, its middle to move it
+  const unit = (free) => (free || snap === 'off' ? 0 : snap === 'bar' ? BAR_S : BEAT_S)
+  const snapT = (t, free) => { const u = unit(free); return u ? Math.round(t / u) * u : t }
+  const timeAt = (clientX) => {
+    const r = stage.getBoundingClientRect()
+    return Math.min(TRIM_DURATION, Math.max(0, ((clientX - r.left) / r.width) * TRIM_DURATION))
+  }
+  let drag = null
+
+  stage.addEventListener('pointerdown', (e) => {
+    if (drag || e.button !== 0) return
+    const t = timeAt(e.clientX)
+    const r = stage.getBoundingClientRect()
+    const px = (s) => r.left + (s / TRIM_DURATION) * r.width
+    let mode = 'new'
+    if (sel && Math.abs(e.clientX - px(sel.start)) < 8) mode = 'start'
+    else if (sel && Math.abs(e.clientX - px(sel.end)) < 8) mode = 'end'
+    else if (sel && t > sel.start && t < sel.end) mode = 'move'
+    drag = { mode, anchor: snapT(t, e.altKey), t0: t, orig: sel && { ...sel } }
+    stage.setPointerCapture(e.pointerId)
+    stage.classList.add('dragging')
+    e.preventDefault()
+  })
+  stage.addEventListener('pointermove', (e) => {
+    const r = stage.getBoundingClientRect()
+    if (!drag) {
+      if (!sel) return stage.style.cursor = 'crosshair'
+      const px = (s) => r.left + (s / TRIM_DURATION) * r.width
+      const t = timeAt(e.clientX)
+      stage.style.cursor = Math.abs(e.clientX - px(sel.start)) < 8 || Math.abs(e.clientX - px(sel.end)) < 8 ? 'ew-resize' : t > sel.start && t < sel.end ? 'grab' : 'crosshair'
+      return
+    }
+    const t = timeAt(e.clientX)
+    const free = e.altKey
+    const min = unit(free) || 0.05
+    if (drag.mode === 'new') {
+      const b = snapT(t, free)
+      const a = drag.anchor
+      if (Math.abs(b - a) < min / 2) return
+      sel = { start: Math.min(a, b), end: Math.max(a, b) }
+    } else if (drag.mode === 'move') {
+      const len = drag.orig.end - drag.orig.start
+      let start = snapT(drag.orig.start + (t - drag.t0), free)
+      start = Math.min(TRIM_DURATION - len, Math.max(0, start))
+      sel = { start, end: start + len }
+    } else if (drag.mode === 'start') {
+      sel = { start: Math.min(snapT(t, free), drag.orig.end - min), end: drag.orig.end }
+    } else {
+      sel = { start: drag.orig.start, end: Math.max(snapT(t, free), drag.orig.start + min) }
+    }
+    show()
+  })
+  const end = () => { drag = null; stage.classList.remove('dragging') }
+  stage.addEventListener('pointerup', end)
+  stage.addEventListener('pointercancel', end)
+  stage.addEventListener('dblclick', (e) => {
+    const bar = Math.floor(timeAt(e.clientX) / BAR_S)
+    sel = { start: bar * BAR_S, end: (bar + 1) * BAR_S }
+    show()
+  })
+  document.getElementById('studio').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { sel = null; show() }
+  })
+
+  let frame = 0
+  addEventListener('resize', () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(paint) })
+  show()
+}
+
+/* ------------------------------------------------------------------ */
 /* Reveal on scroll, once                                              */
 /* ------------------------------------------------------------------ */
 
@@ -445,9 +761,13 @@ async function loadChangelog() {
 
 /* ------------------------------------------------------------------ */
 
-drawWaves(build())
+const STEMS = build()
+drawWaves(STEMS)
 setupSupport()
 setupRun()
+setupChain()
+setupSum()
+setupTrim(STEMS)
 setupHow()
 setupReveal()
 loadChangelog()

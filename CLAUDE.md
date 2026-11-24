@@ -62,7 +62,8 @@ Site (the landing page on GitHub Pages, `site/`, `docs/adr/0025-site.md`):
   changelog or those pictures (a pull request only builds it). The support button is hidden
   until `href` is set on `#support-link` in `site/index.html`. Its requirements, the
   Mac's first-open steps and "Will it run?" (`MACHINES` in `site/main.js`, the README's
-  Memory table) copy the README's: change both together
+  Memory table) copy the README's, and its Trim studio copies `rangeLabel`, `rangeLength`
+  and `mixLabel`: change both together
 
 App (run from `app/`):
 

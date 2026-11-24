@@ -32,13 +32,14 @@
   </a>
   <nav class="nav" aria-label="Sections">
     <a class="press" href="#how"><b>01</b> how</a>
-    <a class="press" href="#features"><b>02</b> features</a>
-    <a class="press" href="#run"><b>03</b> will it run</a>
-    <a class="press" href="#download"><b>04</b> download</a>
-    <a class="press" href="#changelog"><b>05</b> changelog</a>
-    <a class="press" href="#support"><b>06</b> support</a>
-  </nav>
-</header>
+    <a class="press" href="#every"><b>02</b> every stem</a>
+    <a class="press" href="#trim"><b>03</b> trim</a>
+    <a class="press" href="#features"><b>04</b> features</a>
+    <a class="press" href="#run"><b>05</b> will it run</a>
+    <a class="press" href="#download"><b>06</b> download</a>
+    <a class="press" href="#changelog"><b>07</b> changelog</a>
+    <a class="press" href="#support"><b>08</b> support</a>
+  </nav></header>
 
 <main>
 
@@ -108,10 +109,181 @@
   </div>
 </section>
 
-<!-- Features: a spec sheet -->
-<section class="features" id="features" aria-labelledby="features-title">
+<!-- Every stem: the every-stem recipe, its chain and what it guarantees -->
+<section class="every" id="every" aria-labelledby="every-title">
   <div class="section-head">
     <p class="eyebrow"><b>02</b></p>
+    <h2 id="every-title">Every stem</h2>
+    <p class="section-lede">The <code>every-stem</code> recipe chains four models into the deepest split OpenStems makes: 13 stems in three groups, and together they are the song.</p>
+  </div>
+
+  <figure class="chain" id="chain" aria-label="The every-stem chain: four models turn one song into 13 stems">
+    <svg class="wires" id="wires" aria-hidden="true"></svg>
+    <div class="chain-col chain-in">
+      <div class="node node-song" data-node="song">
+        <span class="mono">input</span>
+        <b>the song</b>
+        <div class="node-wave" data-wave="mix"></div>
+      </div>
+    </div>
+    <ol class="chain-col chain-passes">
+      <li class="node" data-node="vox" style="--d:1"><span class="mono">pass 1</span><b>Leap Xe</b><small>vocals from the song</small></li>
+      <li class="node" data-node="split" style="--d:2"><span class="mono">pass 2</span><b>becruily karaoke</b><small>lead from the vocals</small></li>
+      <li class="node" data-node="sw" style="--d:1"><span class="mono">pass 3</span><b>BS-RoFormer SW</b><small>drums, bass, guitar, piano, other</small></li>
+      <li class="node" data-node="kit" style="--d:2"><span class="mono">pass 4</span><b>DrumSep</b><small>the kit from the drums</small></li>
+    </ol>
+    <div class="chain-col chain-out">
+      <div class="out-group">
+        <p class="mono">vocals</p>
+        <ul>
+          <li data-node="lead" data-from="split" style="--c:var(--vocals);--d:3">lead vocals</li>
+          <li data-node="backing" data-from="split" class="diff" style="--c:var(--backing);--d:3">backing vocals<i>vocals − lead</i></li>
+        </ul>
+      </div>
+      <div class="out-group">
+        <p class="mono">drums</p>
+        <ul>
+          <li data-node="kick" data-from="kit" style="--c:var(--kick);--d:3">kick</li>
+          <li data-node="snare" data-from="kit" style="--c:var(--snare);--d:3">snare</li>
+          <li data-node="toms" data-from="kit" style="--c:var(--toms);--d:3">toms</li>
+          <li data-node="hh" data-from="kit" style="--c:var(--hh);--d:3">hh</li>
+          <li data-node="ride" data-from="kit" style="--c:var(--ride);--d:3">ride</li>
+          <li data-node="crash" data-from="kit" style="--c:var(--crash);--d:3">crash</li>
+          <li data-node="otherdrums" data-from="kit" class="diff" style="--c:var(--otherdrums);--d:3">other drums<i>drums − the six</i></li>
+        </ul>
+      </div>
+      <div class="out-group">
+        <ul>
+          <li data-node="bass" data-from="sw" style="--c:var(--bass);--d:2">bass</li>
+        </ul>
+      </div>
+      <div class="out-group">
+        <p class="mono">melody</p>
+        <ul>
+          <li data-node="guitar" data-from="sw" style="--c:var(--guitar);--d:2">guitar</li>
+          <li data-node="piano" data-from="sw" style="--c:var(--piano);--d:2">piano</li>
+          <li data-node="other" data-from="sw" style="--c:var(--other);--d:2">other</li>
+        </ul>
+      </div>
+    </div>
+  </figure>
+
+  <div class="sum reveal" id="sum">
+    <div class="sum-bar">
+      <button type="button" class="toggle press" id="sum-toggle" aria-pressed="false"><span class="switch" aria-hidden="true"></span>Sum to mix</button>
+      <p class="mono sum-read" id="sum-read">13 files, each sample in exactly one</p>
+    </div>
+    <div class="sum-lanes" id="sum-lanes">
+      <div class="sl" style="--c:var(--vocals);--n:0"><span>lead vocals</span><div data-wave="lead"></div></div>
+      <div class="sl" style="--c:var(--backing);--n:1"><span>backing vocals</span><div data-wave="backing"></div></div>
+      <div class="sl" style="--c:var(--kick);--n:2"><span>kick</span><div data-wave="kick"></div></div>
+      <div class="sl" style="--c:var(--snare);--n:3"><span>snare</span><div data-wave="snare"></div></div>
+      <div class="sl" style="--c:var(--toms);--n:4"><span>toms</span><div data-wave="toms"></div></div>
+      <div class="sl" style="--c:var(--hh);--n:5"><span>hh</span><div data-wave="hh"></div></div>
+      <div class="sl" style="--c:var(--ride);--n:6"><span>ride</span><div data-wave="ride"></div></div>
+      <div class="sl" style="--c:var(--crash);--n:7"><span>crash</span><div data-wave="crash"></div></div>
+      <div class="sl" style="--c:var(--otherdrums);--n:8"><span>other drums</span><div data-wave="otherdrums"></div></div>
+      <div class="sl" style="--c:var(--bass);--n:9"><span>bass</span><div data-wave="bass"></div></div>
+      <div class="sl" style="--c:var(--guitar);--n:10"><span>guitar</span><div data-wave="guitar"></div></div>
+      <div class="sl" style="--c:var(--piano);--n:11"><span>piano</span><div data-wave="piano"></div></div>
+      <div class="sl" style="--c:var(--other);--n:12"><span>other</span><div data-wave="other"></div></div>
+      <div class="sl sl-mix" aria-hidden="true"><span>mix</span><div data-wave="mix"></div></div>
+    </div>
+  </div>
+
+  <div class="sheet sheet-3">
+    <article class="cell reveal" style="--i:0;--c:var(--drums)">
+      <p class="cell-code mono">e.01</p>
+      <h3>Each sample in one file</h3>
+      <p>Vocals and drums are groups, not files: their parts add up to them. Drag all 13 into a DAW and the song plays once, not twice. Summed, the stems of a test song came within −144.9 dB of it.</p>
+    </article>
+    <article class="cell reveal" style="--i:1;--c:var(--otherdrums)">
+      <p class="cell-code mono">e.02</p>
+      <h3>Nothing lost between models</h3>
+      <p>DrumSep leaves room, bleed and hand percussion out of its six pieces: 21.6 and 25.8 dB below the drums on two test songs. Other drums is what is left, the drums minus the six. Backing vocals is the vocals minus the lead.</p>
+    </article>
+    <article class="cell reveal" style="--i:2;--c:var(--vocals)">
+      <p class="cell-code mono">e.03</p>
+      <h3>Groups when you want them</h3>
+      <p>Drag Drums and its seven parts are mixed into one file at that moment. Take the kick out and the file is called "drums no kick". Bass stands alone; guitar, piano and other make Melody.</p>
+    </article>
+  </div>
+</section>
+
+<!-- Trim studio: a working copy of the editor's selection, on a demo song -->
+<section class="trim" id="trim" aria-labelledby="trim-title">
+  <div class="section-head">
+    <p class="eyebrow"><b>03</b></p>
+    <h2 id="trim-title">Trim studio</h2>
+    <p class="section-lede">Take a few bars out of a song or any of its stems and drag them into your DAW as a WAV, cut on a grid you can check by ear. Try it: drag across the waveform.</p>
+  </div>
+
+  <div class="studio reveal" id="studio">
+    <div class="studio-top">
+      <div class="chips" id="trim-chips" role="group" aria-label="What to trim">
+        <button type="button" class="chip press" data-target="original" aria-pressed="true">Original</button>
+        <button type="button" class="chip press" data-target="vocals" style="--c:var(--vocals)"><i></i>vocals</button>
+        <button type="button" class="chip press" data-target="drums" style="--c:var(--drums)"><i></i>drums</button>
+        <button type="button" class="chip press" data-target="bass" style="--c:var(--bass)"><i></i>bass</button>
+        <button type="button" class="chip press" data-target="guitar" style="--c:var(--guitar)"><i></i>guitar</button>
+        <button type="button" class="chip press" data-target="piano" style="--c:var(--piano)"><i></i>piano</button>
+        <button type="button" class="chip press" data-target="other" style="--c:var(--other)"><i></i>other</button>
+      </div>
+      <div class="studio-tools">
+        <span class="mono tempo"><b>128</b> bpm · 4/4</span>
+        <div class="seg seg-small" role="group" aria-label="Snap" id="trim-snap">
+          <button type="button" class="press" data-snap="bar" aria-pressed="true">Bar</button>
+          <button type="button" class="press" data-snap="beat">Beat</button>
+          <button type="button" class="press" data-snap="off">Off</button>
+        </div>
+      </div>
+    </div>
+    <p class="studio-hint mono" id="trim-hint">click a stem to trim it · <span data-mod>Ctrl</span>+click adds stems as one mix</p>
+
+    <div class="stage" id="stage" aria-label="Waveform of the demo song: drag to choose a part">
+      <div class="ruler" id="ruler" aria-hidden="true"></div>
+      <div class="canvas-wrap" tabindex="0" aria-label="Waveform: drag to choose a part, Esc clears it">
+        <canvas id="trim-canvas"></canvas>
+        <div class="sel" id="trim-sel" hidden><span class="edge edge-l"></span><span class="edge edge-r"></span></div>
+      </div>
+    </div>
+
+    <div class="studio-foot">
+      <p class="readout-big" id="trim-readout">bars 5-8 <span class="muted">· 4 bars</span></p>
+      <div class="clip" id="trim-clip">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2h7l3 3v9H3z" fill="none" stroke="currentColor"/><path d="M10 2v3h3" fill="none" stroke="currentColor"/></svg>
+        <span id="trim-file">Demo song - bars 5-8.wav</span>
+      </div>
+      <button type="button" class="btn press" id="trim-every" aria-expanded="false">every stem, this part</button>
+    </div>
+    <ul class="every-files mono" id="trim-files" hidden></ul>
+    <p class="keys-row mono" aria-label="Keys in the trimmer">
+      <span><kbd>Space</kbd> play</span><span><kbd>L</kbd> loop the part</span><span><kbd>F</kbd> show the part</span><span><kbd>Z</kbd> whole song</span><span><kbd>Esc</kbd> clear</span><span><kbd>Alt</kbd> off the grid</span>
+    </p>
+  </div>
+
+  <div class="sheet sheet-3">
+    <article class="cell reveal" style="--i:0;--c:var(--lime)">
+      <p class="cell-code mono">t.01</p>
+      <h3>A grid you can fix</h3>
+      <p>Halve or double the tempo, tap or type it, or drag bar 1's flag onto the first downbeat and a later bar line onto its beat for an exact tempo. Click plays on every beat, so you can hear whether it sits.</p>
+    </article>
+    <article class="cell reveal" style="--i:1;--c:var(--drums)">
+      <p class="cell-code mono">t.02</p>
+      <h3>Stems on top of each other</h3>
+      <p>Choose several stems and they are drawn as layers, each in its own color, so you see where the drums drop out or the vocals come in. They leave as one mix, named after what is in it.</p>
+    </article>
+    <article class="cell reveal" style="--i:2;--c:var(--bass)">
+      <p class="cell-code mono">t.03</p>
+      <h3>Separate only the part</h3>
+      <p>Trim a song still waiting in the queue and, with this setting on, Start separates just those bars: faster, and the stems are as long as the part. Clips go to a Clips folder beside the stems.</p>
+    </article>
+  </div>
+</section>
+
+<!-- Features: a spec sheet --><section class="features" id="features" aria-labelledby="features-title">
+  <div class="section-head">
+    <p class="eyebrow"><b>04</b></p>
     <h2 id="features-title">What it does</h2>
   </div>
 
@@ -133,8 +305,8 @@
     </article>
     <article class="cell reveal" style="--i:3;--c:var(--lime)">
       <p class="cell-code mono">f.04</p>
-      <h3>Cut parts on a grid</h3>
-      <p>Select a section that snaps to bars and beats, correct the grid if detection is off, and drag the clip out.</p>
+      <h3>Fix tempo and key</h3>
+      <p>Type the tempo or key where detection got it wrong. File names, the manifest and the tempo FL Studio reads follow.</p>
     </article>
     <article class="cell reveal" style="--i:4;--c:var(--guitar)">
       <p class="cell-code mono">f.05</p>
@@ -184,7 +356,7 @@
 <!-- Will it run: the README's Memory table, as a picker -->
 <section class="run" id="run" aria-labelledby="run-title">
   <div class="section-head">
-    <p class="eyebrow"><b>03</b></p>
+    <p class="eyebrow"><b>05</b></p>
     <h2 id="run-title">Will it run?</h2>
   </div>
 
@@ -221,7 +393,7 @@
 <!-- Download -->
 <section class="download" id="download" aria-labelledby="download-title">
   <div class="section-head">
-    <p class="eyebrow"><b>04</b></p>
+    <p class="eyebrow"><b>06</b></p>
     <h2 id="download-title">Download <span class="muted" data-fill="released">0.4.0</span></h2>
   </div>
 
@@ -288,7 +460,7 @@
 <!-- Changelog -->
 <section class="changelog" id="changelog" aria-labelledby="changelog-title">
   <div class="section-head">
-    <p class="eyebrow"><b>05</b></p>
+    <p class="eyebrow"><b>07</b></p>
     <h2 id="changelog-title">Changelog</h2>
   </div>
   <div class="log" id="log">
@@ -302,7 +474,7 @@
 <!-- Support -->
 <section class="support" id="support" aria-labelledby="support-title">
   <div class="support-inner reveal">
-    <p class="eyebrow"><b>06</b></p>
+    <p class="eyebrow"><b>08</b></p>
     <h2 id="support-title">Support</h2>
     <p>OpenStems is free and open source under the MIT license. Tips help fund its development.</p>
     <div class="cta">
