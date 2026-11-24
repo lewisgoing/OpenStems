@@ -1,9 +1,9 @@
-"""Change the tempo and key of stems that are already written.
+"""Change the tempo, key and bar 1 of stems that are already written.
 
 Detection is sometimes wrong: half or double the tempo, the relative major for a minor
-key. The user's figures replace the detected ones everywhere they were used: the manifest,
-file names made with ``{bpm}`` or ``{key}``, and the tempo FL Studio reads from a WAV.
-The audio itself is never touched.
+key, bar 1 on the wrong beat. The user's figures replace the detected ones everywhere they
+were used: the manifest, file names made with ``{bpm}`` or ``{key}``, and the tempo FL
+Studio reads from a WAV. Bar 1 is only in the manifest. The audio itself is never touched.
 """
 
 from __future__ import annotations
@@ -17,12 +17,15 @@ from typing import Any
 
 from openstems.audio.write import set_tempo
 from openstems.domain.errors import DomainError
+from openstems.domain.grid import clean_downbeat
 from openstems.domain.naming import DEFAULT_TEMPLATE, render_name
 from openstems.domain.stem import MANIFEST_NAME
 from openstems.domain.tempo import notes_after_retag
 from openstems.pipeline.run import read_manifest
 
 MIXES_DIR = "Mixes"
+# What the user may set by hand, in the manifest's ``analysis``.
+FIELDS = ("bpm", "key", "downbeat")
 _KEY = re.compile(r"^([A-Ga-g])([#b]?)(m?)$")
 _FLATS = {"Db": "C#", "Eb": "D#", "Gb": "F#", "Ab": "G#", "Bb": "A#", "Cb": "B", "Fb": "E"}
 
@@ -53,12 +56,15 @@ def clean_key(value: Any) -> str | None:
 
 
 def clean_changes(changes: dict[str, Any]) -> dict[str, Any]:
-    """The ``bpm`` and ``key`` of a request, checked. Other fields are dropped."""
+    """The ``bpm``, ``key`` and ``downbeat`` of a request, checked. Other fields are
+    dropped."""
     out: dict[str, Any] = {}
     if "bpm" in changes:
         out["bpm"] = clean_bpm(changes["bpm"])
     if "key" in changes:
         out["key"] = clean_key(changes["key"])
+    if "downbeat" in changes:
+        out["downbeat"] = clean_downbeat(changes["downbeat"])
     return out
 
 
@@ -95,20 +101,21 @@ def _renames(
 
 
 def set_analysis(directory: Path, changes: dict[str, Any]) -> dict[str, Any]:
-    """Set the tempo and the key of the stem set in ``directory``.
+    """Set the tempo, the key and bar 1 of the stem set in ``directory``.
 
-    ``changes`` holds ``bpm`` and ``key``, either or both; a value of None means the song
-    has none. Returns the new manifest. What detection found is kept under
-    ``analysis.detected`` the first time something is changed.
+    ``changes`` holds any of ``bpm``, ``key`` and ``downbeat`` (where bar 1 starts, in
+    seconds into the song); a value of None means the song has none. Returns the new
+    manifest. What detection found is kept under ``analysis.detected`` the first time
+    something is changed. Bar 1 alone changes the manifest and nothing else.
     """
     manifest = read_manifest(directory)
     if manifest is None:
         raise DomainError("that folder does not hold a set of stems")
     old = dict(manifest.get("analysis") or {})
     new = {**old, **clean_changes(changes)}
-    if new.get("bpm") == old.get("bpm") and new.get("key") == old.get("key"):
+    if all(new.get(name) == old.get(name) for name in FIELDS):
         return manifest
-    new.setdefault("detected", {"bpm": old.get("bpm"), "key": old.get("key")})
+    new.setdefault("detected", {name: old.get(name) for name in FIELDS})
 
     moves = _renames(manifest, old, new, directory)
     taken = {name.lower() for name in os.listdir(directory)} - {name.lower() for name in moves}

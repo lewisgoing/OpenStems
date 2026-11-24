@@ -11,6 +11,7 @@ JobStateName = Literal["queued", "preparing", "running", "writing", "done", "fai
 Quality = Literal["fast", "balanced", "best"]
 OutputFormat = Literal["wav32f", "wav24", "flac", "mp3"]
 Fit = Literal["fits", "tight", "no"]
+_DOWNBEAT = "Where bar 1 starts, in seconds, in place of the detected one."
 
 
 class Health(BaseModel):
@@ -197,6 +198,7 @@ class JobOptions(BaseModel):
     key: str | None = Field(
         default=None, description="The song's key, such as Am, in place of the detected one."
     )
+    downbeat: float | None = Field(default=None, description=_DOWNBEAT)
 
 
 class CreateJob(BaseModel):
@@ -267,6 +269,76 @@ class MixInfo(BaseModel):
     sample_rate: int
 
 
+class ClipGrid(BaseModel):
+    """The beat grid a selection was made on. It names the clip ("bars 9-16"), and its
+    tempo is the one a tempo-synced clip is marked with. Taken as it is, not rounded."""
+
+    bpm: float = Field(description="20 to 999.")
+    downbeat: float = Field(
+        description="Where bar 1 starts, in seconds from the start of the song. "
+        "Negative when it starts before the file does."
+    )
+    beats_per_bar: int = Field(default=4, description="1 to 16.")
+
+
+class CreateClips(BaseModel):
+    paths: list[str] = Field(
+        description="One or more stem files of one song, or the song's own file alone."
+    )
+    start: float = Field(description="Where the clip starts, in seconds into the song.")
+    end: float = Field(description="Where it ends. Kept inside the song.")
+    together: bool = Field(
+        default=True,
+        description="Several stems as one file, their sum. False: one file per stem.",
+    )
+    grid: ClipGrid | None = Field(
+        default=None, description="Without a grid the clip is named by its times."
+    )
+    source: bool | None = Field(
+        default=None,
+        description="Whether the one path is the song's own file rather than a stem. "
+        "Left out: it is when it is the file of a song in the queue or the history. "
+        "A stem that was itself separated is both, so say which.",
+    )
+
+
+class ClipInfo(BaseModel):
+    path: str
+    name: str
+    label: str = Field(description="The stem or mix in the clip's name; empty for the song.")
+    stems: list[str] = Field(description="The stems in the clip; none for the song.")
+    start: float = Field(description="Where the clip starts in the song, in seconds.")
+    end: float
+    samples: int
+    sample_rate: int
+
+
+class ClipList(BaseModel):
+    clips: list[ClipInfo]
+
+
+class SourcePreviewRequest(BaseModel):
+    path: str = Field(description="The file of a song in the queue or the history.")
+
+
+class SourceAnalysis(BaseModel):
+    bpm: float | None = None
+    key: str | None = None
+    downbeat: float | None = Field(
+        default=None, description="Where bar 1 starts, in seconds into the song."
+    )
+
+
+class SourcePreview(BaseModel):
+    """A song's own file as the app plays and draws it before separation."""
+
+    audio: str = Field(description="A 16-bit FLAC at 44.1 kHz, served by /v1/files.")
+    peaks: str = Field(description="Its peaks, served by /v1/peaks.")
+    duration: float
+    sample_rate: int
+    analysis: SourceAnalysis = Field(description="What detection finds in the file.")
+
+
 class StemFile(BaseModel):
     name: str
     file: str
@@ -277,6 +349,11 @@ class StemFile(BaseModel):
     sample_rate: int | None = None
     group: str | None = Field(
         default=None, description="The larger stem this one is a part of, if any."
+    )
+    start: float = Field(
+        default=0.0,
+        description="Seconds into the song where this file begins: later than 0 when its "
+        "leading silence was trimmed.",
     )
 
 
@@ -364,11 +441,12 @@ class SettingsPatch(BaseModel):
 
 
 class SetAnalysis(BaseModel):
-    """The tempo and key the user gives a song. A field left out is not changed; null
-    means the song has none (for a job that has not run yet: detect it)."""
+    """The tempo, key and bar 1 the user gives a song. A field left out is not changed;
+    null means the song has none (for a job that has not run yet: detect it)."""
 
     bpm: float | None = None
     key: str | None = None
+    downbeat: float | None = Field(default=None, description=_DOWNBEAT)
 
 
 class SetStemSetAnalysis(SetAnalysis):

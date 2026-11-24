@@ -1,6 +1,103 @@
 {
   "components": {
     "schemas": {
+      "ClipGrid": {
+        "description": "The beat grid a selection was made on. It names the clip (\"bars 9-16\"), and its\ntempo is the one a tempo-synced clip is marked with. Taken as it is, not rounded.",
+        "properties": {
+          "beats_per_bar": {
+            "default": 4,
+            "description": "1 to 16.",
+            "title": "Beats Per Bar",
+            "type": "integer"
+          },
+          "bpm": {
+            "description": "20 to 999.",
+            "title": "Bpm",
+            "type": "number"
+          },
+          "downbeat": {
+            "description": "Where bar 1 starts, in seconds from the start of the song. Negative when it starts before the file does.",
+            "title": "Downbeat",
+            "type": "number"
+          }
+        },
+        "required": [
+          "bpm",
+          "downbeat"
+        ],
+        "title": "ClipGrid",
+        "type": "object"
+      },
+      "ClipInfo": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "label": {
+            "description": "The stem or mix in the clip's name; empty for the song.",
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "sample_rate": {
+            "title": "Sample Rate",
+            "type": "integer"
+          },
+          "samples": {
+            "title": "Samples",
+            "type": "integer"
+          },
+          "start": {
+            "description": "Where the clip starts in the song, in seconds.",
+            "title": "Start",
+            "type": "number"
+          },
+          "stems": {
+            "description": "The stems in the clip; none for the song.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Stems",
+            "type": "array"
+          }
+        },
+        "required": [
+          "path",
+          "name",
+          "label",
+          "stems",
+          "start",
+          "end",
+          "samples",
+          "sample_rate"
+        ],
+        "title": "ClipInfo",
+        "type": "object"
+      },
+      "ClipList": {
+        "properties": {
+          "clips": {
+            "items": {
+              "$ref": "#/components/schemas/ClipInfo"
+            },
+            "title": "Clips",
+            "type": "array"
+          }
+        },
+        "required": [
+          "clips"
+        ],
+        "title": "ClipList",
+        "type": "object"
+      },
       "CreateBatch": {
         "properties": {
           "model": {
@@ -69,6 +166,64 @@
           "paths"
         ],
         "title": "CreateBatch",
+        "type": "object"
+      },
+      "CreateClips": {
+        "properties": {
+          "end": {
+            "description": "Where it ends. Kept inside the song.",
+            "title": "End",
+            "type": "number"
+          },
+          "grid": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClipGrid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Without a grid the clip is named by its times."
+          },
+          "paths": {
+            "description": "One or more stem files of one song, or the song's own file alone.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Paths",
+            "type": "array"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether the one path is the song's own file rather than a stem. Left out: it is when it is the file of a song in the queue or the history. A stem that was itself separated is both, so say which.",
+            "title": "Source"
+          },
+          "start": {
+            "description": "Where the clip starts, in seconds into the song.",
+            "title": "Start",
+            "type": "number"
+          },
+          "together": {
+            "default": true,
+            "description": "Several stems as one file, their sum. False: one file per stem.",
+            "title": "Together",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "paths",
+          "start",
+          "end"
+        ],
+        "title": "CreateClips",
         "type": "object"
       },
       "CreateJob": {
@@ -576,6 +731,18 @@
             ],
             "description": "The song's tempo, in place of the detected one.",
             "title": "Bpm"
+          },
+          "downbeat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where bar 1 starts, in seconds, in place of the detected one.",
+            "title": "Downbeat"
           },
           "force": {
             "anyOf": [
@@ -1448,7 +1615,7 @@
         "type": "object"
       },
       "SetAnalysis": {
-        "description": "The tempo and key the user gives a song. A field left out is not changed; null\nmeans the song has none (for a job that has not run yet: detect it).",
+        "description": "The tempo, key and bar 1 the user gives a song. A field left out is not changed;\nnull means the song has none (for a job that has not run yet: detect it).",
         "properties": {
           "bpm": {
             "anyOf": [
@@ -1460,6 +1627,18 @@
               }
             ],
             "title": "Bpm"
+          },
+          "downbeat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where bar 1 starts, in seconds, in place of the detected one.",
+            "title": "Downbeat"
           },
           "key": {
             "anyOf": [
@@ -1492,6 +1671,18 @@
           "directory": {
             "title": "Directory",
             "type": "string"
+          },
+          "downbeat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where bar 1 starts, in seconds, in place of the detected one.",
+            "title": "Downbeat"
           },
           "key": {
             "anyOf": [
@@ -1851,6 +2042,96 @@
         "title": "SettingsPatch",
         "type": "object"
       },
+      "SourceAnalysis": {
+        "properties": {
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "downbeat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where bar 1 starts, in seconds into the song.",
+            "title": "Downbeat"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          }
+        },
+        "title": "SourceAnalysis",
+        "type": "object"
+      },
+      "SourcePreview": {
+        "description": "A song's own file as the app plays and draws it before separation.",
+        "properties": {
+          "analysis": {
+            "$ref": "#/components/schemas/SourceAnalysis",
+            "description": "What detection finds in the file."
+          },
+          "audio": {
+            "description": "A 16-bit FLAC at 44.1 kHz, served by /v1/files.",
+            "title": "Audio",
+            "type": "string"
+          },
+          "duration": {
+            "title": "Duration",
+            "type": "number"
+          },
+          "peaks": {
+            "description": "Its peaks, served by /v1/peaks.",
+            "title": "Peaks",
+            "type": "string"
+          },
+          "sample_rate": {
+            "title": "Sample Rate",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "audio",
+          "peaks",
+          "duration",
+          "sample_rate",
+          "analysis"
+        ],
+        "title": "SourcePreview",
+        "type": "object"
+      },
+      "SourcePreviewRequest": {
+        "properties": {
+          "path": {
+            "description": "The file of a song in the queue or the history.",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "SourcePreviewRequest",
+        "type": "object"
+      },
       "StemFile": {
         "properties": {
           "file": {
@@ -1920,6 +2201,12 @@
               }
             ],
             "title": "Samples"
+          },
+          "start": {
+            "default": 0.0,
+            "description": "Seconds into the song where this file begins: later than 0 when its leading silence was trimmed.",
+            "title": "Start",
+            "type": "number"
           }
         },
         "required": [
@@ -2396,6 +2683,80 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/clips": {
+      "post": {
+        "description": "Write a stretch of a song as files to drag into a DAW: of the song's own file,\nor of its stems, summed into one file or one file each. A clip that is already\nwritten is found again. A file of its name that is newer than the song's stems or\nfile is never written over: when it holds something else, the clip takes the name\nwith \"(2)\", \"(3)\" and so on.",
+        "operationId": "create_clips",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateClips"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClipList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Clips"
+      }
+    },
     "/v1/diagnostics": {
       "post": {
         "operationId": "export_diagnostics",
@@ -3154,7 +3515,7 @@
     },
     "/v1/jobs/{job_id}/analysis": {
       "post": {
-        "description": "Set a job's tempo and key by hand: before it runs, or on its finished stems.",
+        "description": "Set a job's tempo, key and bar 1 by hand: before it runs, or on its finished\nstems.",
         "operationId": "set_job_analysis",
         "parameters": [
           {
@@ -4587,6 +4948,80 @@
         "summary": "Patch Settings"
       }
     },
+    "/v1/sources/preview": {
+      "post": {
+        "description": "A song's own file, ready to play and draw before it is separated, with the beat\ngrid detection finds. The first request for a song takes a few seconds.",
+        "operationId": "preview_source",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourcePreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourcePreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Source"
+      }
+    },
     "/v1/stemsets": {
       "get": {
         "operationId": "list_stem_sets",
@@ -4664,7 +5099,7 @@
     },
     "/v1/stemsets/analysis": {
       "post": {
-        "description": "Set the tempo and key of a song's finished stems by hand.",
+        "description": "Set the tempo, key and bar 1 of a song's finished stems by hand.",
         "operationId": "set_stem_set_analysis",
         "requestBody": {
           "content": {

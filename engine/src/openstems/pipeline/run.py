@@ -54,10 +54,12 @@ class RunOptions:
     normalize: bool = False
     detect_tempo_key: bool = False
     tempo_sync: bool = False
-    # The user's own tempo and key for this song, in place of what detection finds. Not
-    # part of the cache key: a cached result is re-tagged, not separated again.
+    # The user's own tempo, key and bar 1 (seconds into the song) for this song, in place
+    # of what detection finds. Not part of the cache key: a cached result is re-tagged, not
+    # separated again.
     bpm: float | None = None
     key: str | None = None
+    downbeat: float | None = None
     midi_stems: list[str] = field(default_factory=list)
     force: bool = False
 
@@ -188,10 +190,11 @@ class Pipeline:
 
     @staticmethod
     def _retagged(out_dir: Path, cached: StemSet, options: RunOptions) -> StemSet:
-        """A cached result with the tempo and key this run was given, if it was given any."""
+        """A cached result with the tempo, key and bar 1 this run was given, if any."""
         from openstems.pipeline.retag import set_analysis
 
-        changes = {k: v for k, v in (("bpm", options.bpm), ("key", options.key)) if v is not None}
+        given = (("bpm", options.bpm), ("key", options.key), ("downbeat", options.downbeat))
+        changes = {k: v for k, v in given if v is not None}
         if not changes:
             return cached
         return stem_set_from_manifest(out_dir, set_analysis(out_dir, changes)) or cached
@@ -557,6 +560,8 @@ class Pipeline:
                 "analysis": {
                     "bpm": extras.get("bpm"),
                     "key": extras.get("key"),
+                    # Where bar 1 starts, in seconds into the song: the beat grid's anchor.
+                    "downbeat": _seconds(extras.get("downbeat")),
                     # What detection found, when the user's figures replaced it.
                     **({"detected": extras["detected"]} if extras.get("detected") else {}),
                 },
@@ -603,6 +608,11 @@ def _out_of_memory(exc: BaseException) -> bool:
 
 def _runs_on_cpu(loaded: object) -> bool:
     return str(getattr(loaded, "device", "")).startswith("cpu")
+
+
+def _seconds(value: float | None) -> float | None:
+    """A time for the manifest, to a tenth of a millisecond."""
+    return None if value is None else round(float(value), 4)
 
 
 def _needed_stems(recipe: Recipe) -> dict[str, set[str]]:

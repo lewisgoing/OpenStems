@@ -163,6 +163,7 @@ const stem = (track: string, name: string): StemFile => ({
   peaks: `D:\\out\\${track}\\full-song\\.peaks\\${name}.json`,
   samples: 88200,
   sample_rate: 44100,
+  start: 0,
 })
 const SIX = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other']
 

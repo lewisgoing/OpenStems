@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from openstems.domain.stem import MANIFEST_NAME
-from openstems.pipeline.run import read_manifest
+from openstems.pipeline.run import SAMPLE_RATE, read_manifest
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tracks (
@@ -113,6 +113,7 @@ class Index:
                 "samples": s.get("samples"),
                 "sample_rate": s.get("sample_rate"),
                 "group": s.get("group") or None,
+                "offset": int(s.get("offset") or 0),
             }
             for s in manifest.get("stems", [])
         ]
@@ -165,6 +166,11 @@ class Index:
         with self._lock:
             return [r[0] for r in self._db.execute("SELECT directory FROM stem_sets")]
 
+    def track_paths(self) -> list[str]:
+        """The song file of every indexed stem set."""
+        with self._lock:
+            return [r[0] for r in self._db.execute("SELECT DISTINCT track_path FROM stem_sets")]
+
     # -- rebuild --------------------------------------------------------------
 
     def rebuild(self, output_root: Path) -> int:
@@ -198,6 +204,8 @@ def _stem_set_row(row: sqlite3.Row) -> dict[str, Any]:
         stem["path"] = str(Path(directory) / stem["file"])
         stem["peaks"] = str(Path(directory) / stem["peaks"]) if stem.get("peaks") else None
         stem["midi"] = str(Path(directory) / stem["midi"]) if stem.get("midi") else None
+        # Where the file begins in the song. A row from before offsets were kept has none.
+        stem["start"] = int(stem.get("offset") or 0) / SAMPLE_RATE
     return {
         "directory": directory,
         "track_name": row["track_name"],

@@ -92,11 +92,17 @@ def set_tempo(path: Path, bpm: float | None) -> None:
 
 
 def write_audio(
-    path: Path, audio: np.ndarray, sample_rate: int, fmt: str = "wav32f", bpm: float | None = None
+    path: Path,
+    audio: np.ndarray,
+    sample_rate: int,
+    fmt: str = "wav32f",
+    bpm: float | None = None,
+    comment: str | None = None,
 ) -> None:
     """Write ``(channels, samples)`` float32 audio. Float WAV is written untouched;
     fixed-point formats are clipped to [-1, 1] by libsndfile. With ``bpm``, a WAV is
-    marked as tempo-synced for FL Studio; FLAC and MP3 cannot carry the mark."""
+    marked as tempo-synced for FL Studio; FLAC and MP3 cannot carry the mark. A
+    ``comment`` goes into the file's tags (a WAV's ``LIST`` ``INFO`` chunk)."""
     if fmt not in FORMATS:
         raise DomainError(f"unknown output format {fmt!r}")
     _, container, subtype = FORMATS[fmt]
@@ -106,7 +112,15 @@ def write_audio(
     kwargs = {}
     if fmt == "mp3":
         kwargs = {"compression_level": 0.0, "bitrate_mode": "CONSTANT"}  # 320 kbps
-    sf.write(str(path), data, sample_rate, format=container, subtype=subtype, **kwargs)
+    if comment is None:
+        sf.write(str(path), data, sample_rate, format=container, subtype=subtype, **kwargs)
+    else:
+        channels = data.shape[1]
+        with sf.SoundFile(
+            str(path), "w", sample_rate, channels, subtype, format=container, **kwargs
+        ) as f:
+            f.comment = comment
+            f.write(data)
     if bpm and bpm > 0 and carries_tempo(fmt):
         _append_chunk(path, tempo_chunk(bpm))
 
@@ -115,6 +129,32 @@ def read_audio(path: Path) -> tuple[np.ndarray, int]:
     """Read a file written by :func:`write_audio` back as ``(channels, samples)`` float32."""
     data, rate = sf.read(str(path), dtype="float32", always_2d=True)
     return np.ascontiguousarray(data.T), int(rate)
+
+
+def audio_rate(path: Path) -> int:
+    """The sample rate of an audio file, from its header alone."""
+    return int(sf.info(str(path)).samplerate)
+
+
+def read_window(path: Path, start: int, frames: int) -> np.ndarray:
+    """``frames`` frames of an audio file from frame ``start``, as ``(channels, frames)``
+    float32. Where the file has no audio, before its first frame (a negative ``start``)
+    or after its last, the window is silent. Only that stretch is read from disk."""
+    with sf.SoundFile(str(path)) as f:
+        out = np.zeros((f.channels, frames), dtype=np.float32)
+        first, last = max(0, start), min(f.frames, start + frames)
+        if last > first:
+            f.seek(first)
+            data = f.read(last - first, dtype="float32", always_2d=True)
+            at = first - start
+            out[:, at : at + data.shape[0]] = data.T
+    return out
+
+
+def read_comment(path: Path) -> str:
+    """The comment in an audio file's tags (see `write_audio`), or "" for none."""
+    with sf.SoundFile(str(path)) as f:
+        return str(f.comment or "")
 
 
 def compute_peaks(audio: np.ndarray, sample_rate: int) -> dict[str, Any]:

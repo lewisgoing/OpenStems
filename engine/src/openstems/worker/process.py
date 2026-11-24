@@ -67,6 +67,8 @@ class SharedCancel(CancelToken):
 
 
 def stem_set_payload(result: Any) -> dict[str, Any]:
+    from openstems.pipeline.run import SAMPLE_RATE
+
     directory = result.directory
     return {
         "directory": directory,
@@ -82,6 +84,8 @@ def stem_set_payload(result: Any) -> dict[str, Any]:
                 "peaks": os.path.join(directory, s.peaks) if s.peaks else None,
                 "midi": os.path.join(directory, s.midi) if s.midi else None,
                 "offset": s.offset,
+                # Seconds into the song where the file begins: later when silence was trimmed.
+                "start": s.offset / SAMPLE_RATE,
                 "samples": s.samples,
                 "sample_rate": s.sample_rate,
                 "group": s.group or None,

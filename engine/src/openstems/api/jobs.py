@@ -14,6 +14,7 @@ from openstems.api.db import Index
 from openstems.api.events import EventBus
 from openstems.domain.errors import DomainError
 from openstems.domain.job import Job, JobState
+from openstems.pipeline.run import SAMPLE_RATE
 from openstems.worker.supervisor import WorkerSupervisor
 
 _STAGE_STATE = {
@@ -82,7 +83,7 @@ class JobManager:
             self._jobs[job.id] = job
             self._extra[job.id] = {
                 "recipe_name": data.get("recipe_name", job.recipe_id),
-                "stems": data.get("stems", []),
+                "stems": [_with_start(stem) for stem in data.get("stems") or []],
                 "analysis": data.get("analysis", {}),
                 "notes": data.get("notes", []),
                 # A job that was waiting for Start still waits after a restart.
@@ -199,8 +200,8 @@ class JobManager:
             return [self.to_dict(self._jobs[j]) for j in self._order]
 
     def set_analysis(self, job_id: str, changes: dict[str, Any]) -> dict[str, Any]:
-        """Give a job that has not started the song's tempo and key, in place of what
-        detection will find. A value of None takes the user's figure away again."""
+        """Give a job that has not started the song's tempo, key and bar 1, in place of
+        what detection will find. A value of None takes the user's figure away again."""
         with self._lock:
             job = self._job(job_id)
             if job.state is not JobState.QUEUED:
@@ -435,3 +436,15 @@ class JobManager:
         job.advance(state, error=error)
         job.message = ""
         self._changed(job)
+
+
+def _with_start(stem: Any) -> Any:
+    """A stem of a job saved before stems said where they start in the song: its start,
+    from the offset the worker sent with it (counted at the engine's rate)."""
+    if not isinstance(stem, dict) or "start" in stem:
+        return stem
+    try:
+        offset = int(stem.get("offset") or 0)
+    except (TypeError, ValueError):
+        offset = 0
+    return {**stem, "start": offset / SAMPLE_RATE}

@@ -4,6 +4,30 @@
  */
 
 export interface paths {
+    "/v1/clips": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Clips
+         * @description Write a stretch of a song as files to drag into a DAW: of the song's own file,
+         *     or of its stems, summed into one file or one file each. A clip that is already
+         *     written is found again. A file of its name that is newer than the song's stems or
+         *     file is never written over: when it holds something else, the clip takes the name
+         *     with "(2)", "(3)" and so on.
+         */
+        post: operations["create_clips"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/diagnostics": {
         parameters: {
             query?: never;
@@ -176,7 +200,8 @@ export interface paths {
         put?: never;
         /**
          * Set Job Analysis
-         * @description Set a job's tempo and key by hand: before it runs, or on its finished stems.
+         * @description Set a job's tempo, key and bar 1 by hand: before it runs, or on its finished
+         *     stems.
          */
         post: operations["set_job_analysis"];
         delete?: never;
@@ -497,6 +522,27 @@ export interface paths {
         patch: operations["patch_settings"];
         trace?: never;
     };
+    "/v1/sources/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Source
+         * @description A song's own file, ready to play and draw before it is separated, with the beat
+         *     grid detection finds. The first request for a song takes a few seconds.
+         */
+        post: operations["preview_source"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/stemsets": {
         parameters: {
             query?: never;
@@ -525,7 +571,7 @@ export interface paths {
         put?: never;
         /**
          * Set Stem Set Analysis
-         * @description Set the tempo and key of a song's finished stems by hand.
+         * @description Set the tempo, key and bar 1 of a song's finished stems by hand.
          */
         post: operations["set_stem_set_analysis"];
         delete?: never;
@@ -589,6 +635,62 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * ClipGrid
+         * @description The beat grid a selection was made on. It names the clip ("bars 9-16"), and its
+         *     tempo is the one a tempo-synced clip is marked with. Taken as it is, not rounded.
+         */
+        ClipGrid: {
+            /**
+             * Beats Per Bar
+             * @description 1 to 16.
+             * @default 4
+             */
+            beats_per_bar: number;
+            /**
+             * Bpm
+             * @description 20 to 999.
+             */
+            bpm: number;
+            /**
+             * Downbeat
+             * @description Where bar 1 starts, in seconds from the start of the song. Negative when it starts before the file does.
+             */
+            downbeat: number;
+        };
+        /** ClipInfo */
+        ClipInfo: {
+            /** End */
+            end: number;
+            /**
+             * Label
+             * @description The stem or mix in the clip's name; empty for the song.
+             */
+            label: string;
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /** Sample Rate */
+            sample_rate: number;
+            /** Samples */
+            samples: number;
+            /**
+             * Start
+             * @description Where the clip starts in the song, in seconds.
+             */
+            start: number;
+            /**
+             * Stems
+             * @description The stems in the clip; none for the song.
+             */
+            stems: string[];
+        };
+        /** ClipList */
+        ClipList: {
+            /** Clips */
+            clips: components["schemas"]["ClipInfo"][];
+        };
         /** CreateBatch */
         CreateBatch: {
             /** Model */
@@ -606,6 +708,37 @@ export interface components {
              * @description Start as soon as the GPU is free, or wait for Start. Default: the auto_start setting.
              */
             start?: boolean | null;
+        };
+        /** CreateClips */
+        CreateClips: {
+            /**
+             * End
+             * @description Where it ends. Kept inside the song.
+             */
+            end: number;
+            /** @description Without a grid the clip is named by its times. */
+            grid?: components["schemas"]["ClipGrid"] | null;
+            /**
+             * Paths
+             * @description One or more stem files of one song, or the song's own file alone.
+             */
+            paths: string[];
+            /**
+             * Source
+             * @description Whether the one path is the song's own file rather than a stem. Left out: it is when it is the file of a song in the queue or the history. A stem that was itself separated is both, so say which.
+             */
+            source?: boolean | null;
+            /**
+             * Start
+             * @description Where the clip starts, in seconds into the song.
+             */
+            start: number;
+            /**
+             * Together
+             * @description Several stems as one file, their sum. False: one file per stem.
+             * @default true
+             */
+            together: boolean;
         };
         /** CreateJob */
         CreateJob: {
@@ -805,6 +938,11 @@ export interface components {
              * @description The song's tempo, in place of the detected one.
              */
             bpm?: number | null;
+            /**
+             * Downbeat
+             * @description Where bar 1 starts, in seconds, in place of the detected one.
+             */
+            downbeat?: number | null;
             /** Force */
             force?: boolean | null;
             /**
@@ -1149,12 +1287,17 @@ export interface components {
         };
         /**
          * SetAnalysis
-         * @description The tempo and key the user gives a song. A field left out is not changed; null
-         *     means the song has none (for a job that has not run yet: detect it).
+         * @description The tempo, key and bar 1 the user gives a song. A field left out is not changed;
+         *     null means the song has none (for a job that has not run yet: detect it).
          */
         SetAnalysis: {
             /** Bpm */
             bpm?: number | null;
+            /**
+             * Downbeat
+             * @description Where bar 1 starts, in seconds, in place of the detected one.
+             */
+            downbeat?: number | null;
             /** Key */
             key?: string | null;
         };
@@ -1164,6 +1307,11 @@ export interface components {
             bpm?: number | null;
             /** Directory */
             directory: string;
+            /**
+             * Downbeat
+             * @description Where bar 1 starts, in seconds, in place of the detected one.
+             */
+            downbeat?: number | null;
             /** Key */
             key?: string | null;
         };
@@ -1255,6 +1403,48 @@ export interface components {
             /** Write Midi */
             write_midi?: boolean | null;
         };
+        /** SourceAnalysis */
+        SourceAnalysis: {
+            /** Bpm */
+            bpm?: number | null;
+            /**
+             * Downbeat
+             * @description Where bar 1 starts, in seconds into the song.
+             */
+            downbeat?: number | null;
+            /** Key */
+            key?: string | null;
+        };
+        /**
+         * SourcePreview
+         * @description A song's own file as the app plays and draws it before separation.
+         */
+        SourcePreview: {
+            /** @description What detection finds in the file. */
+            analysis: components["schemas"]["SourceAnalysis"];
+            /**
+             * Audio
+             * @description A 16-bit FLAC at 44.1 kHz, served by /v1/files.
+             */
+            audio: string;
+            /** Duration */
+            duration: number;
+            /**
+             * Peaks
+             * @description Its peaks, served by /v1/peaks.
+             */
+            peaks: string;
+            /** Sample Rate */
+            sample_rate: number;
+        };
+        /** SourcePreviewRequest */
+        SourcePreviewRequest: {
+            /**
+             * Path
+             * @description The file of a song in the queue or the history.
+             */
+            path: string;
+        };
         /** StemFile */
         StemFile: {
             /** File */
@@ -1276,6 +1466,12 @@ export interface components {
             sample_rate?: number | null;
             /** Samples */
             samples?: number | null;
+            /**
+             * Start
+             * @description Seconds into the song where this file begins: later than 0 when its leading silence was trimmed.
+             * @default 0
+             */
+            start: number;
         };
         /** StemSetInfo */
         StemSetInfo: {
@@ -1476,6 +1672,66 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    create_clips: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateClips"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClipList"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     export_diagnostics: {
         parameters: {
             query?: never;
@@ -3240,6 +3496,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SettingsModel"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourcePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourcePreview"];
                 };
             };
             /** @description Bad Request */
