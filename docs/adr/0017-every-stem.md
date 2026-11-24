@@ -56,7 +56,11 @@ same meaning of melody as the `melody` recipe). Bass is in none.
   which `POST /v1/mixes` already writes.
 - A mix that is exactly one group is named after it: the kit together is
   `<track> - drums.wav`, everything but the kit is `no drums` (`mix_label` and `mixLabel`,
-  changed together).
+  changed together). The kit with a few of its parts taken out still goes by it: without its
+  kick it is `drums no kick`, and up to three parts can be named so (2026-11-23, for the
+  trimmer, where the Drums chip with the kick taken out had been "6 stems"). With more left
+  out, or parts of two groups, the rules before it apply: up to three parts are listed
+  ("snare + toms + hh"), more are counted.
 - A group cannot have the name of an output stem of the same recipe, so those names stay
   unambiguous.
 - The group is in the recipe (`output_groups` in the API), in the manifest and on each stem
