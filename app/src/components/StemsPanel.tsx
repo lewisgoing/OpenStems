@@ -1,4 +1,4 @@
-import { Blend, FolderOpen, GripVertical, Layers, Music2, Pause, Play, X } from 'lucide-react'
+import { Blend, FolderOpen, GripVertical, Layers, Music2, Pause, Play, Scissors, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { type StemFile, type StemSet, fileUrl } from '@/api/client'
 import { useEngine } from '@/api/engine'
@@ -28,7 +28,25 @@ export interface StemsPanelProps {
   notes?: string[]
   /** The user changed the tempo or key: the stems as they are now (some may be renamed). */
   onRetagged?: (set: StemSet) => void
+  /**
+   * Open the trimmer on what solo and mute leave audible (`null` for every stem), with the
+   * solo and mute to bring back after it. `instant` when the keyboard asked.
+   */
+  onTrim?: (audible: string[] | null, how: { instant: boolean; mix: PanelMix }) => void
+  /** Solo and mute as they were when the panel was last left for the trimmer. */
+  initialMix?: PanelMix
+  /**
+   * The trimmer is coming in over the panel: it stops playing and leaves Space to the
+   * trimmer, for the moment it is still there under it.
+   */
+  frozen?: boolean
   onClose: () => void
+}
+
+/** What solo and mute are set to, to bring back when the panel comes back. */
+export interface PanelMix {
+  soloed: string[]
+  muted: string[]
 }
 
 function useStemPlayer(stems: StemFile[]) {
@@ -81,9 +99,21 @@ function Clock({ player }: { player: StemPlayer }) {
   return <span ref={ref}>0:00</span>
 }
 
-export function StemsPanel({ title, source, subtitle, directory, stems, analysis, notes, onRetagged, onClose }: StemsPanelProps) {
+export function StemsPanel({ title, source, subtitle, directory, stems, analysis, notes, onRetagged, onTrim, initialMix, frozen = false, onClose }: StemsPanelProps) {
   const setAnalysis = useSetAnalysis()
   const { player, state, playPause } = useStemPlayer(stems)
+  // Back from the trimmer, solo and mute are as they were left. Applied so that running it
+  // again (React's development mode does) changes nothing.
+  const mix = useRef(initialMix)
+  useEffect(() => {
+    const kept = mix.current
+    if (!kept) return
+    player.setMuted(kept.muted)
+    const soloed = player.state.soloed
+    if (kept.soloed.length > 0 && !(soloed.size === kept.soloed.length && kept.soloed.every((name) => soloed.has(name)))) {
+      player.toggleSoloMany(kept.soloed)
+    }
+  }, [player])
   const [dragging, setDragging] = useState<string | null>(null)
   const gain = useSharedGain(stems.map((s) => s.peaks))
   const totalSeconds =
@@ -100,8 +130,13 @@ export function StemsPanel({ title, source, subtitle, directory, stems, analysis
     [player, state.status, totalSeconds],
   )
 
+  useEffect(() => {
+    if (frozen) player.pause()
+  }, [frozen, player])
+
   // Space toggles playback. Keyboard-initiated, so nothing animates.
   useEffect(() => {
+    if (frozen) return
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
       if (event.code !== 'Space' || target?.closest('input, textarea, [role="combobox"]')) return
@@ -110,7 +145,7 @@ export function StemsPanel({ title, source, subtitle, directory, stems, analysis
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [playPause])
+  }, [playPause, frozen])
 
   const allPaths = stems.map((s) => s.path)
   // What solo and mute leave audible is a mix, and it can leave as one file. With every
@@ -167,6 +202,20 @@ export function StemsPanel({ title, source, subtitle, directory, stems, analysis
           {loading ? `Loading ${state.loaded}/${state.total}` : <><Clock player={player} /> / {formatTime(totalSeconds)}</>}
         </span>
         <span className="flex-1" />
+        {onTrim && (
+          <Tooltip label={partial ? `Trim what you hear: ${mixName}` : 'Cut a part out of the song or its stems'}>
+            <Button
+              size="sm"
+              data-testid="panel-trim"
+              onClick={(event) =>
+                onTrim(partial ? audibleNames : null, { instant: event.detail === 0, mix: { soloed: [...state.soloed], muted: [...state.muted] } })
+              }
+            >
+              <Scissors size={13} />
+              Trim
+            </Button>
+          </Tooltip>
+        )}
         {partial && (
           <Tooltip label={mixPath ? `Drag what you hear as one file: ${mixName}` : 'Writing the mix you hear'}>
             <div

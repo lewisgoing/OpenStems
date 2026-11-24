@@ -58,6 +58,19 @@ export function modClick(): string {
   return isMac() ? '⌘-click' : 'Ctrl+click'
 }
 
+/** The shortcut key by itself, to be held: "hold Ctrl and scroll", "hold ⌘ and scroll". */
+export function modName(): string {
+  return isMac() ? '⌘' : 'Ctrl'
+}
+
+/**
+ * The key held to place something off the grid, freely: Alt on Windows, Option on a Mac.
+ * Both arrive as `altKey`.
+ */
+export function freeKey(): string {
+  return isMac() ? 'Option' : 'Alt'
+}
+
 /**
  * Whether the system's shortcut key is held: Ctrl on Windows, Command on a Mac. Control is
  * not taken on a Mac, where Control+1 switches desktops and a Control-click is a right click.

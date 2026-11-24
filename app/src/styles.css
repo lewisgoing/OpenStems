@@ -512,6 +512,10 @@
     opacity: 0;
   }
 }
+/* Under the trimmer once it has come in: kept as it was (its scroll, its search), not drawn. */
+.view[data-covered] {
+  visibility: hidden;
+}
 
 /* ---- segmented control ----------------------------------------------------- */
 
@@ -550,7 +554,9 @@
   font-weight: 500;
 }
 .segmented[data-animate='true'] .segmented-option {
-  transition: color 140ms ease;
+  transition:
+    color 140ms ease,
+    transform 140ms var(--ease-out);
 }
 .segmented-option[aria-checked='true'] {
   color: var(--color-text);
@@ -998,6 +1004,592 @@ div.recent-gutter {
   }
 }
 
+/* ---- trimmer: the clip editor (src/trimmer/) --------------------------------- */
+
+/* A mode entered now and then, so it may arrive: it rises and fades in once, and going back
+   is quicker than coming in. From the keyboard (or Esc) it changes at once. */
+.trim-editor {
+  transition:
+    opacity 220ms var(--ease-out),
+    transform 220ms var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.trim-editor[data-leaving] {
+  opacity: 0;
+  transform: translateY(4px);
+  transition-duration: 150ms;
+  pointer-events: none;
+}
+.trim-editor.trim-instant {
+  transition: none;
+}
+/* Focus starts on the editor itself so Tab reaches Back first; the whole page needs no ring. */
+.trim-editor:focus-visible {
+  outline: none;
+}
+/* Back from the editor, the stems panel is simply there: it slid in once already. */
+.panel[data-settled='true'] {
+  transition: none;
+}
+.trim-top {
+  min-height: 52px;
+}
+
+/* What to trim: a chip per target. Picking one changes it at once, as solo does; the press scales. */
+.trim-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-line-strong);
+  background: var(--btn-bg);
+  box-shadow: var(--btn-shadow);
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: default;
+  transition: transform 140ms var(--ease-out);
+}
+.trim-chip:active {
+  transform: scale(0.97);
+}
+.trim-chip-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--stem);
+}
+/* The marks that stand in for the dot take the dot's room, so the chip keeps its width while
+   the song is read and after: the spinner and the warning reach into the gap beside them. */
+.trim-chip-spinner {
+  width: 10px;
+  height: 10px;
+  margin-inline: -1.5px;
+  border-width: 1.5px;
+}
+.trim-chip-warn {
+  margin-inline: -2px;
+}
+.trim-chip[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--stem) 70%, transparent);
+  background: color-mix(in srgb, var(--stem) 16%, var(--color-surface));
+  color: var(--color-text);
+}
+/* A group holds its parts: the drums chip and kick, snare and hats in one outline. */
+.trim-group {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  padding: 0 2px;
+  border-radius: 999px;
+  border: 1px solid var(--color-line-strong);
+  background: var(--btn-bg);
+  box-shadow: var(--btn-shadow);
+}
+.trim-group .trim-chip {
+  height: 22px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.trim-group .trim-chip[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--stem) 70%, transparent);
+  background: color-mix(in srgb, var(--stem) 16%, var(--color-surface));
+}
+
+/* The grid toolbar. The tempo field is as tall as the buttons beside it. */
+.input.trim-field {
+  height: 26px;
+  padding: 0 6px;
+  font-size: 13px;
+}
+/* Buttons that belong together, in one outline: halve and double, the bar 1 nudges. */
+.trim-joined {
+  display: inline-flex;
+  flex: none;
+  align-items: stretch;
+  height: 26px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-md);
+  background: var(--btn-bg);
+  box-shadow: var(--btn-shadow);
+  overflow: hidden;
+}
+/* Actions, so in ink like any button: muted would read as the unchosen options of a
+   segmented control, which these are not. */
+.trim-join-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: default;
+}
+/* The group clips what spills out of it, so the ring is drawn inside. */
+.trim-join-btn:focus-visible {
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+.trim-join-btn + .trim-join-btn,
+.trim-join-btn + .trim-join-field,
+.trim-join-field + .trim-join-btn {
+  border-left: 1px solid var(--color-line);
+}
+.input.trim-join-field {
+  width: 76px;
+  height: 100%;
+  padding: 0 4px;
+  border: 0;
+  border-left: 1px solid var(--color-line);
+  border-radius: 0;
+  background: var(--color-surface);
+  font-size: 12px;
+  text-align: center;
+}
+/* `.input` draws no ring and this field has one border only: being typed in, it gets one. */
+.input.trim-join-field:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent-fg) 70%, transparent);
+  outline-offset: -2px;
+}
+/* A control that needs a part first: dimmed, still focusable with a tooltip that says so, and
+   it neither gives under a press nor lights up under the pointer. */
+.trim-editor .btn[aria-disabled='true'] {
+  opacity: 0.45;
+}
+.trim-editor .btn.pressable[aria-disabled='true']:active,
+.trim-editor .btn.press[aria-disabled='true']:active {
+  transform: none;
+}
+/* On, like solo: the accent, at once. */
+.btn.trim-toggle[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--color-accent-fg) 50%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  color: var(--color-accent-fg);
+}
+.trim-snap .segmented-option {
+  padding: 0 8px;
+  font-size: 12px;
+}
+/* As wide as the widest thing it can say ("none found", "was 173.4"), in this font, whatever
+   it says now: the words stack in one cell, the hidden ones holding it open. */
+.trim-was {
+  display: inline-grid;
+  white-space: nowrap;
+}
+.trim-was > * {
+  grid-area: 1 / 1;
+}
+/* "Use 87" keeps its place while it is hidden, so nothing moves when it comes or goes. */
+.trim-whole {
+  min-width: 68px;
+}
+
+/* The ruler. Bar 1's flag: the grid hangs from it. Ink, not the accent: the accent is the part. */
+.trim-flag {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 22px;
+  cursor: grab;
+  outline: none;
+  z-index: 2;
+  touch-action: none;
+}
+.trim-flag:active {
+  cursor: grabbing;
+}
+.trim-flag-pole {
+  position: absolute;
+  top: 2px;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: var(--color-text);
+}
+.trim-flag-cloth {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  display: flex;
+  align-items: center;
+  height: 14px;
+  padding: 0 8px 0 4px;
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 4px) 50%, 100% 100%, 0 100%);
+}
+.trim-flag-active .trim-flag-pole,
+.trim-flag-active .trim-flag-cloth,
+.trim-flag:focus-visible .trim-flag-pole,
+.trim-flag:focus-visible .trim-flag-cloth {
+  background: var(--color-accent-fg);
+}
+/* The keyboard's ring around the cloth, as every other control in the editor has one. The
+   cloth's own shape is clipped, which would clip a ring too: it is drawn on a box of its own,
+   a pixel inside the ruler's top so none of it is cut off. */
+.trim-flag::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 1px;
+  width: 20px;
+  height: 12px;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.trim-flag:focus-visible::after {
+  outline: 2px solid color-mix(in srgb, var(--color-accent-fg) 70%, transparent);
+  outline-offset: 1px;
+}
+/* Bar 1 is off screen: a way back to it. */
+.trim-offscreen {
+  position: absolute;
+  top: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 15px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: default;
+  z-index: 2;
+}
+.trim-hint {
+  position: absolute;
+  top: 2px;
+  height: 15px;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: 11.5px;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.trim-tag {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  display: flex;
+  align-items: center;
+  height: 15px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--tooltip-bg);
+  color: var(--tooltip-text);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 3;
+}
+.trim-bracket {
+  position: absolute;
+  bottom: 0;
+  height: 3px;
+  border-radius: 2px 2px 0 0;
+  background: var(--color-accent-fg);
+  pointer-events: none;
+}
+.trim-head-cap {
+  position: absolute;
+  bottom: 0;
+  left: -4px;
+  width: 9px;
+  height: 6px;
+  background: var(--color-text);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  pointer-events: none;
+}
+
+/* The waveform. The part: an accent wash, its edges in the accent with a tab to take hold of. */
+.trim-wave:focus-visible {
+  outline-offset: -2px;
+}
+.trim-sel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--color-accent) 11%, transparent);
+  pointer-events: none;
+}
+/* The pointer takes the edges through the waveform; the keyboard takes them as sliders. */
+.trim-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: var(--color-accent-fg);
+  pointer-events: none;
+  outline: none;
+}
+.trim-edge::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -3px;
+  width: 7px;
+  height: 14px;
+  border-radius: 0 0 4px 4px;
+  background: var(--color-accent-fg);
+}
+.trim-edge:focus-visible::before {
+  box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px color-mix(in srgb, var(--color-accent-fg) 70%, transparent);
+}
+/* What the waveform cannot show yet, or why: over it, in the middle. */
+.trim-status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  color: var(--color-muted);
+  text-align: center;
+  pointer-events: none;
+}
+/* The bar line under the pointer in the ruler, through the waveform. */
+.trim-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: var(--color-text);
+  pointer-events: none;
+}
+/* Where a click or a drag would land: on the grid, or free. */
+.trim-ghost {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--color-text) 38%, transparent);
+  pointer-events: none;
+}
+.trim-ghost-tag {
+  position: absolute;
+  top: 18px;
+  left: 0;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-bg) 82%, transparent);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 17px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.trim-head {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: var(--color-text);
+  pointer-events: none;
+}
+
+/* The overview: the whole song, and the part of it on screen. */
+.trim-overview-wave {
+  opacity: 0.5;
+}
+.trim-overview-sel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--color-accent) 24%, transparent);
+  pointer-events: none;
+}
+.trim-viewport {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border: 1px solid color-mix(in srgb, var(--color-text) 42%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+  pointer-events: none;
+}
+.trim-viewport-grip {
+  position: absolute;
+  top: 50%;
+  width: 3px;
+  height: 14px;
+  margin-top: -7px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-text) 50%, transparent);
+}
+.trim-viewport-grip-left {
+  left: 2px;
+}
+.trim-viewport-grip-right {
+  right: 2px;
+}
+.trim-overview-head {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: var(--color-text);
+  pointer-events: none;
+}
+
+/* The clip handles: sized to be grabbed, and named for the file they give. With a part
+   chosen the clip takes the part's accent wash: this is that. */
+.clip-handle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 44px;
+  padding: 0 14px 0 8px;
+  border-radius: 10px;
+  border: 1px solid var(--color-line-strong);
+  background: var(--btn-bg);
+  box-shadow: var(--btn-shadow);
+  cursor: default;
+}
+.clip-handle-part {
+  border-color: color-mix(in srgb, var(--color-accent-fg) 45%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
+}
+.clip-handle-busy {
+  color: var(--color-muted);
+}
+.clip-glyph {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  color: var(--stem);
+  background: color-mix(in srgb, var(--stem) 16%, transparent);
+}
+.clip-glyph-plain {
+  color: var(--color-muted);
+  background: var(--color-raised);
+}
+/* The footer's pieces have a width of their own at each width of the footer (a container),
+   whatever they say: a part settling, a handle turning from Preparing to its file, or its
+   name changing moves nothing beside them. Below 1000 px Loop and Play selection keep only
+   their icons, and the handles their first line. */
+.trim-readout {
+  width: 200px;
+}
+.clip-handle-main {
+  width: 230px;
+}
+.clip-handle-all {
+  width: 184px;
+}
+@container (min-width: 1000px) {
+  .trim-readout {
+    width: 240px;
+  }
+  .clip-handle-main {
+    width: 260px;
+  }
+  .clip-handle-all {
+    width: 228px;
+  }
+}
+@container (min-width: 1060px) {
+  .trim-readout {
+    width: 270px;
+  }
+  .clip-handle-main {
+    width: 290px;
+  }
+}
+@container (min-width: 1100px) {
+  .trim-readout {
+    width: 290px;
+  }
+  .clip-handle-main {
+    width: 310px;
+  }
+}
+@container (min-width: 1240px) {
+  .trim-readout {
+    width: 330px;
+  }
+  .clip-handle-main {
+    width: 410px;
+  }
+}
+@container (min-width: 1400px) {
+  .trim-readout {
+    width: 360px;
+  }
+  .clip-handle-main {
+    width: 480px;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .trim-chip:not([aria-pressed='true']):hover {
+    background: var(--color-hover);
+    color: var(--color-text);
+  }
+  .trim-join-btn:hover {
+    background: var(--color-hover);
+    color: var(--color-text);
+  }
+  .btn.trim-toggle[aria-pressed='true']:hover {
+    background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+    color: var(--color-accent-fg);
+  }
+  .clip-handle.stem-handle:hover,
+  .clip-handle.pressable:hover {
+    background: var(--color-hover);
+    border-color: var(--color-faint);
+  }
+  .clip-handle-part.stem-handle:hover {
+    background: color-mix(in srgb, var(--color-accent) 16%, var(--color-surface));
+    border-color: color-mix(in srgb, var(--color-accent-fg) 70%, transparent);
+  }
+  .trim-offscreen:hover {
+    background: var(--color-accent-fg);
+  }
+  .trim-clear:hover {
+    background: var(--color-hover);
+    color: var(--color-text);
+  }
+  .trim-editor .btn[aria-disabled='true']:hover {
+    background: var(--btn-bg);
+    color: inherit;
+  }
+  .trim-editor .btn.btn-ghost[aria-disabled='true']:hover {
+    background: transparent;
+    color: var(--color-muted);
+  }
+}
+
 /* Reduced motion: keep fades that aid comprehension, drop movement. */
 @media (prefers-reduced-motion: reduce) {
   .welcome-body[data-animate='true'] {
@@ -1063,6 +1655,19 @@ div.recent-gutter {
   .progress-indeterminate {
     width: 100%;
     animation: pulse 1.2s ease-in-out infinite;
+  }
+  /* The editor still fades; nothing travels, nothing scales. */
+  .trim-editor {
+    transition-property: opacity;
+    @starting-style {
+      transform: none;
+    }
+  }
+  .trim-editor[data-leaving] {
+    transform: none;
+  }
+  .trim-chip:active {
+    transform: none;
   }
 }
 }

@@ -68,6 +68,7 @@ const stem = (name: string): StemFile => ({
   peaks: `D:\\out\\Song\\full-song\\.peaks\\${name}.json`,
   samples: 88200,
   sample_rate: 44100,
+  start: 0,
 })
 
 const job = (patch: Partial<Job>): Job => ({

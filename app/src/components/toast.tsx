@@ -55,7 +55,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div className="pointer-events-none fixed right-4 bottom-4 z-[70] flex flex-col items-end gap-2" aria-live="polite">
+      {/* Raised by `--toast-lift` where a screen keeps controls at the window's foot: the
+          trimmer's footer, whose handles a toast would cover. */}
+      <div
+        className="pointer-events-none fixed right-4 z-[70] flex flex-col items-end gap-2"
+        style={{ bottom: 'calc(1rem + var(--toast-lift, 0px))' }}
+        aria-live="polite"
+      >
         {toasts.map((toast) => (
           <ToastView key={toast.id} toast={toast} onDismiss={dismiss} />
         ))}

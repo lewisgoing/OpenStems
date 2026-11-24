@@ -117,8 +117,9 @@ def test_analysis_is_skipped_when_off_and_unused(pipeline, song, tmp_path, monke
         raise AssertionError("analysis should not run")
 
     monkeypatch.setattr(analysis, "detect_tempo_key", boom)
+    monkeypatch.setattr(analysis, "detect_grid", boom)
     result = pipeline.run(song, full_song(), tmp_path / "out", RunOptions())
-    assert result.manifest["analysis"] == {"bpm": None, "key": None}
+    assert result.manifest["analysis"] == {"bpm": None, "key": None, "downbeat": None}
 
 
 # -- output options ---------------------------------------------------------------

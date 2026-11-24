@@ -13,7 +13,9 @@ from typing import Any
 from openstems.api.db import Index
 from openstems.api.events import EventBus
 from openstems.domain.errors import DomainError
+from openstems.domain.grid import Grid, SongPart, clean_downbeat, clip_label
 from openstems.domain.job import Job, JobState
+from openstems.pipeline.run import SAMPLE_RATE
 from openstems.worker.supervisor import WorkerSupervisor
 
 _STAGE_STATE = {
@@ -23,10 +25,35 @@ _STAGE_STATE = {
 }
 _ORDER = [JobState.PREPARING, JobState.RUNNING, JobState.WRITING]
 MAX_FINISHED = 300
+STARTED = "this song has started: its part can no longer change"
 
 
 class JobNotFound(DomainError):
     pass
+
+
+def _given_grid(options: dict[str, Any]) -> Grid | None:
+    """The grid a waiting job was given, when it has both a tempo and bar 1. Without both,
+    its part is named by its times."""
+    bpm, downbeat = options.get("bpm"), options.get("downbeat")
+    if bpm is None or downbeat is None:
+        return None
+    return Grid(float(bpm), float(downbeat))
+
+
+def _keep_grid(options: dict[str, Any], grid: Grid) -> None:
+    """Give a waiting job the figures of the grid its part was named on that it lacks, so
+    that its run lays the part's bars where they were named: the tempo with bar 1 when it
+    had no tempo, bar 1 alone when it had this tempo. Figures it has stay as they are."""
+    from openstems.pipeline.retag import clean_bpm
+
+    bpm = options.get("bpm")
+    if bpm is None:
+        options["bpm"] = clean_bpm(grid.bpm)
+        if options.get("downbeat") is None:
+            options["downbeat"] = clean_downbeat(grid.downbeat)
+    elif options.get("downbeat") is None and abs(float(bpm) - grid.bpm) < 0.005:
+        options["downbeat"] = clean_downbeat(grid.downbeat)
 
 
 class JobManager:
@@ -82,11 +109,12 @@ class JobManager:
             self._jobs[job.id] = job
             self._extra[job.id] = {
                 "recipe_name": data.get("recipe_name", job.recipe_id),
-                "stems": data.get("stems", []),
+                "stems": [_with_start(stem) for stem in data.get("stems") or []],
                 "analysis": data.get("analysis", {}),
                 "notes": data.get("notes", []),
                 # A job that was waiting for Start still waits after a restart.
                 "held": bool(data.get("held")) and job.state is JobState.QUEUED,
+                "part": data.get("part"),
             }
             self._order.append(job.id)
 
@@ -116,6 +144,8 @@ class JobManager:
             "notes": extra.get("notes", []),
             "queue_position": queued.index(job.id) if job.id in queued else None,
             "held": held,
+            # The part of the song its stems are, when only a part was separated.
+            "part": extra.get("part"),
             "created_at": job.created_at,
             "started_at": job.started_at,
             "finished_at": job.finished_at,
@@ -173,6 +203,7 @@ class JobManager:
                 "analysis": {},
                 "notes": [],
                 "held": hold,
+                "part": None,
             }
             self._order.append(job.id)
             self._changed(job)
@@ -199,8 +230,13 @@ class JobManager:
             return [self.to_dict(self._jobs[j]) for j in self._order]
 
     def set_analysis(self, job_id: str, changes: dict[str, Any]) -> dict[str, Any]:
-        """Give a job that has not started the song's tempo and key, in place of what
-        detection will find. A value of None takes the user's figure away again."""
+        """Give a job that has not started the song's tempo, key and bar 1, in place of
+        what detection will find. A value of None takes the user's figure away again.
+
+        A part chosen to be separated alone is named on the song's grid: it is named again
+        in the same step, by the tempo and bar 1 the job has now (by its times without
+        both), so its name, its folder and its stems' bars follow the one tempo the song
+        has (ADR 0023)."""
         with self._lock:
             job = self._job(job_id)
             if job.state is not JobState.QUEUED:
@@ -210,6 +246,35 @@ class JobManager:
                     job.options.pop(name, None)
                 else:
                     job.options[name] = value
+            part = SongPart.from_dict(job.options.get("range"))
+            if part is not None:
+                label = clip_label(_given_grid(job.options), part.start, part.end)
+                job.options["range"] = SongPart(part.start, part.end, label).to_dict()
+            self._changed(job)
+            return self.to_dict(job)
+
+    def set_range(
+        self, job_id: str, times: tuple[float, float] | None, grid: Grid | None = None
+    ) -> dict[str, Any]:
+        """Give a job that has not started the part of its song to separate alone, its
+        times already checked, or take it away again with None. Whether only the part is
+        separated is decided when the job starts, by the separate_selection setting.
+
+        The part is named now ("bars 9-16"): by ``grid``, the grid it was chosen on, else
+        by the tempo and bar 1 the job was given, else by its times. The job keeps what it
+        lacked of that grid (`_keep_grid`), all in one step under the queue's lock."""
+        with self._lock:
+            job = self._job(job_id)
+            if job.state is not JobState.QUEUED:
+                raise DomainError(STARTED)
+            if times is None:
+                job.options.pop("range", None)
+            else:
+                start, end = times
+                if grid is not None:
+                    _keep_grid(job.options, grid)
+                named = grid if grid is not None else _given_grid(job.options)
+                job.options["range"] = SongPart(start, end, clip_label(named, start, end)).to_dict()
             self._changed(job)
             return self.to_dict(job)
 
@@ -267,6 +332,7 @@ class JobManager:
             job.output_dir = None
             self._extra[job.id]["stems"] = []
             self._extra[job.id]["notes"] = []
+            self._extra[job.id]["part"] = None
             self._extra[job.id]["held"] = False  # asking again is asking for it to run
             # A retried job goes to the back of the queue.
             self._order.remove(job.id)
@@ -417,6 +483,7 @@ class JobManager:
         self._extra[job.id]["stems"] = result["stems"]
         self._extra[job.id]["analysis"] = result.get("analysis", {})
         self._extra[job.id]["notes"] = result.get("notes", [])
+        self._extra[job.id]["part"] = result.get("part")
         self._current = None
         manifest_dir = result["directory"]
         from openstems.pipeline.run import read_manifest
@@ -435,3 +502,15 @@ class JobManager:
         job.advance(state, error=error)
         job.message = ""
         self._changed(job)
+
+
+def _with_start(stem: Any) -> Any:
+    """A stem of a job saved before stems said where they start in the song: its start,
+    from the offset the worker sent with it (counted at the engine's rate)."""
+    if not isinstance(stem, dict) or "start" in stem:
+        return stem
+    try:
+        offset = int(stem.get("offset") or 0)
+    except (TypeError, ValueError):
+        offset = 0
+    return {**stem, "start": offset / SAMPLE_RATE}

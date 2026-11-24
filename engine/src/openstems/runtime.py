@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from openstems.catalog.catalog import Catalog, load_catalog
 from openstems.catalog.store import ModelStore
 from openstems.domain.errors import DomainError
+from openstems.domain.grid import SongPart
 from openstems.domain.recipe import Recipe, single_model_recipe
 from openstems.engines.host import ModelHost, fake_mode
 from openstems.pipeline.extras import MIDI_STEMS
@@ -43,6 +44,10 @@ class Runtime:
 
     def options(self, **overrides: object) -> RunOptions:
         s = self.settings
+        # The part of the song chosen in the trimmer (a job's `range`) is separated alone
+        # only while the setting is on; otherwise the whole song is. The worker reloads the
+        # settings for every job, so it is the setting when the job starts that counts.
+        part = overrides.pop("range", None)
         base = RunOptions(
             quality=s.default_quality,
             sum_to_mix=s.sum_to_mix,
@@ -58,6 +63,8 @@ class Runtime:
         for key, value in overrides.items():
             if value is not None:
                 setattr(base, key, value)
+        if s.separate_selection:
+            base.part = SongPart.from_dict(part)
         return base
 
     def reload(self) -> None:

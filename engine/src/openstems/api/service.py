@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import platform
 import subprocess
@@ -15,13 +16,14 @@ from openstems import __version__
 from openstems.api.db import Index
 from openstems.api.downloads import DownloadManager
 from openstems.api.events import EventBus
-from openstems.api.jobs import JobManager
+from openstems.api.jobs import STARTED, JobManager
 from openstems.api.links import LinkManager
 from openstems.api.watcher import FolderWatcher
 from openstems.audio.decode import probe
 from openstems.cli_inputs import expand_inputs
 from openstems.doctor import DoctorReport
 from openstems.domain.errors import DomainError
+from openstems.domain.grid import clean_selection, make_grid
 from openstems.domain.memory import GB, MemoryPlan, memory_is_estimated, recommended_ids
 from openstems.domain.recipe import Recipe, single_model_recipe
 from openstems.engines.host import fake_mode, memory_plan
@@ -36,6 +38,8 @@ MACHINE_FILE = "machine.json"
 # Songs fetched from links are kept here, inside the output folder: the user chose that
 # drive for large files, and the watch folder never looks into it.
 LINKS_DIR = "_links"
+# Songs as the app plays and draws them before separation, in the cache folder.
+PREVIEWS_DIR = "previews"
 ACTIVE_STATES = ("queued", "preparing", "running", "writing")
 
 
@@ -109,6 +113,11 @@ def _gb(size: int | None) -> float | None:
     return None if size is None else round(size / GB, 2)
 
 
+def _path_key(path: str) -> str:
+    """A path as it compares: absolute, normalized, and without case on Windows."""
+    return os.path.normcase(os.path.normpath(os.path.abspath(path)))
+
+
 class Service:
     def __init__(self) -> None:
         self.bus = EventBus()
@@ -121,6 +130,10 @@ class Service:
         self._doctor: DoctorReport | None = None  # what the doctor found on this machine
         self._examined = False  # the doctor ran since this process started
         self._system_lock = threading.Lock()
+        # One lock per clip folder and per preview: two requests that arrive together
+        # must not write the same file twice.
+        self._locks: dict[tuple[str, str], threading.Lock] = {}
+        self._locks_guard = threading.Lock()
 
     # -- lifecycle ------------------------------------------------------------
 
@@ -429,6 +442,9 @@ class Service:
         here, not later in the queue."""
         recipe = self.resolve_recipe(recipe_id, model_id)
         opts = {k: v for k, v in options.items() if v is not None}
+        if "range" in opts:
+            # Checked against the song's length and named in one place: set_job_range.
+            raise DomainError("a part of a song is chosen once the song is in the queue")
         from openstems.pipeline.retag import clean_changes
 
         opts.update(clean_changes(opts))  # a tempo or key typed by the user
@@ -480,11 +496,124 @@ class Service:
         files = [Path(p) for p in paths]
         if not files:
             raise DomainError("a mix needs at least two stems")
+        directory = self._stem_folder(files, "a mix is made of stems of one song")
+        return render_mix(directory, [file.name for file in files])
+
+    def _stem_folder(self, files: list[Path], mixed: str) -> Path:
+        """The one stem folder that ``files`` are in, each of them still there. Stems of
+        several folders (or outside every served one) are refused with ``mixed``; a stem
+        gone from its folder is named, since asking again cannot bring it back."""
         directory = files[0].parent
         for file in files:
-            if file.parent != directory or not self.is_served(file) or not file.is_file():
-                raise DomainError("a mix is made of stems of one song")
-        return render_mix(directory, [file.name for file in files])
+            if file.parent != directory or not self.is_served(file):
+                raise DomainError(mixed)
+        for file in files:
+            if not file.is_file():
+                raise DomainError(
+                    f"{file.name} is no longer in its folder: separate the song again"
+                )
+        return directory
+
+    # -- clips ----------------------------------------------------------------
+
+    def clips(
+        self,
+        paths: list[str],
+        start: float,
+        end: float,
+        together: bool = True,
+        grid: dict[str, Any] | None = None,
+        source: bool | None = None,
+    ) -> list[dict[str, Any]]:
+        """Write a stretch of a song as files to drag into a DAW: of the song's own file,
+        or of some of its stems, summed into one file or one file each.
+
+        ``source`` says which of the two ``paths`` are. Left out, one path that is the file
+        of a song in the queue or the history is that song's own file; anything else is
+        stems. A stem that was itself separated is both, which only ``source`` can tell.
+        """
+        from openstems.pipeline.clip import render_clips, render_source_clip
+
+        if not paths:
+            raise DomainError("a clip needs the song or at least one of its stems")
+        checked = make_grid(**grid) if grid is not None else None
+        if source is None:
+            # One file that is not a song and not in the output folders: a song meant.
+            one = paths[0]
+            source = len(paths) == 1 and (self._is_song(one) or not self.is_served(Path(one)))
+        if source:
+            if len(paths) != 1:
+                raise DomainError("a clip of a song's own file is cut from that one file")
+            song = self._known_song(paths[0])
+            settings = self.runtime.settings
+            with self._lock("clips", _path_key(str(settings.output_path / song.stem))):
+                clip = render_source_clip(
+                    song,
+                    song.stem,
+                    settings.output_path,
+                    start,
+                    end,
+                    checked,
+                    settings.output_format,
+                    settings.tempo_sync,
+                    settings.naming_template,
+                )
+            return [clip]
+        files = [Path(p) for p in paths]
+        directory = self._stem_folder(files, "a clip is made of stems of one song")
+        with self._lock("clips", _path_key(str(directory))):
+            return render_clips(
+                directory, [file.name for file in files], start, end, together, checked
+            )
+
+    # -- a song's own file ----------------------------------------------------
+
+    def source_preview(self, path: str) -> dict[str, Any]:
+        """A song's own file, ready to play and draw before it is separated: a FLAC, its
+        peaks and the beat grid detection finds. Made once, then found again."""
+        from openstems.pipeline.preview import make_preview, preview_key
+
+        song = self._known_song(path)
+        try:
+            key = preview_key(song)
+        except OSError as exc:
+            raise DomainError(f"cannot read {song.name}: {exc}") from exc
+        with self._lock("preview", key):
+            return make_preview(song, self._previews_dir(), key)
+
+    def _previews_dir(self) -> Path:
+        return self.runtime.settings.cache_path / PREVIEWS_DIR
+
+    def _song_file(self, path: str) -> str | None:
+        """The file of a song in the queue or in the history that ``path`` names, spelled
+        as the queue or the history has it, or None."""
+        wanted = {_path_key(path), _path_key(os.path.realpath(path))}
+        for track_path in [
+            *(job["track_path"] for job in self.jobs.list()),
+            *sorted(self.index.track_paths()),
+        ]:
+            if _path_key(track_path) in wanted:
+                return track_path
+        return None
+
+    def _is_song(self, path: str) -> bool:
+        """Whether ``path`` is the file of a song in the queue or in the history."""
+        return self._song_file(path) is not None
+
+    def _known_song(self, path: str) -> Path:
+        """The file of a song in the queue or the history that ``path`` names, when it is
+        still there: the app may read a song's own file only. It is spelled as the queue or
+        the history has it, so a clip of it is named after the song, not after the request."""
+        song = self._song_file(path)
+        if song is None:
+            raise DomainError("that is not a song in the queue or the history")
+        if not os.path.isfile(song):
+            raise DomainError("that song's file is not there any more")
+        return Path(song)
+
+    def _lock(self, kind: str, key: str) -> threading.Lock:
+        with self._locks_guard:
+            return self._locks.setdefault((kind, key), threading.Lock())
 
     # -- GPU self-test --------------------------------------------------------
 
@@ -532,12 +661,17 @@ class Service:
     # -- files ----------------------------------------------------------------
 
     def is_served(self, path: Path) -> bool:
-        """Only files inside the output folder or an indexed stem set are served."""
+        """Only files inside the output folder, an indexed stem set or the previews of
+        songs' own files are served."""
         try:
             resolved = path.resolve()
         except OSError:
             return False
-        roots = [self.runtime.settings.output_path, *map(Path, self.index.stem_set_dirs())]
+        roots = [
+            self.runtime.settings.output_path,
+            self._previews_dir(),
+            *map(Path, self.index.stem_set_dirs()),
+        ]
         for job in self.jobs.list():
             if job.get("output_dir"):
                 roots.append(Path(job["output_dir"]))
@@ -556,8 +690,8 @@ class Service:
         return sets
 
     def set_job_analysis(self, job_id: str, changes: dict[str, Any]) -> dict[str, Any]:
-        """The tempo and key of a job, by the user. Before it runs they are kept for the
-        run; once it is done its stems are re-tagged."""
+        """The tempo, key and bar 1 of a job, by the user. Before it runs they are kept
+        for the run; once it is done its stems are re-tagged."""
         from openstems.pipeline.retag import clean_changes
 
         changes = clean_changes(changes)
@@ -567,11 +701,27 @@ class Service:
             return self.jobs.get(job_id)
         return self.jobs.set_analysis(job_id, changes)
 
+    def set_job_range(self, job_id: str, part: dict[str, Any] | None) -> dict[str, Any]:
+        """The part of a waiting song to separate alone, kept inside the song, or None to
+        take it away. It is named now ("bars 9-16"): by the grid it was chosen on, else by
+        the tempo and bar 1 the job was given, else by its times. A job without a tempo (or
+        bar 1) of its own keeps the grid's, so its run lays out the bars the part was named
+        by (`JobManager.set_range`)."""
+        job = self.jobs.get(job_id)
+        if job["state"] != "queued":
+            raise DomainError(STARTED)  # before the file is read; asked again under the lock
+        if part is None:
+            return self.jobs.set_range(job_id, None)
+        grid = make_grid(**part["grid"]) if part.get("grid") is not None else None
+        length = probe(job["track_path"]).duration  # 0 when the file does not say
+        start, end = clean_selection(part["start"], part["end"], length or math.inf)
+        return self.jobs.set_range(job_id, (start, end), grid)
+
     def set_analysis(self, directory: str, changes: dict[str, Any]) -> dict[str, Any]:
-        """The tempo and key of stems that are written, by the user: in the manifest, in
-        file names that hold them and in the tempo FL Studio reads."""
+        """The tempo, key and bar 1 of stems that are written, by the user: in the
+        manifest, in file names that hold them and in the tempo FL Studio reads."""
         from openstems.pipeline.retag import set_analysis
-        from openstems.pipeline.run import stem_set_from_manifest
+        from openstems.pipeline.run import SAMPLE_RATE, stem_set_from_manifest
 
         folder = Path(directory)
         if not self.is_served(folder) or not folder.is_dir():
@@ -591,6 +741,7 @@ class Service:
                     "peaks": os.path.join(where, s.peaks) if s.peaks else None,
                     "midi": os.path.join(where, s.midi) if s.midi else None,
                     "offset": s.offset,
+                    "start": s.offset / SAMPLE_RATE,
                     "samples": s.samples,
                     "sample_rate": s.sample_rate,
                     "group": s.group or None,

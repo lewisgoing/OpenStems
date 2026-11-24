@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.4.0 (2026-11-24)
+
+- **Trim a part of a song.** Trim, on a song in the queue (waiting or separated, also in its
+  right-click menu) or in the stems panel, opens the song in an editor across the window.
+  Choose what to trim: the original song (before it is separated, too), one stem, a group
+  such as Drums, or several stems as one mix with Ctrl+click (Cmd+click on a Mac). From the
+  stems panel it opens on what solo and mute leave audible (more than 8 stems open on the
+  song's own file). Several stems are drawn on top of one another, each in its own color, so
+  you can see where the drums drop out or the vocals come in. Back finds the queue or the
+  History as it was left, scrolled and searched. Drag across the waveform to
+  choose a part: it snaps to bars, beats, half or quarter beats, or goes where the pointer is
+  with Alt held (Option on a Mac). Drag its edges to change it and its middle to move it.
+  Then drag the clip out of the footer into a DAW or a folder, named by the part, such as
+  "Song - drums - bars 9-16.wav". "Every stem, this part" gives every stem cut to the part,
+  one file each. Clips are WAV, in a `Clips` folder beside the stems (beside the song's stem
+  folders for the original). The same bars cut again on a corrected grid go to a new file,
+  "(2)": a clip is replaced only once its song has been separated again.
+- **Fix the grid where detection got it wrong.** Halve or double the tempo, tap it, or type
+  it. Or drag bar 1's flag onto the first downbeat, then a later bar line onto its beat: that
+  sets the tempo exactly. Click plays a click on every beat, to hear whether the grid sits on
+  the music. The tempo is the song's, as when it is typed in the stems panel: file names, the
+  manifest and the tempo FL Studio reads follow. Where bar 1 starts is now detected with the
+  tempo and kept with it, also in a loop that starts with its first kick.
+- In the editor, Space plays, L loops the part and Play selection plays it once. Ctrl and the
+  scroll wheel zoom (Cmd and the wheel, or a pinch, on a Mac), F shows just the part and Z
+  the whole song. Esc clears the part, then goes back.
+- **Separate only the trimmed part.** A new setting under Settings > Queue, off by default.
+  With it on, the part chosen in the trimmer on a song that waits in the queue is all that
+  Start separates: faster, and its stems are as long as the part, in a folder of their own,
+  such as "Song (bars 9-16)". The trimmer's footer and the song's row say so, and a tempo
+  corrected in the row renames the part to match. Off, the whole song is separated, and the
+  part can be dragged from it afterwards.
+- A mix of a group with a few of its parts taken out is named after the group: the kit
+  without its kick is "drums no kick", where it was "6 stems". In the stems panel too.
+- On Windows and on a Mac alike (not seen on a Mac yet). `docs/adr/0023-trimmer.md`.
+- For the API: `POST /v1/clips` (a stretch of a song or its stems as a file),
+  `POST /v1/sources/preview` (a song's own file, playable before it is separated),
+  `downbeat` wherever the tempo is set, and `start` on every stem. `POST /v1/jobs/{id}/range`
+  gives a waiting song its part to separate alone, used while `separate_selection` is on;
+  `part` on jobs and stem sets says when only a part was separated.
+
 ## 0.3.9 (2026-11-23)
 
 - **Clear finished lines up in the quick-drop window.** Its hover no longer sits on top of

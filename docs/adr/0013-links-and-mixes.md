@@ -122,6 +122,8 @@ own naming template with the mix in place of the stem (`Song - no vocals.wav`).
   summed as written, so with "normalize" on, the mix is of normalized stems.
 - The name is decided in two places that must agree: `mix_label` in `pipeline/mix.py` names
   the file, `mixLabel` in `app/src/state/mix.ts` names it on screen. Both have the same test.
+  Parts of one group with up to three of its parts left out go by the group, `drums no
+  kick` (ADR 0017), where a count ("6 stems") would say nothing of what is in the file.
 
 ### Not done
 

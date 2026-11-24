@@ -115,6 +115,36 @@ the song without its vocals. Mixes are kept in a `Mixes` folder beside the stems
   <img src="docs/images/mix.png" width="900" alt="The stems panel with vocals muted and a Drag mix handle next to Drag all">
 </p>
 
+### Trimming a part of a song
+
+Trim, on a song in the queue (waiting or separated) or in the stems panel, opens the song in
+an editor across the window, to take a few bars out as a file of their own.
+
+1. **Choose what to trim** with the chips at the top: Original (the song itself, also before
+   it is separated), a stem, or a group such as Drums. Ctrl+click (Cmd+click on a Mac) adds
+   stems, to trim them as one mix. Several stems are drawn on top of one another, each in its
+   own color, so you can see where the drums drop out or the vocals come in. From the stems
+   panel, the editor opens on what solo and mute leave audible.
+2. **Check the grid.** Turn on Click for a click on every beat. If the grid is off, use Half
+   or Double, type the tempo or tap it (T). For an exact tempo, drag bar 1's flag (the 1 in
+   the ruler) onto the first downbeat, then drag a later bar line onto its beat. The tempo you
+   set is the song's: file names, the manifest and the tempo FL Studio reads follow.
+3. **Drag across the waveform** to choose a part. It snaps to bars; pick Beat, 1/2, 1/4 or
+   Off under Snap, or hold Alt (Option on a Mac) to place it freely. Drag its edges to change
+   it and its middle to move it. A double click takes one bar.
+4. **Drag the clip out** of the footer into your DAW or a folder. It shows the name of the
+   file it gives, such as "Song - drums - bars 9-16.wav". "Every stem, this part" gives every
+   stem cut to the part, one file each. Clips are WAV, in a `Clips` folder beside the stems,
+   or beside the song's stem folders for the original.
+
+A part chosen on a song that waits in the queue gives a clip of the original. With "Separate
+only the trimmed part" on in Settings > Queue (off by default), it is also all that Start
+separates: faster, and the stems are as long as the part. The song's row says so.
+
+Space plays, L loops the part, F shows just the part and Z the whole song. Ctrl and the scroll
+wheel zoom (Cmd and the wheel, or a pinch, on a Mac). Esc clears the part, then goes back. On
+a Mac it works the same way, but it has not been seen there yet.
+
 ### A song from a link
 
 Paste a link to a song (Ctrl+V, or Paste link), or drag one in from a browser. OpenStems
@@ -169,7 +199,8 @@ If a recipe needs a model that is not installed, the app offers to download it a
 files when it is ready. Settings holds the output and models folders, the output format and
 the naming template. A right-click on a song in the queue shows its stems or its original
 file in Explorer (Finder on a Mac), starts, moves, cancels or retries it, or takes it off the
-list, in the full window and the quick-drop window.
+list, in the full window and the quick-drop window. In the full window it also opens the song
+in the trimmer.
 
 <table>
   <tr>
@@ -190,7 +221,11 @@ list, in the full window and the quick-drop window.
 - **Correct the tempo and key.** Detection is sometimes wrong (half or double the tempo,
   the relative major). Type your own over it: on a song waiting in the queue, where the
   fields say "auto", or on finished stems in the stems panel. File names, the manifest and
-  the tempo FL Studio reads follow, without separating the song again.
+  the tempo FL Studio reads follow, without separating the song again. The trimmer sets the
+  same tempo, and where bar 1 starts.
+- **Trim a few bars.** A part of the song, a stem, a group or a mix, cut on a beat grid you
+  can correct and dragged out as a WAV of its own: see
+  [Trimming a part of a song](#trimming-a-part-of-a-song).
 - **Tempo-synced stems for FL Studio.** With "Tempo-sync for FL Studio" on in Settings, WAV
   stems and mixes carry the detected tempo, and FL Studio can stretch them to your project's
   tempo. FL does that by itself only for samples up to about a minute long, so for a
@@ -370,7 +405,8 @@ this repository's releases or built yourself.
 - Closing the window never quits: the app stays in the Dock and the menu bar. Quit with Cmd+Q.
   Settings is also in the OpenStems menu (Cmd+comma).
 - Shortcuts use Cmd where this page says Ctrl: Cmd+V pastes a link, Cmd+1 to Cmd+4 switch
-  views, Cmd+Enter starts the queue.
+  views, Cmd+Enter starts the queue. In the trimmer Option places a part freely where Windows
+  uses Alt, and a trackpad pinch zooms as well as Cmd and the wheel (not seen on a Mac yet).
 - Settings has "Menu bar" where Windows has "Tray", with "Open at login" in place of "Start
   with Windows" and no "Keep running in the tray" switch.
 - Every model runs at full precision. On NVIDIA cards most run at half precision, so expect a
@@ -488,12 +524,13 @@ prints one JSON line with both. Everything the CLI does is there, with live prog
 
 | Area | Routes |
 | --- | --- |
-| Jobs | `POST /v1/jobs`, `POST /v1/jobs/batch`, `GET /v1/jobs`, `POST /v1/jobs/{id}/cancel`, `.../retry`, `POST /v1/jobs/reorder`, `DELETE /v1/jobs/{id}`, `POST /v1/jobs/clear-finished` |
+| Jobs | `POST /v1/jobs`, `POST /v1/jobs/batch`, `GET /v1/jobs`, `POST /v1/jobs/{id}/cancel`, `.../retry`, `POST /v1/jobs/reorder`, `DELETE /v1/jobs/{id}`, `POST /v1/jobs/clear-finished`, `POST /v1/jobs/{id}/analysis` (tempo, key and bar 1 by hand), `.../range` (the part of a waiting song to separate alone) |
 | Tracks and recipes | `POST /v1/tracks` (register paths, probe metadata), `GET /v1/recipes` |
 | Links and mixes | `POST /v1/links` (fetch a song from a web address, then queue it), `GET /v1/links`, `POST /v1/links/{id}/retry`, `DELETE /v1/links/{id}`, `POST /v1/mixes` (some stems as one file) |
+| Clips and previews | `POST /v1/clips` (a stretch of a song's own file or of its stems, as WAV files), `POST /v1/sources/preview` (a song's own file to play and draw before it is separated, with its tempo and bar 1) |
 | Models | `GET /v1/models`, `POST /v1/models/{id}/pull`, `.../cancel`, `.../verify`, `DELETE /v1/models/{id}`, `POST /v1/models/import` |
 | Settings and system | `GET` and `PATCH /v1/settings`, `GET /v1/system`, `GET /v1/health`, `POST /v1/diagnostics` |
-| Files and history | `GET /v1/files?path=` (range requests), `GET /v1/peaks?path=`, `GET /v1/stemsets?q=`, `POST /v1/stemsets/rebuild` |
+| Files and history | `GET /v1/files?path=` (range requests), `GET /v1/peaks?path=`, `GET /v1/stemsets?q=`, `POST /v1/stemsets/rebuild`, `POST /v1/stemsets/analysis` (tempo, key and bar 1 of written stems) |
 | Events | `WS /v1/events`: job and download progress, in order |
 
 One GPU worker process runs the queue, keeps the last model warm, and is restarted if it dies.

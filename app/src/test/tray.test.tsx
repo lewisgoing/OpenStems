@@ -163,6 +163,7 @@ const stem = (track: string, name: string): StemFile => ({
   peaks: `D:\\out\\${track}\\full-song\\.peaks\\${name}.json`,
   samples: 88200,
   sample_rate: 44100,
+  start: 0,
 })
 const SIX = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other']
 
@@ -747,6 +748,26 @@ describe('the quick-drop window', () => {
     expect(actions.startAll.mutate).toHaveBeenCalledTimes(2)
     fireEvent.keyDown(window, { key: 'Enter' })
     expect(actions.startAll.mutate).toHaveBeenCalledTimes(2)
+  })
+
+  it('says a waiting song separates only its part while the setting is on, as the full window does', () => {
+    const part = { range: { start: 2.5, end: 4.5, label: 'bar 2' } }
+    jobs = [job({ id: 'a', track_name: 'One', held: true, options: part }), job({ id: 'b', track_name: 'Two', held: true })]
+    const shown = settings as Record<string, unknown>
+    shown.separate_selection = true
+    try {
+      const view = render(quickDrop())
+      expect(rows()[1]).toHaveTextContent('Ready to start, bar 2 only')
+      expect(rows()[0]).toHaveTextContent('Ready to start')
+      expect(rows()[0]).not.toHaveTextContent('only')
+      view.unmount()
+      // Off: the whole song is separated, whatever part it was given.
+      shown.separate_selection = false
+      render(quickDrop())
+      expect(rows()[1]).not.toHaveTextContent('only')
+    } finally {
+      delete shown.separate_selection
+    }
   })
 
   it('has no Start button when nothing waits', () => {

@@ -22,6 +22,24 @@ def fake_gains(count: int) -> list[float]:
 
 FAKE_GPU = "gpu"
 _once: set[str] = set()  # models whose one-off failure has happened in this process
+# The rate the pipeline hands an engine its mix at (`pipeline.run.SAMPLE_RATE`).
+_RATE = 44100
+
+
+def fake_late() -> dict[str, float]:
+    """Stems the FakeEngine leaves silent at their start, from ``OPENSTEMS_FAKE_LATE``: a
+    comma-separated list of ``<stem>:<seconds>``. With trim_silence on, such a stem's file
+    begins later in the song (its ``start``), as a real stem that enters late does. Only the
+    trimmer's end-to-end test sets it."""
+    late: dict[str, float] = {}
+    for item in os.environ.get("OPENSTEMS_FAKE_LATE", "").split(","):
+        name, _, seconds = item.strip().partition(":")
+        try:
+            if name:
+                late[name] = max(0.0, float(seconds))
+        except ValueError:
+            continue
+    return late
 
 
 def fake_oom(model_id: str) -> str | None:
@@ -80,11 +98,15 @@ class FakeLoadedModel:
             if progress is not None:
                 progress((i + 1) / chunks)
         gains = fake_gains(len(self.spec.stems))
-        return {
+        out = {
             name: (mix * np.float32(gain)).astype(np.float32)
             for name, gain in zip(self.spec.stems, gains, strict=True)
             if only is None or name in only
         }
+        for name, seconds in fake_late().items():
+            if name in out:
+                out[name][:, : round(seconds * _RATE)] = 0.0
+        return out
 
     def unload(self) -> None:
         pass
@@ -95,7 +117,8 @@ class FakeEngine:
 
     ``OPENSTEMS_FAKE_DELAY`` (seconds per chunk) slows it down so queues can be observed.
     ``OPENSTEMS_FAKE_OOM`` makes chosen models run out of memory (`fake_oom`), so the
-    low-memory path can be acted out without a GPU.
+    low-memory path can be acted out without a GPU. ``OPENSTEMS_FAKE_LATE`` leaves chosen
+    stems silent at their start (`fake_late`).
     """
 
     name = "fake"

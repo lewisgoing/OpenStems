@@ -1,0 +1,269 @@
+[
+  {
+    "bpm": 120,
+    "downbeat": 0.5,
+    "start": 16.5,
+    "end": 32.5,
+    "label": "bars 9-16",
+    "note": "eight bars on bar lines"
+  },
+  {
+    "bpm": 120,
+    "downbeat": 0.5,
+    "start": 16.5,
+    "end": 18.5,
+    "label": "bar 9",
+    "note": "one bar"
+  },
+  {
+    "bpm": 120,
+    "downbeat": 0.5,
+    "start": 0.5,
+    "end": 8.5,
+    "label": "bars 1-4",
+    "note": "from bar 1 itself"
+  },
+  {
+    "bpm": 120,
+    "downbeat": 0.5,
+    "start": 17.5,
+    "end": 21.0,
+    "label": "9.3-11.2",
+    "note": "beats"
+  },
+  {
+    "bpm": 120,
+    "downbeat": 0.5,
+    "start": 18.0,
+    "end": 19.0,
+    "label": "9.4-10.2",
+    "note": "beats across a bar line"
+  },
+  {
+    "bpm": 120,
+    "downbeat": 0.5,
+    "start": 16.5,
+    "end": 19.0,
+    "label": "9.1-10.2",
+    "note": "a bar line and a beat: beats"
+  },
+  {
+    "bpm": 120,
+    "downbeat": 0.5,
+    "start": 17.625,
+    "end": 21.0,
+    "label": "0m17.63s-0m21.00s",
+    "note": "a sixteenth is not a beat: times, and 1762.5 cs rounds up"
+  },
+  {
+    "bpm": 120,
+    "downbeat": 0.5,
+    "start": 21.4,
+    "end": 33.1,
+    "label": "0m21.40s-0m33.10s",
+    "note": "off the grid: times"
+  },
+  {
+    "bpm": 120,
+    "downbeat": 0.5,
+    "start": 16.5014,
+    "end": 32.5,
+    "label": "bars 9-16",
+    "note": "1.4 ms after a bar line is on it"
+  },
+  {
+    "bpm": 120,
+    "downbeat": 0.5,
+    "start": 16.5016,
+    "end": 32.5,
+    "label": "0m16.50s-0m32.50s",
+    "note": "1.6 ms after a bar line is off it, and off the beat"
+  },
+  {
+    "bpm": 120,
+    "downbeat": 0.5,
+    "start": 16.4986,
+    "end": 32.4986,
+    "label": "bars 9-16",
+    "note": "1.4 ms before bar lines is on them"
+  },
+  {
+    "bpm": 120,
+    "downbeat": 0.5,
+    "start": 16.5,
+    "end": 32.4984,
+    "label": "0m16.50s-0m32.50s",
+    "note": "1.6 ms before a bar line is off it"
+  },
+  {
+    "bpm": 120,
+    "downbeat": 0.5,
+    "start": 17.499,
+    "end": 21.0,
+    "label": "9.2.4-11.2",
+    "note": "1 ms before a beat is on it, and its position reads as the sixteenth before"
+  },
+  {
+    "bpm": 120,
+    "downbeat": 2.5,
+    "start": 0.5,
+    "end": 2.5,
+    "label": "bar 0",
+    "note": "the pickup bar is bar 0"
+  },
+  {
+    "bpm": 120,
+    "downbeat": 2.5,
+    "start": 0.5,
+    "end": 6.5,
+    "label": "bars 0-2",
+    "note": "bars 0 to 2"
+  },
+  {
+    "bpm": 120,
+    "downbeat": 4.5,
+    "start": 0.5,
+    "end": 2.5,
+    "label": "bar -1",
+    "note": "a bar before the pickup is bar -1"
+  },
+  {
+    "bpm": 120,
+    "downbeat": 4.5,
+    "start": 0.5,
+    "end": 4.5,
+    "label": "bars -1-0",
+    "note": "bars -1 to 0"
+  },
+  {
+    "bpm": 120,
+    "downbeat": 4.5,
+    "start": 1.5,
+    "end": 3.0,
+    "label": "-1.3-0.2",
+    "note": "beats before bar 1"
+  },
+  {
+    "bpm": 120,
+    "downbeat": 8.5,
+    "start": 0.5,
+    "end": 4.5,
+    "label": "bars -3--2",
+    "note": "bars -3 to -2: a double dash"
+  },
+  {
+    "bpm": 120,
+    "downbeat": -0.25,
+    "start": 1.75,
+    "end": 9.75,
+    "label": "bars 2-5",
+    "note": "bar 1 starts before the file"
+  },
+  {
+    "bpm": 120,
+    "downbeat": -0.25,
+    "start": 0.0,
+    "end": 9.75,
+    "label": "0m00.00s-0m09.75s",
+    "note": "the start of the file is off the grid"
+  },
+  {
+    "bpm": 90,
+    "downbeat": 0.0,
+    "beats_per_bar": 3,
+    "start": 2.0,
+    "end": 6.0,
+    "label": "bars 2-3",
+    "note": "three beats to the bar"
+  },
+  {
+    "bpm": 90,
+    "downbeat": 0.0,
+    "beats_per_bar": 3,
+    "start": 2.6666666666666665,
+    "end": 5.333333333333333,
+    "label": "2.2-3.3",
+    "note": "beats in three"
+  },
+  {
+    "bpm": 140,
+    "downbeat": 0.2,
+    "beats_per_bar": 7,
+    "start": 6.2,
+    "end": 12.2,
+    "label": "bars 3-4",
+    "note": "seven beats to the bar"
+  },
+  {
+    "bpm": 128.37,
+    "downbeat": 0.312,
+    "start": 30.225531198878244,
+    "end": 45.18229679831736,
+    "label": "bars 17-24",
+    "note": "a tempo with decimals"
+  },
+  {
+    "bpm": 174,
+    "downbeat": 0.1,
+    "start": 136.65172413793104,
+    "end": 180.78965517241377,
+    "label": "bars 100-131",
+    "note": "bars in the hundreds"
+  },
+  {
+    "bpm": 999,
+    "downbeat": 0.0,
+    "start": 0.0,
+    "end": 0.4804804804804805,
+    "label": "bars 1-2",
+    "note": "the fastest tempo"
+  },
+  {
+    "bpm": 20,
+    "downbeat": 1.0,
+    "start": 1.0,
+    "end": 13.0,
+    "label": "bar 1",
+    "note": "the slowest tempo"
+  },
+  {
+    "bpm": null,
+    "downbeat": null,
+    "start": 21.4,
+    "end": 33.1,
+    "label": "0m21.40s-0m33.10s",
+    "note": "no grid"
+  },
+  {
+    "bpm": null,
+    "downbeat": null,
+    "start": 62.35,
+    "end": 125.5,
+    "label": "1m02.35s-2m05.50s",
+    "note": "minutes"
+  },
+  {
+    "bpm": null,
+    "downbeat": null,
+    "start": 0.125,
+    "end": 1.125,
+    "label": "0m00.13s-0m01.13s",
+    "note": "12.5 and 112.5 cs round up, as JavaScript rounds"
+  },
+  {
+    "bpm": null,
+    "downbeat": null,
+    "start": 59.999,
+    "end": 61.0,
+    "label": "1m00.00s-1m01.00s",
+    "note": "59.999 s is 1m00.00s"
+  },
+  {
+    "bpm": null,
+    "downbeat": null,
+    "start": 754.2,
+    "end": 760.0,
+    "label": "12m34.20s-12m40.00s",
+    "note": "over ten minutes"
+  }
+]

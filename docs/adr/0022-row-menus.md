@@ -15,6 +15,8 @@ full window and in the quick-drop window, and on a song still being fetched from
     in Explorer (Finder on a Mac). Any song: Show the original in Explorer.
   - Waiting, in the full window: Move to the top, Move to the bottom, where there is
     somewhere to move it. It is the same reorder as dragging the handle (`moveQueued`).
+  - Waiting or separated, in the full window: Trim, after Show stems (ADR 0023). The
+    quick-drop window has no trimmer, so it passes no handler and offers none.
   - Waiting or running: Cancel. Failed or cancelled: Retry.
   - Not waiting and not running: Remove from the list, last, after a line.
   - A link: Try again when it failed, then Cancel or Dismiss. Its two buttons, no more.

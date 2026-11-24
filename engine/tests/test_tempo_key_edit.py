@@ -103,6 +103,7 @@ def test_a_given_tempo_needs_no_detection_setting(pipeline, song, tmp_path, monk
         raise AssertionError("analysis should not run")
 
     monkeypatch.setattr(analysis, "detect_tempo_key", boom)
+    monkeypatch.setattr(analysis, "detect_grid", boom)
     result = pipeline.run(song, full_song(), tmp_path / "out", RunOptions(bpm=174.0))
     assert result.manifest["analysis"]["bpm"] == 174.0
     assert result.manifest["analysis"]["key"] is None
@@ -146,7 +147,11 @@ def test_changing_the_tempo_renames_marks_and_records(pipeline, tmp_path: Path) 
     manifest = set_analysis(folder, {"bpm": 60, "key": "bbm"})
     assert manifest["analysis"]["bpm"] == 60.0
     assert manifest["analysis"]["key"] == "A#m"
-    assert manifest["analysis"]["detected"] == {"bpm": detected["bpm"], "key": detected["key"]}
+    assert manifest["analysis"]["detected"] == {
+        "bpm": detected["bpm"],
+        "key": detected["key"],
+        "downbeat": detected["downbeat"],
+    }
     assert read_manifest(folder) == manifest
     for stem in manifest["stems"]:
         path = folder / stem["file"]

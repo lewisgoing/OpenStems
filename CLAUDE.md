@@ -42,6 +42,10 @@ Engine (run from `engine/`):
   `compare DIR DIR`: the same stems from two PyTorch builds (on the CPU)
 - `uv run pytest tests/test_links_mixes.py`: links and mixes, with a stand-in for the fetch
   (no test touches the network)
+- `uv run pytest tests/test_clips.py`: clips, bar 1 and the previews of songs' own files,
+  with the FakeEngine and synthetic beats
+- `uv run pytest tests/test_separate_selection.py`: a part of a song separated alone (the
+  setting, `POST /v1/jobs/{id}/range`, the run), with the FakeEngine
 - `uv run openstems serve`: start the local API (prints a JSON line with port and token)
 - `uv run openstems openapi --out openapi.json`: export the schema after any API change, then
   `pnpm gen:api` in `app/` (a test fails if `engine/openapi.json` is stale)
@@ -53,6 +57,9 @@ App (run from `app/`):
 
 - `pnpm install`, `pnpm dev`: run the app with hot reload (starts the engine itself)
 - `pnpm typecheck`, `pnpm test`: TypeScript and component tests
+- `pnpm test trimmer`: the trimmer's plain functions, the twins against
+  `engine/tests/fixtures/clip_labels.json`, and the editor with the engine mocked
+  (`src/test/trimstub.ts` stands in for Web Audio, which jsdom lacks)
 - `pnpm build && pnpm e2e`: end-to-end tests (Playwright + Electron + FakeEngine); the build
   must be current
 - `SHOTS=1 SHOTS_DIR=<folder> pnpm e2e -g screenshots`: capture every view for design review,
@@ -60,11 +67,18 @@ App (run from `app/`):
   and a machine with little memory (`memory-1-queue.png` to `memory-7-settings.png`).
   The main views are taken in light as well (`light-1-empty.png` to `light-tray.png`),
   the welcome's steps in both (`welcome-1-folders.png` to `light-welcome-3-models.png`) and
-  the row menus (`3b-row-menu.png`, `tray-4b-row-menu.png`)
+  the row menus (`3b-row-menu.png`, `tray-4b-row-menu.png`). The trimmer is taken in both
+  (`trim-1-open.png` to `trim-5-queue-part.png`, `light-trim-1-open.png` to
+  `light-trim-5-queue-part.png`), on a drum loop the spec writes
 - `pnpm e2e theme`: the theme switch, both windows, the pick across a restart
 - `pnpm e2e welcome`: the welcome on a first start (`OPENSTEMS_E2E_WELCOME=1` forces it,
   since the FakeEngine has every model; `__openstemsE2E.pickFolder` stands in for the folder
   picker). `pnpm e2e row-menu`: the right-click menu on queue rows, both windows
+- `pnpm e2e trimmer`: the trimmer on the FakeEngine: a grid fixed by hand and parts of a
+  stem, of every stem and of a mix dragged out as WAVs the length of the part; a waiting
+  song's own file; "Separate only the trimmed part"; Trim from the stems panel; a stem that
+  enters late (`OPENSTEMS_FAKE_LATE=<stem>:<seconds>` leaves a FakeEngine stem silent at its
+  start, so with Trim silence on its file begins later in the song)
 - `pnpm e2e low-memory`: the CPU note and the marks of an 8 GB machine, with the FakeEngine
   (`OPENSTEMS_FAKE_OOM`, `OPENSTEMS_MEMORY_GB`)
 - `README_SHOTS=1 pnpm e2e -g "readme pictures"`: retake the README's pictures into
@@ -138,8 +152,8 @@ App (run from `app/`):
   `audio`, `engines`, `pipeline`, `worker`, `api`, `settings.py`, `cli.py`; tests in
   `engine/tests/`
 - `app/`: Electron + React shell. `electron/` (main process, preload, engine launcher, first-run
-  setup, tray), `src/` (React UI: `api/`, `components/`, `views/`, `audio/`, `state/`, `tray/`),
-  `e2e/`
+  setup, tray), `src/` (React UI: `api/`, `components/`, `views/`, `audio/`, `state/`, `tray/`,
+  `trimmer/`), `e2e/`
 - `docs/adr/`: decision records; `docs/benchmarks.md`: speed and VRAM per model
 - `scripts/`: dev start, benchmarks
 
@@ -274,7 +288,7 @@ the folders picked there. `docs/adr/0021-welcome.md`.
 
 Row menus: a right-click on a queue row (both windows) and a link row opens
 `components/RowMenu.tsx`. `jobMenuItems` decides the items from the job's state and the
-handlers a window passes (the quick-drop window has no reordering); `moveQueued` in
+handlers a window passes (the quick-drop window has no reordering or Trim); `moveQueued` in
 `QueueView.tsx` is the reorder shared with dragging. `shell:reveal` answers whether the file
 was there. Nothing in the menu deletes a file. `docs/adr/0022-row-menus.md`.
 
@@ -340,6 +354,77 @@ finished one is re-tagged) and `POST /v1/stemsets/analysis` (a folder). In the a
 `components/TempoKey.tsx` is the pair of fields, in the queue row of a waiting song and in
 the stems panel. What may be typed is decided in `retag.clean_bpm`/`clean_key` and in
 `app/src/lib/tempokey.ts`: change both together. `docs/adr/0019-edit-tempo-key.md`.
+
+Clips: a stretch of a song as a file of its own, to drag into a DAW. `POST /v1/clips`
+(`pipeline/clip.py`) cuts it from stems of one stem set, summed into one file or one file
+each, into `<stem folder>/Clips/`, or from the song's own file (`source`; a stem that was
+itself separated is both) into `<output>/<track>/Clips/`. Start and end are seconds of the
+song's timeline, a stem whose silence was trimmed keeps its place, and every clip of one
+request has the same length. Always WAV: wav24 when the stems are, float otherwise. Each
+clip carries `OpenStems clip <hash>` in its WAV's `LIST`/`INFO` comment and is found again by
+it; a file of its name that is newer than what it was cut from is never written over (the
+clip takes `(2)`, `(3)`), one that is older is replaced. `POST /v1/sources/preview`
+(`pipeline/preview.py`) makes a song in the queue or the history playable before separation:
+a FLAC, its peaks and the detected grid in `<cache>/previews/`, the 8 newest kept, which
+`is_served` serves. Bar 1 (`downbeat`, seconds into the song) is detected with the tempo
+(`analysis.detect_grid`) and set by hand like the tempo and key: `JobOptions.downbeat`,
+`SetAnalysis.downbeat`, `analysis.downbeat` in the manifest; bar 1 alone rewrites the
+manifest only. Stems carry `start` (offset / 44100). `clip_label` in `domain/grid.py` and
+`rangeLabel` in `app/src/lib/grid.ts` name a selection alike ("bars 9-16", "9.3-11.2",
+"0m21.40s-0m33.10s"), with JavaScript's rounding; the cases are in
+`engine/tests/fixtures/clip_labels.json`, which `src/test/trimmer.test.tsx` reads too: change
+both together. What may be typed for bar 1 is decided in `grid.clean_downbeat` and in
+`cleanDownbeat` (`app/src/lib/grid.ts`): change both together. `docs/adr/0023-trimmer.md`.
+
+Trimmer: the app's side of clips, an editor for one song at a time (`src/trimmer/`). Trim on
+a queue row that waits or is separated (`canTrim`), in the row menu, and in the stems panel
+(Queue and History: it opens on what solo and mute leave audible, past `OPEN_STEMS` on the
+song's own file since every chosen stem is decoded whole, and `initialMix` puts them
+back) shows `TrimEditor` in place of the view and the panel (`Workspace` in `App.tsx`); the
+sidebar stays, and a view switch or the song leaving the list closes it. The view stays
+mounted under it (`inert`, and not drawn once the editor has come in), so Back finds its
+scroll and search; only the stems panel goes, frozen during the entrance (`frozen`), and
+`StartButton` stops listening (`listen`). The quick-drop window has none. `song.ts` builds the song from a job or a stem set and holds the grid rules
+(`songGrid`, `gridChange`, `resetChange`); `model.ts` the chips, snapping and moving, the
+readout, the zoom wheel per platform (`isZoomWheel`) and what a handle asks for
+(`clipRequest`); `Stage.tsx` the ruler (bar 1's flag, the two-point fit with `fitBar`), the
+waveform and the overview; `memory.ts` what each song was left as, for the session, with the
+timeline it was on (`origin`, moved by `moveRange` when a part comes back separated). One tempo
+per song: the grid, `downbeat` with it, is saved through `useSetAnalysis` (the job's route,
+else the stem set's) when a gesture ends, never on every frame; a nudge or tap still waiting
+is saved when the editor is left. `lib/grid.ts` is the grid as
+plain functions. `audio/pyramid.ts` draws a waveform at any zoom from decoded audio, and from
+the engine's peaks until then; several chosen stems are layers (`drawLayers`), each in its
+`stemColor`, ordered per pixel column so none hides another. `audio/trimplayer.ts` plays the song's own file (its preview,
+`useSourcePreview`) and the stems from the song's 0 (a stem padded by its `start`), with a
+loop, play once and a click, and decodes a track only when it is chosen. `state/clip.ts`
+(`useClipFiles`) has the engine write what a handle gives before its drag: a mix through
+`/v1/mixes`, a part through `/v1/clips`, 350 ms after the request settles and never
+mid-gesture; an editor opened anew asks again (`forgetWritten`), so a deleted or stale clip
+is written anew. The footer's widths are set per container width in `styles.css`, and the
+toasts rise above it (`--toast-lift`). Twins: `rangeLabel` and `clip_label`, `cleanDownbeat` and `clean_downbeat` (see
+Clips): change both together. Words for keys come from `freeKey` (Alt, Option), `modName` and
+`modClick` in `src/platform.ts`. Tests: `src/test/trimmer.test.tsx`, `src/test/layers.test.ts`
+(the layered waveform), the Mac cases in `src/test/mac.test.tsx`, and `pnpm e2e trimmer`.
+`docs/adr/0023-trimmer.md`.
+
+Separating only the part: with `separate_selection` on (off by default; read when the song
+starts), a part chosen on a waiting song is all that is separated, as a song of its own named
+"<song> (<label>)" (`Track.part`). `POST /v1/jobs/{id}/range` sets it (`{"range": {start,
+end, grid?}}`) or takes it away (`{"range": null}`), refused once the song has started and
+when a job is created; it is named by `clip_label` when it is set, and again whenever the
+job's tempo or bar 1 changes (`JobManager.set_analysis`). A job without a tempo of its own
+keeps the grid the part was named on (`_keep_grid` in `api/jobs.py`). It is cut where a clip of
+the same selection is (`SongPart.frames`), and its timeline starts at the part's start:
+`manifest.source.range` records it, and its samples and duration are the part's. Bar 1 is
+moved into the part by whole bars (`grid.part_downbeat`). The cache key carries the frames
+only for a part. `JobInfo.part` and `StemSetInfo.part` say what ran; the trimmer opens a
+part's stems without Original (`isPart` in `song.ts`). In the app the setting is "Separate
+only the trimmed part" in Settings > Queue. While it is on, `TrimEditor` sends a waiting
+song's selection as its part once it settles (`useSetJobRange`; again when a new grid names
+it differently, `null` when it is cleared), its readout says "Start separates only
+<label>.", and the queue rows of both windows add "<label> only" (`statusText`, `jobRange`).
+Off, the editor sends nothing and nothing mentions a part. `docs/adr/0023-trimmer.md`.
 
 Dependencies point inward: `domain` imports nothing from the other packages and never imports
 torch. `cli` and `api` are the only entry points.

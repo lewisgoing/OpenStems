@@ -55,6 +55,15 @@ describe('mixes', () => {
     expect(mixLabel(['kick', 'snare'], every, groups)).toBe('kick + snare')
     expect(mixLabel(['lead vocals', ...kit, 'bass', 'guitar'], every, groups)).toBe('no backing vocals, piano, other')
     expect(mixLabel(every, every, groups)).toBe('mix')
+    // Parts of one group with a few of its parts left out go by the group (every-stem's kit).
+    const drums = ['kick', 'snare', 'toms', 'hh', 'ride', 'crash', 'other drums']
+    const deep = ['lead vocals', 'backing vocals', ...drums, 'bass', 'guitar', 'piano', 'other']
+    const deepGroups = { ...Object.fromEntries(Object.entries(groups).filter(([, group]) => group !== 'drums')), ...Object.fromEntries(drums.map((name) => [name, 'drums'])) }
+    expect(mixLabel(drums.slice(1), deep, deepGroups)).toBe('drums no kick')
+    expect(mixLabel(drums.slice(2), deep, deepGroups)).toBe('drums no kick, snare')
+    expect(mixLabel(drums.slice(3), deep, deepGroups)).toBe('drums no kick, snare, toms')
+    expect(mixLabel(drums.slice(4), deep, deepGroups)).toBe('ride + crash + other drums')
+    expect(mixLabel([...drums.slice(1), 'lead vocals'], deep, deepGroups)).toBe('7 stems')
   })
 
   it('keeps the parts of a group together and shortens their names under it', () => {
