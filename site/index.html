@@ -33,15 +33,11 @@
   <nav class="nav" aria-label="Sections">
     <a class="press" href="#how"><b>01</b> how</a>
     <a class="press" href="#features"><b>02</b> features</a>
-    <a class="press" href="#download"><b>03</b> download</a>
-    <a class="press" href="#changelog"><b>04</b> changelog</a>
-    <a class="press" href="#support"><b>05</b> support</a>
+    <a class="press" href="#run"><b>03</b> will it run</a>
+    <a class="press" href="#download"><b>04</b> download</a>
+    <a class="press" href="#changelog"><b>05</b> changelog</a>
+    <a class="press" href="#support"><b>06</b> support</a>
   </nav>
-  <div class="status" aria-live="polite">
-    <span class="led" aria-hidden="true"></span>
-    <span class="mono">ver</span>
-    <span class="ver" id="top-version" data-fill="version">0.4.0</span>
-  </div>
 </header>
 
 <main>
@@ -89,8 +85,8 @@
         <span class="mono">input</span>
         <span class="file mono" id="file-name">demo song.wav</span>
         <span class="device-readouts">
-          <span class="readout"><span class="seg seg-red" id="seg-pct" data-seg="000"></span><span class="mono">%</span></span>
-          <span class="readout"><span class="seg" data-seg="128"></span><span class="mono">bpm</span></span>
+          <span class="readout mono"><b id="pct">0</b>%</span>
+          <span class="readout mono"><b>128</b>bpm</span>
         </span>
       </div>
       <div class="screen" id="screen">
@@ -185,10 +181,54 @@
   </dl>
 </section>
 
+<!-- Will it run: the README's Memory table, as a picker -->
+<section class="run" id="run" aria-labelledby="run-title">
+  <div class="section-head">
+    <p class="eyebrow"><b>03</b></p>
+    <h2 id="run-title">Will it run?</h2>
+  </div>
+
+  <div class="checker reveal">
+    <div class="pick">
+      <p class="mono pick-label" id="machine-label">your machine</p>
+      <div class="keys" role="radiogroup" aria-labelledby="machine-label" id="machine-keys">
+        <button type="button" class="key press" role="radio" data-machine="nvidia">NVIDIA<small>GTX 16, RTX 20 and later</small></button>
+        <button type="button" class="key press" role="radio" data-machine="amd">AMD Radeon<small>RX 9000, RX 7900 XTX, RX 7700</small></button>
+        <button type="button" class="key press" role="radio" data-machine="mac">Mac<small>Apple Silicon</small></button>
+        <button type="button" class="key press" role="radio" data-machine="pascal">NVIDIA<small>GTX 900 and 10 series</small></button>
+        <button type="button" class="key press" role="radio" data-machine="other">Something else<small>Intel Mac, other graphics</small></button>
+      </div>
+      <p class="mono pick-label" id="memory-label">graphics memory</p>
+      <div class="keys keys-mem" role="radiogroup" aria-labelledby="memory-label" id="memory-keys"></div>
+    </div>
+
+    <div class="result" aria-live="polite">
+      <div class="verdict">
+        <span class="led" id="run-led" aria-hidden="true"></span>
+        <p id="run-verdict">Pick your machine.</p>
+      </div>
+      <p class="mono budget" id="run-budget"></p>
+      <table class="fits" id="run-table">
+        <caption class="sr-only">Which recipes fit</caption>
+        <tbody>
+          <tr><th scope="row"><span>Main recipes</span><small class="mono">full-song, drum-kit, melody, drumless</small></th><td data-group="0"></td></tr>
+          <tr><th scope="row"><span>Larger vocal models</span><small class="mono">every-stem, vocals-instrumental, acapella-clean, full-song-best-vocals</small></th><td data-group="1"></td></tr>
+          <tr><th scope="row"><span>Cleanup</span><small class="mono">cleanup-dereverb, cleanup-denoise</small></th><td data-group="2"></td></tr>
+          <tr><th scope="row"><span>53 stems</span><small class="mono">mega-53, experimental</small></th><td data-group="3"></td></tr>
+        </tbody>
+      </table>
+      <p class="run-note" id="run-note"></p>
+    </div>
+  </div>
+  <p class="aside mono">
+    <span>"too large" is an estimate, not a block: the app still tries the GPU first, and moves a model to the processor if memory runs out</span>
+  </p>
+</section>
+
 <!-- Download -->
 <section class="download" id="download" aria-labelledby="download-title">
   <div class="section-head">
-    <p class="eyebrow"><b>03</b></p>
+    <p class="eyebrow"><b>04</b></p>
     <h2 id="download-title">Download <span class="muted" data-fill="released">0.4.0</span></h2>
   </div>
 
@@ -255,7 +295,7 @@
 <!-- Changelog -->
 <section class="changelog" id="changelog" aria-labelledby="changelog-title">
   <div class="section-head">
-    <p class="eyebrow"><b>04</b></p>
+    <p class="eyebrow"><b>05</b></p>
     <h2 id="changelog-title">Changelog</h2>
   </div>
   <div class="log" id="log">
@@ -269,7 +309,7 @@
 <!-- Support -->
 <section class="support" id="support" aria-labelledby="support-title">
   <div class="support-inner reveal">
-    <p class="eyebrow"><b>05</b></p>
+    <p class="eyebrow"><b>06</b></p>
     <h2 id="support-title">Support</h2>
     <p>OpenStems is free and open source under the MIT license. Tips help fund its development.</p>
     <div class="cta">

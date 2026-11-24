@@ -120,43 +120,6 @@ function drawWaves(stems) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Seven-segment readouts                                              */
-/* ------------------------------------------------------------------ */
-
-const SEGS = {
-  0: 'abcdef', 1: 'bc', 2: 'abged', 3: 'abgcd', 4: 'fgbc', 5: 'afgcd', 6: 'afgedc', 7: 'abc', 8: 'abcdefg', 9: 'abcdfg', '-': 'g', ' ': '',
-}
-const hseg = (x, y) => `${x + 1.4},${y} ${x + 2.4},${y - 1} ${x + 7.6},${y - 1} ${x + 8.6},${y} ${x + 7.6},${y + 1} ${x + 2.4},${y + 1}`
-const vseg = (x, y0, y1) => `${x},${y0 + 0.6} ${x + 1},${y0 + 1.6} ${x + 1},${y1 - 1.6} ${x},${y1 - 0.6} ${x - 1},${y1 - 1.6} ${x - 1},${y0 + 1.6}`
-const SHAPES = {
-  a: (x) => hseg(x, 1), g: (x) => hseg(x, 9), d: (x) => hseg(x, 17),
-  f: (x) => vseg(x + 1, 1, 9), b: (x) => vseg(x + 9, 1, 9), e: (x) => vseg(x + 1, 9, 17), c: (x) => vseg(x + 9, 9, 17),
-}
-
-function segSvg(text) {
-  const cells = []
-  for (const ch of String(text)) {
-    if (ch === '.' && cells.length) cells[cells.length - 1].dp = true
-    else cells.push({ ch, dp: false })
-  }
-  let x = 0
-  let body = ''
-  for (const cell of cells) {
-    const lit = SEGS[cell.ch] ?? ''
-    for (const s of 'abcdefg') body += `<polygon class="${lit.includes(s) ? 'on' : 'off'}" points="${SHAPES[s](x)}"/>`
-    x += 11
-    if (cell.dp) { body += `<rect class="on" x="${x - 0.6}" y="16" width="2" height="2"/>`; x += 3 }
-  }
-  return `<svg viewBox="-0.5 -0.5 ${x} 19" aria-hidden="true">${body}</svg>`
-}
-
-function setSeg(el, text) {
-  if (!el || el.dataset.shown === String(text)) return
-  el.dataset.shown = String(text)
-  el.innerHTML = segSvg(text)
-}
-
-/* ------------------------------------------------------------------ */
 /* How it works: the separation, scrubbed by scroll                    */
 /* ------------------------------------------------------------------ */
 
@@ -173,7 +136,7 @@ function setupHow() {
   const names = lanes.map((l) => l.querySelector('.lane-name'))
   const drags = lanes.map((l) => l.querySelector('.drag'))
   const steps = [...section.querySelectorAll('.steps li')]
-  const pct = document.getElementById('seg-pct')
+  const pct = document.getElementById('pct')
   const mid = (lanes.length - 1) / 2
 
   function paint(p) {
@@ -194,7 +157,7 @@ function setupHow() {
     })
     const step = p < 0.1 ? 0 : p < 0.66 ? 1 : 2
     steps.forEach((li, i) => li.classList.toggle('on', reduceMotion.matches || i === step))
-    setSeg(pct, String(Math.round(clamp((p - 0.12) / 0.5) * 100)).padStart(3, '0'))
+    pct.textContent = String(Math.round(clamp((p - 0.12) / 0.5) * 100))
   }
 
   let frame = 0
@@ -218,6 +181,119 @@ function setupSupport() {
   if (!link.getAttribute('href')) return
   link.hidden = false
   document.getElementById('support-soon').hidden = true
+}
+
+/* ------------------------------------------------------------------ */
+/* Will it run: the README's Memory table. Groups, in order: the main  */
+/* recipes, the larger vocal models, cleanup, mega-53.                 */
+/* ------------------------------------------------------------------ */
+
+const F = 'fits'
+const T = 'tight'
+const N = 'no'
+const CARD_NOTE = 'Measured on an RTX 5070 Ti. The figures for other sizes follow from those measurements.'
+const MACHINES = {
+  nvidia: {
+    memory: 'graphics memory',
+    pick: '8 GB',
+    sizes: { '4 GB': [F, T, F, N], '6 GB': [F, F, F, N], '8 GB': [F, F, F, N], '10–11 GB': [F, F, F, T], '12 GB+': [F, F, F, F] },
+    note: () => CARD_NOTE,
+  },
+  amd: {
+    memory: 'graphics memory',
+    pick: '16 GB+',
+    sizes: { '8 GB': [F, F, F, N], '12 GB': [F, F, F, F], '16 GB+': [F, F, F, F] },
+    note: () =>
+      'Supported cards: RX 9070, RX 9070 XT, RX 9060 XT, RX 7900 XTX, RX 7700, PRO W7900 and AI PRO R9700, with AMD driver 26.2.2 or newer. AMD support is a preview: a user has reported it working, but it has not been tested on a Radeon by the project. Older Radeons and integrated graphics run on the processor, slowly.',
+  },
+  mac: {
+    memory: 'memory',
+    pick: '16 GB',
+    sizes: { '8 GB': [T, N, F, N], '16 GB': [F, F, F, N], '24 GB': [F, F, F, N], '32 GB+': [F, F, F, F] },
+    budget: (gb) => `The app plans with about ${((gb - 2) * 0.75).toFixed(1).replace(/\.0$/, '')} GB of it, since macOS and your other apps share the same memory.`,
+    note: () =>
+      'Estimates: nothing has been measured on a Mac yet, so it may do better than this. Tested on an M1 Max with 32 GB so far. Needs macOS 14 or later.',
+  },
+  pascal: {
+    memory: 'graphics memory',
+    pick: '8 GB',
+    sizes: { '4 GB': [T, N, F, N], '6 GB': [F, N, F, N], '8 GB': [F, T, F, N], '11 GB': [F, F, F, N] },
+    verdict: (size) => (size === '4 GB' ? 'Only just, if at all.' : undefined),
+    note: (size) =>
+      (size === '4 GB'
+        ? 'At 4 GB the main recipes are estimated at 3.99 GB, and a card reports a little under 4, so the app will most likely mark them too large. They can still be run. '
+        : '') +
+      'These cards get a build of their own, untested so far. They run the models at full precision, which needs more memory, so these figures are estimates.',
+  },
+  other: {
+    note: () =>
+      'Intel Macs are not supported: PyTorch has no build for them. On Windows, without a graphics card from the list, separation runs on the processor: the same stems, many times slower.',
+  },
+}
+const WORDS = { [F]: 'fits', [T]: 'tight', [N]: 'too large' }
+
+function setupRun() {
+  const machineKeys = [...document.querySelectorAll('#machine-keys .key')]
+  const memoryBox = document.getElementById('memory-keys')
+  const memoryLabel = document.getElementById('memory-label')
+  const cells = [...document.querySelectorAll('#run-table td')]
+  const table = document.getElementById('run-table')
+  const led = document.getElementById('run-led')
+  const verdict = document.getElementById('run-verdict')
+  const budget = document.getElementById('run-budget')
+  const note = document.getElementById('run-note')
+  let machine = 'nvidia'
+  let size = MACHINES.nvidia.pick
+
+  const check = (keys, on) => keys.forEach((k) => k.setAttribute('aria-checked', String(k === on)))
+
+  function render() {
+    const m = MACHINES[machine]
+    check(machineKeys, machineKeys.find((k) => k.dataset.machine === machine))
+    memoryBox.innerHTML = ''
+    memoryLabel.hidden = !m.sizes
+    if (m.sizes) {
+      memoryLabel.textContent = m.memory
+      for (const label of Object.keys(m.sizes)) {
+        const key = document.createElement('button')
+        key.type = 'button'
+        key.className = 'key key-small press'
+        key.setAttribute('role', 'radio')
+        key.textContent = label
+        key.addEventListener('click', () => { size = label; render() })
+        memoryBox.append(key)
+      }
+      check([...memoryBox.children], [...memoryBox.children].find((k) => k.textContent === size))
+    }
+
+    const row = m.sizes?.[size]
+    table.hidden = !row
+    if (row) row.forEach((f, i) => { cells[i].innerHTML = `<span class="pill pill-${f}">${WORDS[f]}</span>` })
+    const [main, larger] = row ?? []
+    led.dataset.state = !row ? 'slow' : main === F ? F : main === T ? T : N
+    verdict.textContent = m.verdict?.(size) ?? (!row
+      ? 'On the processor, slowly. Or not at all on an Intel Mac.'
+      : row.every((f) => f === F)
+        ? 'Yes. Every recipe fits.'
+        : main === F && larger === F
+          ? (row[3] === T ? 'Yes. Everything fits, the 53-stem model only just.' : 'Yes. Everything but the 53-stem model fits.')
+          : main === F
+            ? 'Yes. The main recipes fit.'
+            : 'Yes, with little to spare.')
+    budget.textContent = m.budget ? m.budget(parseInt(size, 10)) : ''
+    budget.hidden = !m.budget
+    note.textContent = m.note(size)
+  }
+
+  machineKeys.forEach((key) =>
+    key.addEventListener('click', () => {
+      machine = key.dataset.machine
+      const sizes = MACHINES[machine].sizes
+      if (sizes && !(size in sizes)) size = MACHINES[machine].pick
+      render()
+    }),
+  )
+  render()
 }
 
 /* ------------------------------------------------------------------ */
@@ -245,9 +321,10 @@ const fill = (key, text) => document.querySelectorAll(`[data-fill="${key}"]`).fo
 const mb = (bytes) => `${Math.round(bytes / 1048576)} MB`
 const day = (iso) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 
+let versionFromApi = false
 function showVersion(v, fromApi = false) {
   fill('version', v)
-  if (fromApi) document.getElementById('top-version').dataset.fromApi = '1'
+  if (fromApi) versionFromApi = true
 }
 
 async function loadRelease() {
@@ -341,7 +418,7 @@ async function loadChangelog() {
     if (!res.ok) throw new Error(String(res.status))
     const releases = parseChangelog(await res.text()).slice(0, 6)
     if (!releases.length) return
-    if (!document.getElementById('top-version').dataset.fromApi) showVersion(releases[0].version)
+    if (!versionFromApi) showVersion(releases[0].version)
     log.innerHTML = releases
       .map((r, i) => {
         const count = r.items.filter((it) => it.kind === 'li').length
@@ -367,8 +444,8 @@ async function loadChangelog() {
 /* ------------------------------------------------------------------ */
 
 drawWaves(build())
-document.querySelectorAll('[data-seg]').forEach((el) => setSeg(el, el.dataset.seg))
 setupSupport()
+setupRun()
 setupHow()
 setupReveal()
 loadChangelog()
