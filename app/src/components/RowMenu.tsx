@@ -86,7 +86,8 @@ export function revealHandlers(job: Pick<Job, 'stems' | 'track_path'>, missing: 
 }
 
 /**
- * A row that opens `items` on a right-click (or the menu key, or Shift+F10). `render` is the
+ * A row that opens `items` on a right-click (a Control-click on a Mac; on Windows also the
+ * menu key or Shift+F10). `render` is the
  * row itself, so the list keeps its own elements and the row keeps its handlers. A
  * right-click in a text field keeps the field's own menu.
  */

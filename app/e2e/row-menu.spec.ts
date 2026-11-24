@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { type Launched, clickTray, launch, trayPage, trayState } from './helpers'
+import { type Launched, MAC, clickTray, launch, trayPage, trayState } from './helpers'
 
 // A right-click on a row of the queue, in the full window and the quick-drop window.
 
@@ -65,6 +65,8 @@ test('the quick-drop window has the menu, and Escape closes the menu, not the wi
 })
 
 test('Shift+F10 on a button in a row opens the menu at the row', async () => {
+  // A Windows convention: a Mac has no key for a context menu (Control-click is the click).
+  test.skip(MAC, 'Shift+F10 is a Windows key')
   ctx = await launch()
   const { page, fixtures } = ctx
   await page.getByTestId('file-input').setInputFiles([join(fixtures, 'First Song.mp3')])

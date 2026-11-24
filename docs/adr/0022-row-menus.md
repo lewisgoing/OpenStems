@@ -4,7 +4,8 @@ Date: 2026-11-23. Status: accepted. Not in `PLAN.md`.
 
 ## Decision
 
-A right-click (or the menu key, or Shift+F10) on a song in the queue opens a menu, in the
+A right-click (on Windows also the menu key or Shift+F10, with focus on a button in the row;
+on a Mac a Control-click) on a song in the queue opens a menu, in the
 full window and in the quick-drop window, and on a song still being fetched from a link
 (`src/components/RowMenu.tsx`).
 
@@ -35,4 +36,6 @@ full window and in the quick-drop window, and on a song still being fetched from
 ## Mac
 
 The wording is the platform's ("Finder"). A Control-click on a Mac is a right-click and
-opens the same menu. Not seen on a Mac yet.
+opens the same menu. A Mac has no key that opens a context menu, so the Shift+F10 test is
+skipped there. The right-click end-to-end tests pass on the macOS CI runner (with
+Playwright's pointer, not a person's Control-click); not seen on a Mac by hand yet.
