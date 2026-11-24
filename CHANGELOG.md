@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **"module 'torch' has no attribute 'device'" no longer sticks.** If PyTorch failed to load
+  in the separation process, that process failed every job after it with this message until
+  the app was quit. That most likely happens when Windows is short of memory, with a nearly
+  full system drive leaving its paging file no room. Now a job that fails unexpectedly gives
+  the next job a fresh process. The job shows the real error, and its details go to
+  `engine.log`. When Windows' paging file is full the job says so: close some programs or
+  free space on the system drive, then try again. The fresh process is the same on a Mac,
+  where it has not been seen; the paging-file message is Windows only.
+
 ## 0.4.0 (2026-11-24)
 
 - **Trim a part of a song.** Trim, on a song in the queue (waiting or separated, also in its

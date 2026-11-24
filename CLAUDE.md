@@ -165,7 +165,14 @@ work). Tests never touch real settings: `tests/conftest.py` points every folder 
 API structure: `api/app.py` (routes), `api/service.py` (runtime, index, queue, downloads in one
 object), `api/jobs.py` (the queue and job states), `worker/supervisor.py` and `worker/process.py`
 (the GPU worker process), `api/db.py` (SQLite index). API tests use a real worker process with
-the FakeEngine; the API process itself never imports torch. What needs torch is asked of a
+the FakeEngine; the API process itself never imports torch. A job that fails with an
+unexpected error (not a `DomainError`, not a cancel) ends the worker, and the supervisor
+starts a fresh one for the next job (`WorkerSupervisor._replace`, not a crash). The reason:
+a failed import of torch leaves the process failing every job after it with "module 'torch'
+has no attribute 'device'". So never import torch again in a process where its import
+failed. The traceback goes to `engine.log`, the only place it is kept, and
+`OPENSTEMS_FAKE_IMPORT_FAILS=<model id>` acts the failure out with the FakeEngine
+(`docs/adr/0024-fresh-worker-after-failure.md`). What needs torch is asked of a
 process of its own: the self-test, and the doctor (`service.run_doctor_process`, which runs
 `openstems doctor --json`). The doctor's report is kept in the cache folder as `machine.json`
 and checked again in the background at each start (`Service._refresh_machine`), so only the
@@ -210,7 +217,8 @@ first download), the budget and `memory_kind` (where models run: the app words t
 it) in the system info and `notes` on a job. The app's sentences about a fit are in
 `app/src/lib/memory.ts`; they say what may happen, since the engine never consults the fit
 and always tries the GPU first. On out-of-memory
-(`engines/device.is_oom` is the one check: CUDA's class, the MPS wording, the CPU's)
+(`engines/device.is_oom` is the one check: CUDA's class, the MPS wording, the CPU's; the
+pipeline asks it only once torch is loaded, `run._out_of_memory`)
 `Pipeline._separate` goes in order: the runner's batch backoff, drop the other warm models
 and retry, then that model on the CPU for this job, with the note "<model name> ran on the
 CPU: not enough GPU memory" on the job and in the manifest. A machine that runs on the CPU
