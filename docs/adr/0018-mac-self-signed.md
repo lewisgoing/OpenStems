@@ -95,15 +95,14 @@ H"86e0372e339292ddc79e6018db42490b7dfc2759"`.
   the dmg into Applications and allowed through System Settings, it offered 0.3.3, and
   "Update", then "Restart to update", put the new version in place. That is the path a user
   takes, quarantine mark and all, and the last part this decision had not seen.
+- **macOS did not ask again.** After the update the new version opened with no prompt: the
+  "Open Anyway" step is needed once, for the first install from the dmg, not per update.
 
-## Not seen yet
+## Trying an update by hand
 
-- **Whether Gatekeeper asks again after an update.** The owner reported only that the update
-  worked; whether macOS asked anything when 0.3.3 first started was not recorded.
-- **To try an update by hand without a release**, serve a newer build from a folder
-  (`python3 -m http.server 8000` in the folder that holds its zip and `latest-mac.yml`) and
-  start the app with
-  `OPENSTEMS_UPDATE_FEED=http://127.0.0.1:8000 /Applications/OpenStems.app/Contents/MacOS/OpenStems`.
+Without waiting for a release, serve a newer build from a folder (`python3 -m http.server
+8000` in the folder that holds its zip and `latest-mac.yml`) and start the app with
+`OPENSTEMS_UPDATE_FEED=http://127.0.0.1:8000 /Applications/OpenStems.app/Contents/MacOS/OpenStems`.
 
 ## Consequences
 
