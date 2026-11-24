@@ -9,6 +9,9 @@
   song downloader. Letting go over OpenStems itself does not queue the song again. A title
   whose file was moved or deleted stays plain text. On Windows and on a Mac alike (not seen
   on a Mac yet).
+- For the project, nothing changes in the app: a daily check opens an issue in the
+  repository when a newer yt-dlp is out, the usual sign that pasted links need an update
+  (`.github/workflows/links-check.yml`, `scripts/check_ytdlp.py`).
 
 ## 0.3.3 (2026-11-23)
 

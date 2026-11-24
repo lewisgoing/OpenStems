@@ -121,7 +121,8 @@ The fetched song itself drags out by its title, in the format the site sent, sep
 not.
 
 The fetcher is yt-dlp. Sites change, so a fetch that stops working usually needs a newer
-OpenStems ([`docs/adr/0013-links-and-mixes.md`](docs/adr/0013-links-and-mixes.md)).
+OpenStems ([`docs/adr/0013-links-and-mixes.md`](docs/adr/0013-links-and-mixes.md)). A daily
+check in this repository opens an issue when a newer yt-dlp is out.
 
 ### Quick drop, from the tray
 
