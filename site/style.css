@@ -125,6 +125,8 @@ ol, ul { padding: 0; list-style: none; }
   .btn-solid:hover { background: #fff; }
 }
 .cta { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn[hidden] { display: none; }
+.soon { color: var(--dim); }
 
 /* ---------- hero ---------- */
 .hero { display: grid; place-items: center; padding: clamp(72px, 14vh, 150px) var(--pad) clamp(40px, 8vh, 80px); }

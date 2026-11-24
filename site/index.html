@@ -9,7 +9,7 @@
   <meta name="theme-color" content="#0c0d0f">
   <meta property="og:title" content="OpenStems">
   <meta property="og:description" content="Drop a song in. Drag DAW-ready stems out. Stem separation on your own GPU.">
-  <meta property="og:image" content="images/app.png">
+  <meta property="og:image" content="https://lewisgoing.github.io/OpenStems/images/app.png">
   <link rel="icon" href="icon.png">
   <link rel="preload" href="fonts/archivo.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="style.css">
@@ -106,7 +106,7 @@
       <figcaption class="device-foot mono">
         <span>recipe <b>full-song</b></span>
         <span>6 stems · sample-exact length</span>
-        <span class="hide-sm">3:25 song in 14 s · rtx 5070 ti · fast</span>
+        <span class="hide-sm">15× real time on an rtx 5070 ti · fast</span>
       </figcaption>
     </figure>
   </div>
@@ -143,7 +143,7 @@
     <article class="cell reveal" style="--i:4;--c:var(--guitar)">
       <p class="cell-code mono">f.05</p>
       <h3>Tempo that FL Studio reads</h3>
-      <p>With tempo sync on, WAV stems carry the detected tempo, so FL Studio can stretch them to the project.</p>
+      <p>With tempo sync on, WAV stems carry the detected tempo. FL Studio stretches a short clip by itself; a whole stem takes its clip menu's Fit to tempo.</p>
     </article>
     <article class="cell reveal" style="--i:5;--c:var(--piano)">
       <p class="cell-code mono">f.06</p>
@@ -273,10 +273,12 @@
     <h2 id="support-title">Free, and staying free.</h2>
     <p>OpenStems has no subscription, no account and no ads, and its source is open. If it saves you an afternoon, you can support the developer.</p>
     <div class="cta">
-      <a class="btn btn-solid press" id="support-link" href="https://ko-fi.com/" rel="noopener">support the developer</a>
+      <!-- The Ko-fi page: put its address in href and the button appears (main.js). -->
+      <a class="btn btn-solid press" id="support-link" href="" rel="noopener" hidden>support the developer on ko-fi</a>
       <a class="btn press" href="https://github.com/lewisgoing/OpenStems">star on github</a>
       <a class="btn press" href="https://github.com/lewisgoing/OpenStems/issues/new">report a bug</a>
     </div>
+    <p class="mono soon" id="support-soon">a ko-fi page for tips is on its way</p>
   </div>
 </section>
 
