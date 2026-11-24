@@ -120,6 +120,9 @@ const HINT_SECOND = 'Bars drift later on? Drag a later bar line onto its beat to
 /** A run of nudges is saved this long after the last one. */
 const NUDGE_SAVE_MS = 400
 
+/** A saved grid's draft goes once the song shows it, or after this long in any case. */
+const LANDING_MS = 1000
+
 const ALL: Target = { kind: 'all' }
 
 /**
@@ -326,6 +329,25 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
   const nudgeTimer = useRef(0)
   const tapTimer = useRef(0)
 
+  // A save that has ended keeps its draft until the song shows the grid it saved. The song
+  // comes from the jobs list, whose cache tells its readers a tick after the save resolves
+  // (React Query notifies on a timeout): dropping the draft at once would show the old grid
+  // in between, and a gesture then would build on it (two quick Doubles saving twice the old
+  // tempo). `landing` is the epoch of such a draft, 0 when none.
+  const landing = useRef(0)
+  const landingTimer = useRef(0)
+  const landed = useCallback(() => {
+    landing.current = 0
+    window.clearTimeout(landingTimer.current)
+    landingTimer.current = 0
+    setDraft(null)
+  }, [setDraft])
+  useEffect(() => {
+    const shown = draftRef.current
+    if (landing.current !== 0 && landing.current === epoch.current && shown && sameGrid(saved.grid, shown)) landed()
+  }, [saved, landed])
+  useEffect(() => () => window.clearTimeout(landingTimer.current), [])
+
   const save = (change: GridChange | null, shown: Grid | null) => {
     window.clearTimeout(nudgeTimer.current)
     nudgeTimer.current = 0
@@ -337,7 +359,17 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
     const mine = epoch.current
     onCommit(change).then(
       () => {
-        if (epoch.current === mine) setDraft(null)
+        if (epoch.current !== mine) return
+        if (!shown || sameGrid(savedRef.current.grid, shown)) {
+          landed()
+          return
+        }
+        // Until the song shows it; if it never quite does, what was saved is shown after a moment.
+        landing.current = mine
+        window.clearTimeout(landingTimer.current)
+        landingTimer.current = window.setTimeout(() => {
+          if (landing.current === mine && epoch.current === mine) landed()
+        }, LANDING_MS)
       },
       (error: unknown) => {
         // Put the saved grid back, and say why (a stem open in a DAW stops the renaming).

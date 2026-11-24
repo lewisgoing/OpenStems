@@ -135,8 +135,13 @@ got separated meanwhile, come in.
   figure, Half, Double, "Use 87" and Reset; 400 ms after the last of a run of nudges; and
   once taps stop for 2 s. Leaving the editor before then (Back, Esc, a view switch) saves
   the nudge or the tapped tempo at once, as the way out starts. The tempo is sent only when it
-  changed, since a new tempo renames files. The new grid shows at once. A failed save puts the saved grid back and says why (a
-  stem open in a DAW stops the renaming).
+  changed, since a new tempo renames files. The new grid shows at once, and stays shown after
+  the save until the song has it: the jobs list tells the editor a tick later (React Query
+  notifies on a timeout), and showing the old grid in between let a quick second gesture
+  build on it (two Doubles saved twice the old tempo; on the Mac CI runner a typed bar 1 was
+  joined to the old tempo). If the song never quite shows it, what was saved shows after a
+  second. A failed save puts the saved grid back and says why (a stem open in a DAW stops the
+  renaming).
 - **Where the figures come from** (`song.ts`, `songGrid`). A separated song has its tempo and
   bar 1 in its analysis. A waiting song has what its job was given, else what the preview
   detects. "was" and Reset refer to what detection found: `analysis.detected` once something

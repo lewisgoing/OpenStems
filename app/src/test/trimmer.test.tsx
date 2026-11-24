@@ -843,6 +843,39 @@ describe('the trimmer', () => {
     await waitFor(() => expect(screen.getByTestId('tempo-field')).toHaveValue('120'))
   })
 
+  it('keeps a saved grid shown until the song has it, so a quick second change builds on it', async () => {
+    // The song's new figures reach the editor a tick after the save resolves (the jobs list's
+    // cache). Until then the old grid must not show, nor be built on.
+    const onCommit = vi.fn(async () => undefined)
+    const props = { initial: FRESH, instant: false, leaving: false, onBack: vi.fn(), onCommit }
+    const view = render(tree(<TrimEditor song={song} {...props} />))
+    const double = () => fireEvent.click(screen.getByRole('button', { name: 'Double the tempo' }))
+    double()
+    expect(onCommit).toHaveBeenLastCalledWith(expect.objectContaining({ bpm: 240 }))
+    await act(async () => undefined)
+    expect(editorEl()).toHaveAttribute('data-bpm', '240')
+    double()
+    expect(onCommit).toHaveBeenLastCalledWith(expect.objectContaining({ bpm: 480 }))
+    await act(async () => undefined)
+    // The song catches up: the draft goes, and from then on the song's grid is what shows.
+    const at = (bpm: number) => songOfJob(job({ analysis: { bpm, key: 'Am', downbeat: 0.5 } }))
+    view.rerender(tree(<TrimEditor song={at(480)} {...props} />))
+    expect(editorEl()).toHaveAttribute('data-bpm', '480')
+    view.rerender(tree(<TrimEditor song={at(100)} {...props} />))
+    expect(editorEl()).toHaveAttribute('data-bpm', '100')
+  })
+
+  it('shows what was saved after a moment when the song never quite shows the draft', async () => {
+    const onCommit = vi.fn(async () => undefined)
+    openEditor({ onCommit })
+    fireEvent.click(screen.getByRole('button', { name: 'Double the tempo' }))
+    await act(async () => undefined)
+    expect(editorEl()).toHaveAttribute('data-bpm', '240')
+    // The song here is never updated: its own 120 comes back once the draft has waited enough.
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 1100)))
+    expect(editorEl()).toHaveAttribute('data-bpm', '120')
+  })
+
   it("shows Preparing, then the engine's file name, and drags those files", async () => {
     const written = `${DIR}\\Clips\\Song - kick - bar 2.wav`
     createClips.mutateAsync.mockImplementationOnce(async () => [{ path: written, name: 'Song - kick - bar 2.wav', label: 'kick', stems: ['kick'], start: 2.5, end: 4.5, samples: 88200, sample_rate: 44100 }])
