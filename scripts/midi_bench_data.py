@@ -2,9 +2,10 @@
 
 All three are CC BY 4.0 (docs/research/stem-to-midi.md, section 4):
 
-- Slakh2100 test songs: stems, mix and MIDI. The archive is a single 104 GB .tar.gz whose
-  splits are interleaved, so it is streamed and reading stops once enough test songs are in;
-  nothing else is written to disk.
+- Slakh2100 test songs: stems, mix and MIDI. The archive is a single 104 GB .tar.gz with its
+  files in no order, so it is downloaded whole (resuming after a dropped connection or a
+  restart; needs 104 GB free), checked against its md5, the test songs extracted, and the
+  archive deleted unless --keep-archive.
 - GuitarSet: mono microphone audio and the annotations (pitch contours and notes), 0.7 GB.
 - vocadito: 40 solo vocal excerpts with f0 and note annotations, 58 MB.
 
@@ -24,11 +25,13 @@ import re
 import shutil
 import tarfile
 import time
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
 
-SLAKH_URL = "https://zenodo.org/records/4599666/files/slakh2100_flac_redux.tar.gz"
+SLAKH_RECORD = "4599666"
+SLAKH_URL = f"https://zenodo.org/records/{SLAKH_RECORD}/files/slakh2100_flac_redux.tar.gz"
 ZENODO_API = "https://zenodo.org/api/records/{}"
 SMALL = {
     "guitarset": ("3371780", ["annotation.zip", "audio_mono-mic.zip"]),
@@ -44,36 +47,48 @@ def _open(url: str):
     )
 
 
-class ResumingReader:
-    """A read-only stream over a URL that reconnects with an HTTP Range request from the byte
-    it reached when the connection drops, so a long stream survives network blips."""
-
-    def __init__(self, url: str, attempts: int = 50) -> None:
-        self.url, self.attempts, self.pos = url, attempts, 0
-        self.response = _open(url)
-
-    def read(self, size: int = -1) -> bytes:
-        for attempt in range(self.attempts):
-            try:
-                data = self.response.read(size)
-                if data or size == 0:
-                    self.pos += len(data)
-                    return data
-                return b""
-            except (OSError, http.client.HTTPException) as error:
-                print(f"slakh: connection lost at {self.pos / 1e9:.2f} GB ({error}); retrying")
-                time.sleep(min(60, 5 * (attempt + 1)))
-                try:
-                    request = urllib.request.Request(
-                        self.url, headers={"User-Agent": USER_AGENT, "Range": f"bytes={self.pos}-"}
-                    )
-                    self.response = urllib.request.urlopen(request, timeout=60)
-                except (OSError, http.client.HTTPException):
-                    continue
-        raise OSError("slakh: gave up after repeated connection losses")
-
-    def close(self) -> None:
-        self.response.close()
+def download_resuming(url: str, target: Path, attempts: int = 200) -> None:
+    """Download ``url`` to ``target``, picking up from the bytes already on disk with an HTTP
+    Range request after a dropped connection or a stopped process. A connection that ends
+    early without an error counts as dropped: the total comes from Content-Range or
+    Content-Length."""
+    total = None
+    step = 5_000_000_000
+    for attempt in range(attempts):
+        have = target.stat().st_size if target.exists() else 0
+        if total is not None and have >= total:
+            return
+        headers = {"User-Agent": USER_AGENT}
+        if have:
+            headers["Range"] = f"bytes={have}-"
+        try:
+            request = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(request, timeout=60) as response:
+                if have and response.status != 206:
+                    raise OSError("the server ignored the Range request")
+                span = response.headers.get("Content-Range")
+                if span and "/" in span:
+                    total = int(span.rsplit("/", 1)[1])
+                elif response.headers.get("Content-Length"):
+                    total = have + int(response.headers["Content-Length"])
+                with target.open("ab") as fh:
+                    while chunk := response.read(1 << 20):
+                        fh.write(chunk)
+                        if (have + len(chunk)) // step != have // step:
+                            got, size = (have + len(chunk)) / 1e9, (total or 0) / 1e9
+                            print(f"slakh: {got:.0f} of {size:.0f} GB")
+                        have += len(chunk)
+            if total is not None and have >= total:
+                return
+            print(f"slakh: connection ended early at {have / 1e9:.2f} GB; resuming")
+        except urllib.error.HTTPError as error:
+            if error.code == 416 and have:
+                return  # nothing left past what is on disk; the checksum decides
+            print(f"slakh: connection lost at {have / 1e9:.2f} GB ({error}); resuming")
+        except (OSError, http.client.HTTPException) as error:
+            print(f"slakh: connection lost at {have / 1e9:.2f} GB ({error}); resuming")
+        time.sleep(min(60, 5 * (attempt % 12 + 1)))
+    raise OSError("slakh: gave up after repeated connection losses")
 
 
 def _safe_target(root: Path, name: str) -> Path:
@@ -151,7 +166,9 @@ def slakh_complete(song: Path) -> bool:
     )
 
 
-def fetch_slakh(out: Path, wanted: int, max_gb: float | None = None) -> None:
+def fetch_slakh(
+    out: Path, wanted: int, max_gb: float | None = None, keep_archive: bool = False
+) -> None:
     """The archive stores files in no particular order: a song's files are spread through it,
     so completing even a few songs takes most of the 104 GB. ``wanted`` > 0 keeps the first
     that many test songs met and stops once they are complete; 0 keeps every test song (the
@@ -166,11 +183,27 @@ def fetch_slakh(out: Path, wanted: int, max_gb: float | None = None) -> None:
         return
     goal = f"{limit} test songs" if limit else "every test song"
     print(f"slakh: streaming until {goal} is complete ({len(done)} so far)")
+    archive = out / "slakh2100_flac_redux.tar.gz"
+    checked = archive.with_suffix(".checked")
+    if not checked.exists():
+        meta = json.load(_open(ZENODO_API.format(SLAKH_RECORD)))
+        entry = next(f for f in meta["files"] if f["key"] == archive.name)
+        algo, expected = entry["checksum"].split(":", 1)
+        print(f"slakh: downloading the archive to {archive} ({entry['size'] / 1e9:.0f} GB)")
+        download_resuming(SLAKH_URL, archive)
+        print(f"slakh: checking the {algo}")
+        digest = hashlib.new(algo)
+        with archive.open("rb") as fh:
+            while chunk := fh.read(1 << 24):
+                digest.update(chunk)
+        if digest.hexdigest() != expected:
+            archive.unlink()
+            raise SystemExit(f"slakh: the archive failed its {algo} check; run again")
+        checked.write_text(expected)
     started = time.time()
     seen_bytes = 0
     next_report = 5e9
-    response = ResumingReader(SLAKH_URL)
-    with tarfile.open(fileobj=response, mode="r|gz") as tar:
+    with tarfile.open(archive, mode="r|gz") as tar:
         for member in tar:
             seen_bytes += member.size
             if seen_bytes >= next_report:
@@ -214,6 +247,10 @@ def fetch_slakh(out: Path, wanted: int, max_gb: float | None = None) -> None:
     print(f"slakh: {len(done)} test songs complete after {minutes:.0f} min")
     if incomplete:
         print(f"slakh: incomplete: {', '.join(incomplete)}")
+    elif not keep_archive:
+        archive.unlink()
+        checked.unlink()
+        print("slakh: deleted the archive")
 
 
 def main() -> None:
@@ -224,12 +261,15 @@ def main() -> None:
     )
     parser.add_argument("--skip-slakh", action="store_true")
     parser.add_argument("--max-gb", type=float, help="stop reading the Slakh archive after this")
+    parser.add_argument(
+        "--keep-archive", action="store_true", help="keep the 104 GB Slakh archive afterwards"
+    )
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     for name, (record, files) in SMALL.items():
         fetch_small(args.out, name, record, files)
     if not args.skip_slakh:
-        fetch_slakh(args.out, args.slakh, args.max_gb)
+        fetch_slakh(args.out, args.slakh, args.max_gb, args.keep_archive)
 
 
 if __name__ == "__main__":

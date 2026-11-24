@@ -316,7 +316,7 @@ def method_pyin(item: Item, bench: Path) -> list[Note] | None:
 def _swiftf0(item: Item):
     from swift_f0 import SwiftF0
 
-    return SwiftF0().detect(_mono(item, 16000), 16000)
+    return SwiftF0(threads=2).detect(_mono(item, 16000), 16000)  # kept light on this PC
 
 
 def method_swiftf0(item: Item, bench: Path) -> list[Note] | None:
