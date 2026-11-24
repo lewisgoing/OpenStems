@@ -140,8 +140,11 @@ got separated meanwhile, come in.
   notifies on a timeout), and showing the old grid in between let a quick second gesture
   build on it (two Doubles saved twice the old tempo; on the Mac CI runner a typed bar 1 was
   joined to the old tempo). If the song never quite shows it, what was saved shows after a
-  second. A failed save puts the saved grid back and says why (a stem open in a DAW stops the
-  renaming).
+  second. Saves go one after another: one is sent at once when none is on its way, else after
+  it. Two at once could reach the engine in either order (its route runs on a pool of
+  threads), and on CI a tempo saved with bar 1 pinned where it showed landed after bar 1
+  typed just after it, so the song kept the old bar 1. A failed save puts the saved grid back
+  and says why (a stem open in a DAW stops the renaming).
 - **Where the figures come from** (`song.ts`, `songGrid`). A separated song has its tempo and
   bar 1 in its analysis. A waiting song has what its job was given, else what the preview
   detects. "was" and Reset refer to what detection found: `analysis.detected` once something

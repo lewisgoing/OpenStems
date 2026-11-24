@@ -865,6 +865,25 @@ describe('the trimmer', () => {
     expect(editorEl()).toHaveAttribute('data-bpm', '100')
   })
 
+  it('sends grid saves one after another, so an older one never lands last', async () => {
+    // Two at once could reach the engine in either order: a tempo saved with bar 1 pinned
+    // where it showed would then undo bar 1 typed right after it.
+    const pending: (() => void)[] = []
+    const onCommit = vi.fn(() => new Promise<undefined>((resolve) => pending.push(() => resolve(undefined))))
+    openEditor({ onCommit })
+    const double = () => fireEvent.click(screen.getByRole('button', { name: 'Double the tempo' }))
+    double()
+    double()
+    await act(async () => undefined)
+    // Only the first is on its way; the second waits for it.
+    expect(onCommit).toHaveBeenCalledTimes(1)
+    expect(onCommit).toHaveBeenLastCalledWith(expect.objectContaining({ bpm: 240 }))
+    await act(async () => pending[0]?.())
+    await waitFor(() => expect(onCommit).toHaveBeenCalledTimes(2))
+    expect(onCommit).toHaveBeenLastCalledWith(expect.objectContaining({ bpm: 480 }))
+    await act(async () => pending[1]?.())
+  })
+
   it('shows what was saved after a moment when the song never quite shows the draft', async () => {
     const onCommit = vi.fn(async () => undefined)
     openEditor({ onCommit })
@@ -1092,8 +1111,9 @@ describe('the trimmer', () => {
   })
 
   it('puts bar 1 where it reads when Enter is pressed on it, and shows a time typed in seconds as a time', async () => {
-    // Bar 1 is kept to a tenth of a millisecond; the field shows milliseconds.
-    const onCommit = vi.fn(() => new Promise<never>(() => undefined))
+    // Bar 1 is kept to a tenth of a millisecond; the field shows milliseconds. The song is
+    // never updated here, so each save keeps showing what it saved.
+    const onCommit = vi.fn(async () => undefined)
     openEditor({ song: songOfJob(job({ analysis: { bpm: 120, key: 'Am', downbeat: 0.2503 } })), onCommit })
     const field = () => screen.getByTestId('downbeat-field')
     expect(field()).toHaveValue('0:00.250')

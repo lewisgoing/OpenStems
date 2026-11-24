@@ -347,6 +347,11 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
     if (landing.current !== 0 && landing.current === epoch.current && shown && sameGrid(saved.grid, shown)) landed()
   }, [saved, landed])
   useEffect(() => () => window.clearTimeout(landingTimer.current), [])
+  // Saves go one after another: sent at once when none is on its way, else after it. Two at
+  // once can reach the engine in either order (its route runs on a pool of threads), and an
+  // older one landing last undoes a newer one: a tempo saved with bar 1 pinned where it
+  // showed, then bar 1 typed, ended with the old bar 1.
+  const onItsWay = useRef<Promise<unknown> | null>(null)
 
   const save = (change: GridChange | null, shown: Grid | null) => {
     window.clearTimeout(nudgeTimer.current)
@@ -357,7 +362,14 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
     }
     setDraft(shown)
     const mine = epoch.current
-    onCommit(change).then(
+    const before = onItsWay.current
+    const saving = before ? before.then(() => onCommit(change)) : onCommit(change)
+    const ended = saving.catch(() => undefined)
+    onItsWay.current = ended
+    void ended.then(() => {
+      if (onItsWay.current === ended) onItsWay.current = null
+    })
+    saving.then(
       () => {
         if (epoch.current !== mine) return
         if (!shown || sameGrid(savedRef.current.grid, shown)) {
