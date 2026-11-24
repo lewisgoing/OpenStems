@@ -471,11 +471,12 @@ describe('what the chips choose', () => {
 
   it('opens a song of many stems on one file, not on every stem decoded at once', () => {
     // every-stem's 13: nothing soloed opens on the song's own file, or on the first stem
-    // when that is gone; what is soloed is still what opens.
+    // when that is gone; so does one muted. What is soloed is still what opens.
     const names = ['kick', 'snare', 'toms', 'hh', 'cymbals', 'other drums', 'lead', 'backing vocals', 'bass', 'guitar', 'piano', 'synth', 'other']
     expect(names.length).toBeGreaterThan(OPEN_STEMS)
     const big = songOfJob(job({ stems: names.map((name) => stem(name)) }))
     expect(pickOfAudible(big, null)).toEqual(SOURCE)
+    expect(pickOfAudible(big, names.filter((name) => name !== 'kick'))).toEqual(SOURCE)
     expect(pickOfAudible(big, ['bass', 'lead'])).toEqual(stems('lead', 'bass'))
     const orphan = songOfStemSet(stemSet({ source_exists: false, stems: names.map((name) => stem(name)) }))
     expect(defaultPick(orphan)).toEqual(stems('kick'))

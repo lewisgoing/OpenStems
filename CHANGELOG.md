@@ -6,8 +6,8 @@
   right-click menu) or in the stems panel, opens the song in an editor across the window.
   Choose what to trim: the original song (before it is separated, too), one stem, a group
   such as Drums, or several stems as one mix with Ctrl+click (Cmd+click on a Mac). From the
-  stems panel it opens on what solo and mute leave audible (a song of more than 8 stems on
-  its own file). Several stems are drawn on top of one another, each in its own color, so
+  stems panel it opens on what solo and mute leave audible (more than 8 stems open on the
+  song's own file). Several stems are drawn on top of one another, each in its own color, so
   you can see where the drums drop out or the vocals come in. Back finds the queue or the
   History as it was left, scrolled and searched. Drag across the waveform to
   choose a part: it snaps to bars, beats, half or quarter beats, or goes where the pointer is

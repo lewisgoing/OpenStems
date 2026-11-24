@@ -58,9 +58,10 @@ export function sectionsOf(song: TrimSong): { group: string | null; stems: strin
 const every = (song: TrimSong): string[] => song.stems.map((stem) => stem.name)
 
 /**
- * The most stems the editor opens on together. Each chosen stem is decoded whole, about 85 MB
- * for four minutes, so every-stem's 13 and mega-53's 53 open on one file instead; every other
- * recipe has at most 7. What the user chooses by hand is not capped.
+ * The most stems the editor opens on together from the stems panel. Each chosen stem is
+ * decoded whole, about 85 MB for four minutes, so every-stem's 13 and mega-53's 53 open on one
+ * file instead, even with a few muted; every other recipe has at most 7. What the user
+ * chooses by hand in the editor is not capped.
  */
 export const OPEN_STEMS = 8
 
@@ -137,12 +138,12 @@ export function audibleOf(pick: Pick): string[] {
 /**
  * The pick that matches what solo and mute leave audible in the stems panel: those stems,
  * or every stem when nothing is soloed or muted (`null`), since the panel plays the stems,
- * not the song's own file. A song with more than `OPEN_STEMS` opens as `defaultPick` then.
+ * not the song's own file. More than `OPEN_STEMS` open as `defaultPick` instead, however
+ * they were left audible.
  */
 export function pickOfAudible(song: TrimSong, audible: string[] | null): Pick {
-  if (audible === null && song.stems.length > OPEN_STEMS) return defaultPick(song)
   const names = audible === null ? every(song) : every(song).filter((name) => audible.includes(name))
-  if (names.length === 0) return defaultPick(song)
+  if (names.length === 0 || names.length > OPEN_STEMS) return defaultPick(song)
   return { kind: 'stems', names }
 }
 

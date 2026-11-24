@@ -76,8 +76,8 @@ functions in `model.ts` and `song.ts`.
 **Ways in.** Trim on a song's row in the queue, while it waits to start or once it is
 separated, and Trim in its right-click menu. Trim in the stems panel, from the Queue and from
 the History: the editor opens on what solo and mute leave audible there (every stem when
-nothing is soloed or muted: the panel plays the stems, not the song's own file; a song of more
-than 8 stems opens on its own file then, see Limits), and Back
+nothing is soloed or muted: the panel plays the stems, not the song's own file; more than 8
+stems open on the song's own file instead, see Limits), and Back
 brings the panel back with solo and mute as they were. A History row has no Trim button of
 its own. The quick-drop window has no editor. Where a row is narrow (the stems panel open in
 a small window), its Trim keeps only its icon and the recipe gives way before the song's
@@ -531,10 +531,11 @@ For the owner, on the M1 Max:
   handed nothing over would change the native drag, which no test can drive.
 - **Every chosen stem is decoded whole**, about 85 MB a stem for a 4-minute song. Trim from
   the stems panel with nothing soloed or muted opens on every stem, since that is what the
-  panel plays: about half a gigabyte for full-song's 6. Past `OPEN_STEMS` (8) it opens on the
-  song's own file instead, or on the first stem when that is gone (`defaultPick`), so
-  every-stem's 13 (1.1 GB) and mega-53's 53 (about 4.5 GB) are never decoded unasked. Stems
-  chosen by hand are not capped: Ctrl+click through 40 of mega-53's and they are all decoded.
+  panel plays: about half a gigabyte for full-song's 6. More than `OPEN_STEMS` (8) left
+  audible there, with nothing muted or with a few, open on the song's own file instead, or on
+  the first stem when that is gone (`defaultPick`), so every-stem's 13 (1.1 GB) and mega-53's
+  53 (about 4.5 GB) are never decoded unasked. Stems chosen by hand in the editor are not
+  capped: Ctrl+click through 40 of mega-53's and they are all decoded.
   A long file costs the same per minute: an hour's mix is over 1 GB for its own file alone.
 - **Reopening the editor on a part of the song's own file** decodes the whole song again in
   the engine before it finds the clip it wrote (`render_source_clip` cuts first, then looks),
