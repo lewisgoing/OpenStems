@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 (2026-11-24)
 
 - **"module 'torch' has no attribute 'device'" no longer sticks.** If PyTorch failed to load
   in the separation process, that process failed every job after it with this message until
