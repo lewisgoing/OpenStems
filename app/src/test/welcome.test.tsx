@@ -6,7 +6,7 @@ import type { Model, Settings } from '@/api/client'
 import { stemBytes } from '@/components/FormatSelect'
 import { ToastProvider } from '@/components/toast'
 import { TooltipProvider } from '@/components/ui'
-import { WELCOME_KEY, Welcome, modelsFit, shouldWelcome } from '@/components/Welcome'
+import { WELCOME_KEY, Welcome, modelsFit, shouldWelcome, showWelcomeAgain } from '@/components/Welcome'
 import { bridge } from './setup'
 
 /* The welcome: the first start with the engine ready. Folders, format, models. */
@@ -221,6 +221,11 @@ describe('the models step', () => {
     bridge.info.welcome = true
     toModels([model({ status: 'installed' })])
     expect(screen.getByRole('heading', { name: 'You are ready' })).toBeInTheDocument()
+    // What was chosen, read back.
+    const chosen = screen.getByTestId('welcome-chosen')
+    expect(chosen).toHaveTextContent(settings.output_dir)
+    expect(chosen).toHaveTextContent('WAV 32-bit float')
+    expect(chosen).toHaveTextContent('Wait for Start')
     expect(screen.queryByRole('button', { name: 'Download' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Done' }))
     expect(localStorage.getItem(WELCOME_KEY)).toBe('seen')
@@ -248,5 +253,18 @@ describe('the sizes and the free space', () => {
   it('reads statfs as bytes, in numbers or bigints', () => {
     expect(spaceOf({ bavail: 10, blocks: 100, bsize: 4096 })).toEqual({ free: 40960, total: 409600 })
     expect(spaceOf({ bavail: 10n, blocks: 100n, bsize: 4096n })).toEqual({ free: 40960, total: 409600 })
+  })
+})
+
+describe('the welcome again, from Settings', () => {
+  it('opens at the first step for an install that has seen it, and is remembered again once closed', async () => {
+    localStorage.setItem(WELCOME_KEY, 'seen')
+    render(tree(<Welcome models={[model({ status: 'installed' })]} onDownloaded={vi.fn()} />))
+    expect(screen.queryByTestId('welcome')).not.toBeInTheDocument()
+    act(() => showWelcomeAgain())
+    expect(localStorage.getItem(WELCOME_KEY)).toBeNull()
+    expect(await screen.findByRole('heading', { name: 'Where should your files go?' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Skip' }))
+    expect(localStorage.getItem(WELCOME_KEY)).toBe('seen')
   })
 })

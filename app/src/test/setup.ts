@@ -45,7 +45,7 @@ export const bridge = {
   pathsForFiles: vi.fn((files: File[]) => files.map((f) => `C:/in/${f.name}`)),
   startDrag: vi.fn(),
   clipboardText: vi.fn(async () => ''),
-  revealInExplorer: vi.fn(async () => undefined),
+  revealInExplorer: vi.fn(async (_path: string) => true),
   openFolder: vi.fn(async () => undefined),
   pickFolder: vi.fn(async (_defaultPath?: string): Promise<string | null> => null),
   folderSpace: vi.fn(async (_path: string) => ({ free: 120 * 1024 ** 3, total: 1000 * 1024 ** 3 })),

@@ -1,6 +1,6 @@
 import { Dialog as BaseDialog } from '@base-ui/react/dialog'
 import { Download, FolderOpen } from 'lucide-react'
-import { type MouseEvent, type ReactNode, useEffect, useState } from 'react'
+import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 import type { FolderSpace } from '../../electron/space'
 import type { Model, Settings, SettingsPatch } from '@/api/client'
 import { useModelActions, usePatchSettings, useSettings } from '@/api/queries'
@@ -23,6 +23,15 @@ import { useMachine } from '@/state/machine'
 export const WELCOME_KEY = 'openstems.welcome.v1'
 const SEED_OFFER_KEY = 'openstems.seed-offer.v1'
 
+/** The event Settings sends to walk through the welcome again (`showWelcomeAgain`). */
+const AGAIN_EVENT = 'openstems:welcome'
+
+/** Forget that the welcome was seen and open it now, from the first step. For Settings. */
+export function showWelcomeAgain(): void {
+  localStorage.removeItem(WELCOME_KEY)
+  window.dispatchEvent(new Event(AGAIN_EVENT))
+}
+
 /** Whether to show the welcome: a first start, with no models yet, or forced by a test. */
 export function shouldWelcome(models: Model[], storage: Pick<Storage, 'getItem'>, forced = false): boolean {
   if (forced) return true
@@ -41,6 +50,8 @@ export function Welcome({ models, onDownloaded }: { models: Model[]; onDownloade
   // Which way the step content enters, and whether it moves at all: a step reached from the
   // keyboard appears at once.
   const [motion, setMotion] = useState<{ dir: 1 | -1; animate: boolean }>({ dir: 1, animate: false })
+  // The dialog itself takes focus, not a button in it: no focus ring before anything is pressed.
+  const popup = useRef<HTMLDivElement>(null)
   const { data: settings } = useSettings()
   const patch = usePatchSettings()
   const toast = useToast()
@@ -50,6 +61,16 @@ export function Welcome({ models, onDownloaded }: { models: Model[]; onDownloade
     localStorage.setItem(WELCOME_KEY, 'seen')
     setOpen(false)
   }
+  // Asked for again from Settings: from the start, the dialog's own entrance and no slide.
+  useEffect(() => {
+    const again = () => {
+      setStep(0)
+      setMotion({ dir: 1, animate: false })
+      setOpen(true)
+    }
+    window.addEventListener(AGAIN_EVENT, again)
+    return () => window.removeEventListener(AGAIN_EVENT, again)
+  }, [])
   const go = (next: number) => (event: MouseEvent) => {
     // A click from the keyboard (Enter or Space on the button) has no pointer detail.
     setMotion({ dir: next > step ? 1 : -1, animate: event.detail > 0 })
@@ -65,7 +86,7 @@ export function Welcome({ models, onDownloaded }: { models: Model[]; onDownloade
     <BaseDialog.Root open={open} onOpenChange={(next) => !next && close()}>
       <BaseDialog.Portal>
         <BaseDialog.Backdrop className="dialog-backdrop z-40" />
-        <BaseDialog.Popup className="dialog welcome z-40" data-testid="welcome">
+        <BaseDialog.Popup ref={popup} initialFocus={popup} className="dialog welcome z-40" data-testid="welcome">
           <div className="flex items-center justify-between gap-4">
             <span className="text-[12px] font-medium text-faint">Welcome to OpenStems</span>
             <ol className="welcome-steps m-0 flex list-none gap-1.5 p-0" aria-label={`Step ${step + 1} of ${STEPS.length}`}>
@@ -83,7 +104,7 @@ export function Welcome({ models, onDownloaded }: { models: Model[]; onDownloade
           >
             {step === 0 && <FoldersStep settings={settings} seedBytes={seedBytes} onPick={save} />}
             {step === 1 && <FormatStep settings={settings} onChange={save} />}
-            {step === 2 && <ModelsStep models={models} seed={seed} seedBytes={seedBytes} />}
+            {step === 2 && <ModelsStep models={models} seed={seed} seedBytes={seedBytes} settings={settings} />}
           </div>
 
           <div className="mt-5 flex items-center gap-2">
@@ -98,11 +119,11 @@ export function Welcome({ models, onDownloaded }: { models: Model[]; onDownloade
             )}
             <span className="flex-1" />
             {step < STEPS.length - 1 ? (
-              <Button variant="primary" onClick={go(step + 1)} autoFocus>
+              <Button variant="primary" onClick={go(step + 1)} >
                 Continue
               </Button>
             ) : seed.length === 0 ? (
-              <Button variant="primary" onClick={close} autoFocus>
+              <Button variant="primary" onClick={close} >
                 Done
               </Button>
             ) : (
@@ -124,7 +145,6 @@ function ModelsDownload({ seed, onStarted }: { seed: Model[]; onStarted: () => v
   return (
     <Button
       variant="primary"
-      autoFocus
       onClick={() => {
         for (const model of seed) actions.pull.mutate(model.id, { onError: toast.error })
         onStarted()
@@ -314,12 +334,17 @@ function ChoiceRow({ label, hint, children }: { label: string; hint: string; chi
 
 /* ---- step 3: the models to start with --------------------------------------------- */
 
-function ModelsStep({ models, seed, seedBytes }: { models: Model[]; seed: Model[]; seedBytes: number }) {
+function ModelsStep({ models, seed, seedBytes, settings }: { models: Model[]; seed: Model[]; seedBytes: number; settings: Settings }) {
   const machine = useMachine()
   // What the engine recommends for this machine. Where it is not the usual set, say why.
   const reason = recommendedReason(models, machine)
   if (seed.length === 0) {
-    return <StepTitle title="You are ready">The recommended models are already in your models folder. Drop a song to start.</StepTitle>
+    return (
+      <>
+        <StepTitle title="You are ready">The recommended models are already in your models folder. Drop a song to start.</StepTitle>
+        <Chosen settings={settings} />
+      </>
+    )
   }
   return (
     <>
@@ -334,6 +359,29 @@ function ModelsStep({ models, seed, seedBytes }: { models: Model[]; seed: Model[
           </li>
         ))}
       </ul>
+      <Chosen settings={settings} />
     </>
+  )
+}
+
+/** What the first two steps chose, read back once before the end. */
+function Chosen({ settings }: { settings: Settings }) {
+  const format = FORMATS.find((f) => f.value === settings.output_format)
+  const rows: [string, string][] = [
+    ['Stems', settings.output_dir],
+    ['Format', format?.label ?? settings.output_format],
+    ['New songs', settings.auto_start ? 'Start as soon as they are added' : 'Wait for Start'],
+  ]
+  return (
+    <dl className="m-0 mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 border-t border-line pt-3 text-[12.5px]" data-testid="welcome-chosen">
+      {rows.map(([term, value]) => (
+        <div key={term} className="contents">
+          <dt className="text-faint">{term}</dt>
+          <dd className="m-0 min-w-0 truncate text-muted" title={value}>
+            {value}
+          </dd>
+        </div>
+      ))}
+    </dl>
   )
 }

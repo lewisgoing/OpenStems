@@ -256,8 +256,11 @@ function registerIpc(): void {
     return String(text).slice(0, 4096)
   })
 
+  // Says whether the file was there to show: an original moved away since is told, not ignored.
   ipcMain.handle('shell:reveal', (_event, path: string) => {
-    if (typeof path === 'string' && existsSync(path)) shell.showItemInFolder(path)
+    if (typeof path !== 'string' || !existsSync(path)) return false
+    shell.showItemInFolder(path)
+    return true
   })
   ipcMain.handle('shell:open-folder', async (_event, path: string) => {
     if (typeof path === 'string' && existsSync(path)) await shell.openPath(path)

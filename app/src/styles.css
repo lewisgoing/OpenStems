@@ -934,9 +934,10 @@
   width: min(560px, calc(100vw - 48px));
   padding: 22px 22px 18px;
 }
-/* Every step is at least this tall: Continue and Back stay where the pointer is. */
+/* Every step is as tall as the tallest (the format step): Continue and Back stay where the
+   pointer is, and the centered dialog never grows or jumps between steps. */
 .welcome-body {
-  min-height: 318px;
+  min-height: 372px;
 }
 /* A step enters from the side it lies on: forward from the right, back from the left.
    One reached from the keyboard is there at once. */
@@ -962,7 +963,7 @@
 .welcome-step-mark[data-done='true'] {
   background: var(--color-accent);
 }
-/* A format to pick. The ring follows the choice at once; only the press eases. */
+/* A format to pick. It presses like a button; the ring of the choice eases with its color. */
 .format-choice {
   display: block;
   padding: 10px 12px;

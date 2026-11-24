@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **A welcome on the first start.** Three short steps after setup: where stems and models
+  go, with the free space on each drive (and a warning when the recommended models would
+  not fit); the format, with about how large a stem is in each; whether songs start as soon
+  as they are added, and tempo sync for FL Studio; then the recommended models. Every choice
+  is the setting itself, and Settings > Getting started shows the welcome again. Existing
+  installs do not see it. On Windows and on a Mac alike (not seen on a Mac yet).
+- **Right-click a song in the queue**, in the full window and the quick-drop window: Show
+  stems, Show in Explorer (Finder on a Mac), Show the original, Start now, Move to the top
+  or bottom, Cancel, Retry and Remove from the list, as the song's state allows. A song
+  being fetched from a link has Try again and Cancel. The quick-drop window can now remove a
+  song from the list too. Nothing in the menu deletes a file.
+
 ## 0.3.7 (2026-11-23)
 
 - **A new version shows in the tray.** While an update waits, the tray icon (on a Mac, the

@@ -56,7 +56,10 @@ anyway"). It needs no administrator rights and adds a Start menu entry.
 
 **First launch.** The app looks at the graphics card, sets up its Python environment for it
 (it downloads Python and PyTorch, about 3 GB, into your user profile), checks the GPU, and
-offers to download the recommended models (3.4 GB). After that, drop a file on the window.
+then welcomes you in three short steps: where stems and models go (with the free space on
+each drive), the format stems are saved in (with about how large each is), and the
+recommended models (3.4 GB). Settings > Getting started shows the welcome again. After that,
+drop a file on the window.
 On a machine with little memory the app offers lighter models in place of the ones that
 would not fit: see [Memory](#memory).
 
@@ -164,7 +167,9 @@ History lists past separations: search, drag the stems again, or run the same tr
 another recipe. Models shows what is installed, sizes and licenses, with download and delete.
 If a recipe needs a model that is not installed, the app offers to download it and queues your
 files when it is ready. Settings holds the output and models folders, the output format and
-the naming template.
+the naming template. A right-click on a song in the queue shows its stems or its original
+file in Explorer (Finder on a Mac), starts, moves, cancels or retries it, or takes it off the
+list, in the full window and the quick-drop window.
 
 <table>
   <tr>
@@ -322,7 +327,8 @@ on a Mac, with uv, git, Node 22 and pnpm installed: `cd app && pnpm install && p
 writes the dmg to `app/release/`. Open the dmg and drag OpenStems to Applications.
 
 **First launch.** As on Windows, the app sets up its Python environment (about 350 MB, since
-PyTorch for the Mac is much smaller), checks the GPU, and offers the recommended models.
+PyTorch for the Mac is much smaller), checks the GPU, and opens the same welcome: folders,
+format, the recommended models. Not seen on a Mac yet.
 There is one engine build on a Mac and nothing to choose.
 
 <details>

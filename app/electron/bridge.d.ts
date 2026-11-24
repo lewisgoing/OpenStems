@@ -126,7 +126,8 @@ export interface OpenStemsBridge {
   startDrag(paths: string[]): void
   /** The text on the clipboard, for pasting a link with a button. */
   clipboardText(): Promise<string>
-  revealInExplorer(path: string): Promise<void>
+  /** Show a file in Explorer or Finder. False when it is not there. */
+  revealInExplorer(path: string): Promise<boolean>
   openFolder(path: string): Promise<void>
   pickFolder(defaultPath?: string): Promise<string | null>
   /** Free space on the drive a folder is (or will be) on. Null when it cannot be told. */

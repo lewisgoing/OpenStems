@@ -31,6 +31,11 @@ async function mainViews(theme: 'dark' | 'light') {
     await page.getByTestId('stem-row').nth(5).waitFor()
     await page.waitForTimeout(700)
     await shot('3-stems')
+    // The menu a right-click opens on a finished song.
+    await page.locator('[data-testid="job-row"][data-state="done"]').first().click({ button: 'right' })
+    await page.waitForTimeout(300)
+    await shot('3b-row-menu')
+    await page.keyboard.press('Escape')
     await page.getByRole('combobox', { name: 'Recipe' }).click()
     await page.waitForTimeout(400)
     await shot('4-recipes')
@@ -129,6 +134,10 @@ test('screenshots of the quick-drop window', async () => {
     await page.locator('[data-testid="quick-row"][data-state="done"]').nth(2).waitFor()
     await page.waitForTimeout(700)
     await shot('tray-4-done')
+    await page.locator('[data-testid="quick-row"][data-state="done"]').first().click({ button: 'right' })
+    await page.waitForTimeout(300)
+    await shot('tray-4b-row-menu')
+    await page.keyboard.press('Escape')
     // The real screen: frame, shadow and where the window sits by the taskbar or under the
     // menu bar. A Mac lets an app see the screen only with the screen recording permission:
     // without it this one picture is left out and the rest go on.

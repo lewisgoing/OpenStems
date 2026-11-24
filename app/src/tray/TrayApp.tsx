@@ -12,6 +12,7 @@ import { DropOverlay } from '@/components/DropOverlay'
 import { JobNotes } from '@/components/Fit'
 import { FormatSelect } from '@/components/FormatSelect'
 import { LinkRow, useOpenLinks } from '@/components/LinkRow'
+import { type MenuItem, RowMenu, jobMenuItems, revealHandlers } from '@/components/RowMenu'
 import { QUALITY, useCurrentFit, useCurrentRecipe, useRecipeOptions } from '@/components/RecipeBar'
 import { SourceTitle } from '@/components/SourceTitle'
 import { ToastProvider, useToast } from '@/components/toast'
@@ -483,6 +484,15 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
                 onStart={() => actions.start.mutate(job.id, { onError: toast.error })}
                 onCancel={() => actions.cancel.mutate(job.id, { onError: toast.error })}
                 onRetry={() => actions.retry.mutate(job.id, { onError: toast.error })}
+                menu={jobMenuItems(job, {
+                  start: () => actions.start.mutate(job.id, { onError: toast.error }),
+                  cancel: () => actions.cancel.mutate(job.id, { onError: toast.error }),
+                  retry: () => actions.retry.mutate(job.id, { onError: toast.error }),
+                  // Lays the stems out in the row, unless they are already.
+                  showStems: job.id === expanded ? undefined : () => setPick({ id: job.id, since: finishedId }),
+                  ...revealHandlers(job, (message) => toast.show(message)),
+                  remove: () => actions.remove.mutate(job.id, { onError: toast.error }),
+                })}
               />
             ))}
           </ul>
@@ -553,6 +563,8 @@ interface QuickRowProps {
   onStart: () => void
   onCancel: () => void
   onRetry: () => void
+  /** What a right-click on the row offers. */
+  menu?: MenuItem[]
 }
 
 function startDrag(event: React.DragEvent, paths: string[]): void {
@@ -561,7 +573,7 @@ function startDrag(event: React.DragEvent, paths: string[]): void {
   window.openstems.startDrag(paths)
 }
 
-export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mixer = null, onMix, onStart, onCancel, onRetry }: QuickRowProps) {
+export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mixer = null, onMix, onStart, onCancel, onRetry, menu = [] }: QuickRowProps) {
   const theme = useTheme()
   const active = ACTIVE.has(job.state)
   const queued = job.state === 'queued'
@@ -573,12 +585,18 @@ export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mix
   const canMix = Boolean(onMix) && more === 0 && job.stems.length > 1
 
   return (
-    <li
-      data-testid="quick-row"
-      data-state={job.state}
-      aria-expanded={hasStems ? expanded : undefined}
-      className={cn('group/row row-hover mb-0.5 rounded-[10px] px-2.5 py-2', expanded && 'bg-raised')}
-      onClick={hasStems ? onPick : undefined}
+    <RowMenu
+      items={menu}
+      label={`${job.track_name} actions`}
+      render={
+        <li
+          data-testid="quick-row"
+          data-state={job.state}
+          aria-expanded={hasStems ? expanded : undefined}
+          className={cn('group/row row-hover mb-0.5 rounded-[10px] px-2.5 py-2', expanded && 'bg-raised')}
+          onClick={hasStems ? onPick : undefined}
+        />
+      }
     >
       <div className="flex items-center gap-2.5">
         <StateIcon job={job} />
@@ -724,7 +742,7 @@ export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mix
       )}
 
       {hasStems && expanded && mixer && <MixBar job={job} mixer={mixer} />}
-    </li>
+    </RowMenu>
   )
 }
 

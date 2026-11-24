@@ -67,4 +67,10 @@ test('the welcome can be skipped, and the folders stay as they were', async () =
   await expect(welcome).toBeHidden()
   await page.getByRole('button', { name: 'Settings' }).click()
   await expect(page.getByText(outputDir)).toBeVisible()
+
+  // Settings can walk through it again, from the first step.
+  await page.getByRole('button', { name: 'Show the welcome again' }).click()
+  await expect(welcome.getByRole('heading', { name: 'Where should your files go?' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(welcome).toBeHidden()
 })
