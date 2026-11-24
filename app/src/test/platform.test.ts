@@ -114,7 +114,7 @@ describe('the Mac app bundle', () => {
 })
 
 describe('the Mac build configuration', () => {
-  type Build = { mac: { identity?: string | null; hardenedRuntime?: boolean; entitlements?: string }; win: unknown; appId: string }
+  type Build = { mac: { identity?: string | null; hardenedRuntime?: boolean; notarize?: boolean; entitlements?: string }; win: unknown; appId: string }
   const load = async () => {
     const file: string = '../../mac-build.cjs'
     const loaded = (await import(/* @vite-ignore */ file)) as { macBuild?: (env: object) => Build; default?: { macBuild: (env: object) => Build } }
@@ -137,6 +137,17 @@ describe('the Mac build configuration', () => {
     expect(config.mac.identity).toBeUndefined()
     expect(config.mac.hardenedRuntime).toBe(true)
     expect(config.mac.entitlements).toBe('build/entitlements.mac.plist')
+  })
+
+  it('signs with a certificate of our own without the hardened runtime or notarization', async () => {
+    const macBuild = await load()
+    const config = macBuild({ CSC_LINK: 'base64...', OPENSTEMS_SELF_SIGNED: '1' })
+    // The certificate is found by electron-builder, as a Developer ID is: not ad hoc.
+    expect(config.mac.identity).toBeUndefined()
+    expect(config.mac.hardenedRuntime).toBe(false)
+    expect(config.mac.notarize).toBe(false)
+    // The flag alone, with no certificate, is still an ad hoc build.
+    expect(macBuild({ OPENSTEMS_SELF_SIGNED: '1' }).mac.identity).toBe('-')
   })
 
   it('never changes the configuration the Windows build reads', async () => {

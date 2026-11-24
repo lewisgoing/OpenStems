@@ -34,6 +34,7 @@ import { TraySettings } from '@/views/SettingsView'
 import { bridge } from './setup'
 
 const createJobs = { mutate: vi.fn() }
+const setAnalysis = { job: { mutateAsync: vi.fn() }, stemSet: { mutateAsync: vi.fn() } }
 const actions = {
   startAll: { mutate: vi.fn() },
   start: { mutate: vi.fn() },
@@ -75,6 +76,7 @@ vi.mock('@/api/queries', () => ({
   keys: { jobs: ['jobs'] },
   useJobs: () => ({ data: jobs }),
   useJobActions: () => actions,
+  useSetAnalysis: () => setAnalysis,
   useLinks: () => ({ data: links }),
   useLinkActions: () => linkActions,
   useCreateMix: () => createMix,

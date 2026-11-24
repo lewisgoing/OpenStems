@@ -48,6 +48,14 @@ def post_process(
     if wanted or "{bpm}" in template or "{key}" in template:
         bpm, key = analysis.detect_tempo_key(mix, sample_rate)
         extras["bpm"], extras["key"] = bpm, key
+    # The user's own figures win, and what detection found is kept beside them.
+    given_bpm, given_key = getattr(options, "bpm", None), getattr(options, "key", None)
+    if given_bpm is not None or given_key is not None:
+        extras["detected"] = {"bpm": extras["bpm"], "key": extras["key"]}
+        if given_bpm is not None:
+            extras["bpm"] = given_bpm
+        if given_key is not None:
+            extras["key"] = given_key
     cancel.raise_if_cancelled()
 
     wanted_midi = set(getattr(options, "midi_stems", None) or ())

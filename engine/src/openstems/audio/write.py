@@ -58,6 +58,38 @@ def _append_chunk(path: Path, chunk: bytes) -> None:
         f.write(struct.pack("<I", end + len(chunk) - 8))
 
 
+def _find_chunk(f: Any, name: bytes) -> tuple[int, int] | None:
+    """Where a chunk of a RIFF WAV starts (its header) and how long its data is."""
+    f.seek(0)
+    head = f.read(12)
+    if head[:4] != b"RIFF" or head[8:] != b"WAVE":
+        return None
+    at = 12
+    while True:
+        f.seek(at)
+        header = f.read(8)
+        if len(header) < 8:
+            return None
+        size = struct.unpack("<I", header[4:])[0]
+        if header[:4] == name:
+            return at, size
+        at += 8 + size + (size & 1)
+
+
+def set_tempo(path: Path, bpm: float | None) -> None:
+    """Change the tempo a WAV is marked with (see `tempo_chunk`), without touching its
+    audio. None takes the mark away: FL Studio does not sync a file whose tempo is 0."""
+    wanted = bpm if bpm and bpm > 0 else 0.0
+    with path.open("r+b") as f:
+        found = _find_chunk(f, b"acid")
+        if found is not None and found[1] == 24:
+            f.seek(found[0])
+            f.write(tempo_chunk(wanted))
+            return
+    if found is None and wanted:
+        _append_chunk(path, tempo_chunk(wanted))
+
+
 def write_audio(
     path: Path, audio: np.ndarray, sample_rate: int, fmt: str = "wav32f", bpm: float | None = None
 ) -> None:

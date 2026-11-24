@@ -1,12 +1,15 @@
 import { Blend, FolderOpen, GripVertical, Layers, Music2, Pause, Play, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { type StemFile, fileUrl } from '@/api/client'
+import { type StemFile, type StemSet, fileUrl } from '@/api/client'
 import { useEngine } from '@/api/engine'
+import { useSetAnalysis } from '@/api/queries'
 import { type PlayerState, StemPlayer } from '@/audio/player'
 import { cn, formatTime, stemColor } from '@/lib/format'
+import { tempoKeyOf } from '@/lib/tempokey'
 import { modClick, modKey, words } from '@/platform'
 import { capitalize, groupsOf, mixLabel, partName, stemSections, useMixFile } from '@/state/mix'
 import { JobNotes } from './Fit'
+import { TempoKey } from './TempoKey'
 import { useToast } from './toast'
 import { Button, IconButton, Tooltip } from './ui'
 import { Waveform, useSharedGain } from './Waveform'
@@ -19,6 +22,8 @@ export interface StemsPanelProps {
   analysis?: Record<string, unknown>
   /** What did not go as planned, such as a model that ran on the CPU. */
   notes?: string[]
+  /** The user changed the tempo or key: the stems as they are now (some may be renamed). */
+  onRetagged?: (set: StemSet) => void
   onClose: () => void
 }
 
@@ -72,7 +77,8 @@ function Clock({ player }: { player: StemPlayer }) {
   return <span ref={ref}>0:00</span>
 }
 
-export function StemsPanel({ title, subtitle, directory, stems, analysis, notes, onClose }: StemsPanelProps) {
+export function StemsPanel({ title, subtitle, directory, stems, analysis, notes, onRetagged, onClose }: StemsPanelProps) {
+  const setAnalysis = useSetAnalysis()
   const { player, state, playPause } = useStemPlayer(stems)
   const [dragging, setDragging] = useState<string | null>(null)
   const gain = useSharedGain(stems.map((s) => s.peaks))
@@ -115,8 +121,7 @@ export function StemsPanel({ title, subtitle, directory, stems, analysis, notes,
   const mixName = capitalize(mixLabel(audibleNames, names, groupsOf(stems)))
   const sections = useMemo(() => stemSections(stems), [stems])
   const grouped = sections.some((section) => section.group)
-  const bpm = typeof analysis?.bpm === 'number' ? Math.round(analysis.bpm) : null
-  const key = typeof analysis?.key === 'string' ? analysis.key : null
+  const { bpm, key } = tempoKeyOf(analysis)
   const loading = state.status === 'loading'
 
   return (
@@ -128,8 +133,13 @@ export function StemsPanel({ title, subtitle, directory, stems, analysis, notes,
           </h2>
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-muted">
             <span>{subtitle}</span>
-            {bpm !== null && <span className="chip tabular">{bpm} BPM</span>}
-            {key && <span className="chip">{key}</span>}
+            <TempoKey
+              bpm={bpm}
+              keyName={key}
+              hint="Type over it if it is wrong. File names that hold it, and the tempo FL Studio reads, follow."
+              onChange={async (change) => onRetagged?.(await setAnalysis.stemSet.mutateAsync({ directory, ...change }))}
+              onError={toast.error}
+            />
           </div>
           <JobNotes notes={notes} className="mt-1.5" />
         </div>

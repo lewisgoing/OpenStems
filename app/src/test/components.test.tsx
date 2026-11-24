@@ -11,6 +11,7 @@ import { SelectionProvider } from '@/state/selection'
 import { QueueView } from '@/views/QueueView'
 import { bridge } from './setup'
 
+const setAnalysis = { job: { mutateAsync: vi.fn() }, stemSet: { mutateAsync: vi.fn() } }
 const actions = {
   startAll: { mutate: vi.fn() },
   start: { mutate: vi.fn() },
@@ -42,6 +43,7 @@ vi.mock('@/api/queries', () => ({
   keys: { jobs: ['jobs'] },
   useJobs: () => ({ data: jobs }),
   useJobActions: () => actions,
+  useSetAnalysis: () => setAnalysis,
   useLinks: () => ({ data: links }),
   useLinkActions: () => linkActions,
   useCreateMix: () => createMix,
@@ -336,8 +338,9 @@ describe('StemsPanel', () => {
     panel()
     expect(screen.getAllByTestId('stem-row')).toHaveLength(3)
     expect(screen.getAllByTestId('waveform')).toHaveLength(3)
-    expect(screen.getByText('128 BPM')).toBeInTheDocument()
-    expect(screen.getByText('A minor')).toBeInTheDocument()
+    // In fields, so that a wrong figure can be typed over.
+    expect(screen.getByLabelText<HTMLInputElement>('Tempo in BPM').value).toBe('127.6')
+    expect(screen.getByLabelText<HTMLInputElement>('Key').value).toBe('A minor')
   })
 
   it('drags one stem or all of them as real file paths', () => {
