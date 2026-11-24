@@ -12,6 +12,7 @@ import numpy as np
 import soundfile as sf
 
 from openstems.domain.errors import DomainError
+from openstems.domain.tempo import carries_tempo
 
 # format id -> (extension, libsndfile format, subtype)
 FORMATS: dict[str, tuple[str, str, str]] = {
@@ -106,7 +107,7 @@ def write_audio(
     if fmt == "mp3":
         kwargs = {"compression_level": 0.0, "bitrate_mode": "CONSTANT"}  # 320 kbps
     sf.write(str(path), data, sample_rate, format=container, subtype=subtype, **kwargs)
-    if bpm and bpm > 0 and container == "WAV":
+    if bpm and bpm > 0 and carries_tempo(fmt):
         _append_chunk(path, tempo_chunk(bpm))
 
 

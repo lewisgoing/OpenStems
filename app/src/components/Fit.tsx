@@ -1,4 +1,4 @@
-import { Cpu } from 'lucide-react'
+import { Cpu, Info } from 'lucide-react'
 import { type HTMLAttributes, forwardRef } from 'react'
 import { type Fit, fitLabel } from '@/lib/memory'
 import { cn } from '@/lib/format'
@@ -41,12 +41,17 @@ export function JobNotes({ notes, wrap, className }: { notes?: string[]; wrap?: 
   if (!notes || notes.length === 0) return null
   return (
     <div className={cn('text-[12px] text-muted', className)} role="note" data-testid="job-notes">
-      {notes.map((note) => (
-        <div key={note} className={cn('flex gap-1.5', wrap ? 'items-start' : 'items-center')} title={wrap ? undefined : note}>
-          <Cpu size={11} className={cn('flex-none text-faint', wrap && 'mt-[3px]')} aria-hidden="true" />
-          <span className={wrap ? 'min-w-0' : 'truncate'}>{note}</span>
-        </div>
-      ))}
+      {notes.map((note) => {
+        // A model that fell back to the CPU gets the chip; anything else, such as a tempo
+        // that could not be written for FL Studio, a plain mark.
+        const Icon = note.includes('ran on the CPU') ? Cpu : Info
+        return (
+          <div key={note} className={cn('flex gap-1.5', wrap ? 'items-start' : 'items-center')} title={wrap ? undefined : note}>
+            <Icon size={11} className={cn('flex-none text-faint', wrap && 'mt-[3px]')} aria-hidden="true" />
+            <span className={wrap ? 'min-w-0' : 'truncate'}>{note}</span>
+          </div>
+        )
+      })}
     </div>
   )
 }
