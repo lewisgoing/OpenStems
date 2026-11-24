@@ -317,6 +317,12 @@ The rest has not been seen at all.
 - **The welcome and the row menus** (ADRs 0021, 0022): free space read with `statfs` on
   APFS, the word "disk", Control-click opening the row menu, Show in Finder, and Escape in the
   menu bar panel. Covered on Windows with the platform patched; the steps are below.
+- **The trimmer** (ADR 0023): nothing of it has been seen on a Mac. Option for placing
+  freely and ⌘ for adding a chip, ⌘ with the wheel and a trackpad pinch for zooming (the
+  pinch's speed is a guess), the toolbar's lines with SF Pro (they are chosen from measured
+  widths, so a wider font should only break them sooner), playback, the loop and the click
+  through the Mac's output, and clips dragged into a DAW and into Finder. Its words and keys
+  are covered on Windows with the platform patched; its ten steps are in ADR 0023.
 
 Not built: dropping files on the menu bar item itself. Queuing lives in the windows, and the
 quick-drop window is one click away.
@@ -368,6 +374,12 @@ right-click it, in the full window and in the panel under the menu bar. Both sho
 menu at the pointer. "Show in Finder" should open Finder with the first stem selected, and
 "Show the original in Finder" the song's own file. In the panel, Escape should close the
 menu and leave the panel open; a second Escape puts the panel away.
+
+The trimmer (ADR 0023): its ten steps for the M1 Max are in that ADR, under "Mac". They
+cover the ⌘-click on a chip, Option for placing freely, zooming with ⌘ and the wheel or a
+pinch, the toolbar's lines, clips dragged into a DAW and into Finder, playback with the loop
+and the click, Escape, a waiting song's own file, "Separate only the trimmed part", and
+stems layered in their colors on the Retina screen.
 
 If the GPU misbehaves, Settings > System > "Use the GPU" off (or `OPENSTEMS_DEVICE=cpu`) runs
 everything on the CPU.
