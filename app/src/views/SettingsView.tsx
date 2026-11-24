@@ -4,7 +4,7 @@ import type { SetupStatus, ShellStatus, TorchVariant } from '../../electron/brid
 import { VARIANT_CARDS, VARIANT_DOWNLOAD, VARIANT_LABEL, variantsFor } from '../../electron/variant'
 import type { Recipe, Settings, SettingsPatch } from '@/api/client'
 import { useMaintenance, usePatchSettings, useSettings, useSystem } from '@/api/queries'
-import { FORMATS } from '@/components/FormatSelect'
+import { FORMATS, carriesTempo, formatOptions } from '@/components/FormatSelect'
 import { useToast } from '@/components/toast'
 import { UpdateSettings } from '@/components/Update'
 import { Button, CommitInput, Dialog, IconButton, Segmented, Select, Switch } from '@/components/ui'
@@ -58,7 +58,7 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
 
           <Group title="Output">
             <Row label="Format" hint="Stems are 44.1 kHz stereo, the rate the models run at. Also on the bar where you drop files.">
-              <Select label="Output format" value={settings.output_format} options={FORMATS} onChange={(v) => save({ output_format: v as Settings['output_format'] })} className="min-w-[200px]" minWidth={300} />
+              <Select label="Output format" value={settings.output_format} options={formatOptions(settings.tempo_sync)} onChange={(v) => save({ output_format: v as Settings['output_format'] })} className="min-w-[200px]" minWidth={300} />
             </Row>
             <Row label="Match the source sample rate" hint="Resample stems back to the source's rate, for example 48 kHz.">
               <Switch label="Match the source sample rate" checked={settings.match_source_rate} onChange={(v) => save({ match_source_rate: v })} />
@@ -90,7 +90,7 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
             <Row label="Detect tempo and key" hint="Fills the {bpm} and {key} tokens and shows them with the stems.">
               <Switch label="Detect tempo and key" checked={settings.detect_tempo_key} onChange={(v) => save({ detect_tempo_key: v })} />
             </Row>
-            <Row label="Tempo-sync for FL Studio" hint="Writes the detected tempo into WAV stems and mixes, so FL Studio stretches them to your project's tempo. Not for FLAC or MP3.">
+            <Row label="Tempo-sync for FL Studio" hint={<TempoSyncHint settings={settings} />}>
               <Switch label="Tempo-sync for FL Studio" checked={settings.tempo_sync} onChange={(v) => save({ tempo_sync: v })} />
             </Row>
             <Row label="Write MIDI" hint="A draggable .mid next to vocal, bass and melody stems. Monophonic: one note at a time.">
@@ -449,6 +449,29 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
       <h2 className="m-0 mb-2 text-[12px] font-semibold tracking-wide text-muted uppercase">{title}</h2>
       <div className="flex flex-col divide-y divide-line rounded-[12px] border border-line bg-surface px-4 [&>*]:py-3">{children}</div>
     </section>
+  )
+}
+
+/**
+ * What tempo sync does, and when it cannot: FL Studio reads tempo from WAV files only, so with
+ * MP3 or FLAC chosen the hint says plainly that nothing is written. FL also stretches a sample
+ * by itself only up to about a minute (measured, not in its manual: ADR 0016), so the hint
+ * gives the one step a full-length stem needs.
+ */
+export function TempoSyncHint({ settings }: { settings: Settings }) {
+  const format = FORMATS.find((f) => f.value === settings.output_format)
+  return (
+    <>
+      Writes the detected tempo into WAV stems and mixes for FL Studio. FL stretches a sample to your project's tempo by
+      itself only up to about a minute long: for a full-length stem, open the clip's menu, choose Fit to tempo and pick
+      the tempo marked "(embedded)". FL reads tempo only from WAV files, and only with "Read sample tempo information" on
+      in its General settings.
+      {settings.tempo_sync && !carriesTempo(settings.output_format) && (
+        <span className="mt-1 block text-warn" role="note">
+          Your format is {format?.short ?? settings.output_format}, so no tempo is written. Choose WAV to embed it.
+        </span>
+      )}
+    </>
   )
 }
 

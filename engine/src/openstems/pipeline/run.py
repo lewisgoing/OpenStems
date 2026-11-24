@@ -34,6 +34,7 @@ from openstems.domain.stem import (
     Track,
     cache_key,
 )
+from openstems.domain.tempo import tempo_notes
 from openstems.engines.base import CancelToken
 from openstems.engines.host import ModelHost
 
@@ -252,6 +253,7 @@ class Pipeline:
 
         report("writing", 1.0 - _WRITE, "Writing stems")
         extras = self._post_process(track, mix, outputs, options, report, cancel)
+        notes = [*notes, *tempo_notes(options.tempo_sync, options.output_format, extras.get("bpm"))]
         stem_set = self._write(
             track,
             info,

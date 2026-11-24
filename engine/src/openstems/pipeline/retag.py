@@ -19,6 +19,7 @@ from openstems.audio.write import set_tempo
 from openstems.domain.errors import DomainError
 from openstems.domain.naming import DEFAULT_TEMPLATE, render_name
 from openstems.domain.stem import MANIFEST_NAME
+from openstems.domain.tempo import notes_after_retag
 from openstems.pipeline.run import read_manifest
 
 MIXES_DIR = "Mixes"
@@ -138,6 +139,7 @@ def set_analysis(directory: Path, changes: dict[str, Any]) -> dict[str, Any]:
                 if stem.get(field) in moves:
                     stem[field] = moves[stem[field]]
         updated["analysis"] = new
+        updated["notes"] = notes_after_retag(list(updated.get("notes") or []), new.get("bpm"))
         tmp = directory / (MANIFEST_NAME + ".tmp")
         tmp.write_text(json.dumps(updated, indent=2, ensure_ascii=False), encoding="utf-8")
         os.replace(tmp, directory / MANIFEST_NAME)

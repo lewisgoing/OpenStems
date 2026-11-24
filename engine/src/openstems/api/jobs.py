@@ -214,7 +214,11 @@ class JobManager:
             return self.to_dict(job)
 
     def output_changed(
-        self, directory: str, stems: list[dict[str, Any]], analysis: dict[str, Any]
+        self,
+        directory: str,
+        stems: list[dict[str, Any]],
+        analysis: dict[str, Any],
+        notes: list[str] | None = None,
     ) -> None:
         """The stems in ``directory`` were re-tagged: finished jobs that show them follow."""
         with self._lock:
@@ -227,6 +231,8 @@ class JobManager:
                     continue
                 self._extra[job.id]["stems"] = stems
                 self._extra[job.id]["analysis"] = analysis
+                if notes is not None:
+                    self._extra[job.id]["notes"] = notes
                 self._changed(job)
 
     def writing_to(self, directory: str) -> bool:
