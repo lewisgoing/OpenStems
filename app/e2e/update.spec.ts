@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { type Launched, clickTray, launch, trayPage, updateOpened } from './helpers'
+import { type Launched, clickTray, launch, trayPage, trayState, updateOpened } from './helpers'
 
 const RELEASES = 'https://github.com/lewisgoing/OpenStems/releases/latest'
 
@@ -21,6 +21,7 @@ test('a new version is offered, downloaded on a click, and installed on a restar
 
   // Nothing is said until a check has found something.
   await expect(page.locator('.update-pill')).toHaveCount(0)
+  expect((await trayState(ctx.app)).icon).toBe('idle')
   await page.getByRole('button', { name: 'Settings' }).click()
   await expect(page.getByText('Not checked yet.')).toBeVisible()
   await page.getByRole('button', { name: 'Check for updates' }).click()
@@ -29,7 +30,10 @@ test('a new version is offered, downloaded on a click, and installed on a restar
   // The offer is in the title bar of the full window and in the quick-drop window.
   const popup = await trayPage(ctx.app)
   await clickTray(ctx.app)
-  await expect(popup.getByRole('button', { name: 'Update', exact: true })).toBeVisible()
+  await expect(popup.getByRole('button', { name: 'Update 0.3.0', exact: true })).toBeVisible()
+  // The tray icon carries the offer too, for an app that sits in the tray all day.
+  await expect.poll(async () => (await trayState(ctx.app)).icon).toBe('update')
+  expect((await trayState(ctx.app)).tooltip).toBe('OpenStems: version 0.3.0 is available')
   const offer = page.getByRole('button', { name: 'Update to 0.3.0' })
   await expect(offer).toBeVisible()
 
@@ -39,6 +43,7 @@ test('a new version is offered, downloaded on a click, and installed on a restar
   await expect(restart).toBeVisible()
   await expect(page.getByText('Version 0.3.0 is downloaded. Restart to finish.')).toBeVisible()
   await expect(popup.getByRole('button', { name: 'Restart', exact: true })).toBeVisible()
+  expect((await trayState(ctx.app)).tooltip).toBe('OpenStems: version 0.3.0 is downloaded: restart to install it')
   expect(await installed()).toBe(false)
 
   await restart.click()

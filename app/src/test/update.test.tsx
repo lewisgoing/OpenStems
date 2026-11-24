@@ -344,10 +344,10 @@ describe('the update button', () => {
     expect(bridge.installUpdate).toHaveBeenLastCalledWith(true)
   })
 
-  it('uses one word in the quick-drop window', async () => {
+  it('names the version in the quick-drop window, in fewer words', async () => {
     bridge.updates.mockResolvedValueOnce(status({ state: 'available', version: '0.3.0' }))
     render(tree(<UpdatePill compact />))
-    expect(await screen.findByRole('button', { name: 'Update' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Update 0.3.0' })).toBeInTheDocument()
     push(status({ state: 'downloading', version: '0.3.0', progress: 0.5 }))
     expect(screen.getByRole('button')).toHaveTextContent('50%')
     push(status({ state: 'ready', version: '0.3.0' }))

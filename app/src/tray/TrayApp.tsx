@@ -36,6 +36,16 @@ const MAX_ROWS = 30
 const MAX_PILLS = 12
 
 /**
+ * How many stem pills a row shows. A "+N in the full app" pill takes the room of a stem
+ * pill at least, so hiding a single stem behind it saves nothing: one over the limit shows
+ * them all (every-stem's 13). Past that the rest go to the full app, so a 53-stem split does
+ * not fill the window.
+ */
+export function pillCount(stems: number): number {
+  return stems <= MAX_PILLS + 1 ? stems : MAX_PILLS
+}
+
+/**
  * The quick-drop window: a small interface by the tray (on a Mac, under the menu bar). Drop a song on it, then drag the
  * stems out of it. It shares the queue, the recipe and the quality with the full window.
  */
@@ -557,7 +567,7 @@ export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mix
   const queued = job.state === 'queued'
   const done = job.state === 'done'
   const hasStems = done && job.stems.length > 0
-  const pills = job.stems.slice(0, MAX_PILLS)
+  const pills = job.stems.slice(0, pillCount(job.stems.length))
   const more = job.stems.length - pills.length
   // A mix is of stems that can all be seen and clicked.
   const canMix = Boolean(onMix) && more === 0 && job.stems.length > 1

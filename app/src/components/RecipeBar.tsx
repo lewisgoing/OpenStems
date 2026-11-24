@@ -3,7 +3,7 @@ import { Popover } from '@base-ui/react/popover'
 import { Check, Download, Link2, Plus, SlidersHorizontal } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import type { Model, Recipe } from '@/api/client'
-import { formatBytes, stemColor } from '@/lib/format'
+import { cn, formatBytes, stemColor } from '@/lib/format'
 import { type Fit, modelFitNote, recipeFitNote } from '@/lib/memory'
 import { shortcut } from '@/platform'
 import { useMachine } from '@/state/machine'
@@ -131,80 +131,94 @@ export function RecipeBar({ recipes, models, onAddFiles, onPasteLink, quietAdd }
   const shownStems = recipe?.selectable_outputs ? selection.outputs : stems
   const shownChips = outputChips(shownStems, recipe?.output_groups)
 
+  // One row of controls that wraps as the window narrows. Wide (900px and up, where the
+  // stem chips fit) it is a single line with the two buttons at its end. Narrower, the
+  // buttons stay on the first line beside the recipe, a break follows, and quality, format
+  // and "Sum to mix" share the second line at full width, so the switch only drops to a
+  // line of its own when there is truly no room for it. `order` moves the buttons; the DOM
+  // keeps the recipe controls first, so the tab order is the same at every width.
+  const rest = 'order-4'
   return (
-    <div className="@container flex items-start gap-3 border-b border-line px-5 py-3">
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2">
-      <Select
-        label="Recipe"
-        value={selection.target}
-        options={options}
-        onChange={(target) => update({ target })}
-        className="min-w-[190px] flex-none"
-        minWidth={380}
-      />
-      <Segmented label="Quality" value={selection.quality} options={QUALITY} onChange={(quality) => update({ quality })} />
-      <FormatSelect compact className="flex-none" />
+    <div className="@container border-b border-line px-5 py-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <Select
+          label="Recipe"
+          value={selection.target}
+          options={options}
+          onChange={(target) => update({ target })}
+          className="order-1 min-w-[190px] flex-none"
+          minWidth={380}
+        />
+        <Segmented label="Quality" value={selection.quality} options={QUALITY} onChange={(quality) => update({ quality })} className={rest} />
+        <FormatSelect compact className={cn(rest, 'flex-none')} />
 
-      {recipe?.selectable_outputs && (
-        <StemPicker all={recipe.outputs} selected={selection.outputs} onChange={(outputs) => update({ outputs })} />
-      )}
+        {recipe?.selectable_outputs && (
+          <div className={rest}>
+            <StemPicker all={recipe.outputs} selected={selection.outputs} onChange={(outputs) => update({ outputs })} />
+          </div>
+        )}
 
-      {recipe?.supports_sum_to_mix && (
-        <Tooltip label="Fold what the stems miss into 'other', so they sum back to the mix">
-          <label className="flex flex-none items-center gap-2 whitespace-nowrap text-muted">
-            <Switch label="Sum to mix" checked={selection.sumToMix} onChange={(sumToMix) => update({ sumToMix })} />
-            Sum to mix
-          </label>
-        </Tooltip>
-      )}
+        {recipe?.supports_sum_to_mix && (
+          <Tooltip label="Fold what the stems miss into 'other', so they sum back to the mix">
+            <label className={cn(rest, 'flex flex-none items-center gap-2 whitespace-nowrap text-muted')}>
+              <Switch label="Sum to mix" checked={selection.sumToMix} onChange={(sumToMix) => update({ sumToMix })} />
+              Sum to mix
+            </label>
+          </Tooltip>
+        )}
 
-      <div className="hidden min-w-0 flex-1 items-center gap-1 overflow-hidden @[900px]:flex" aria-label="Stems this will write">
-        {shownChips.slice(0, 8).map((chip) => (
-          <span key={chip.name} className="chip">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: stemColor(chip.name, theme) }} />
-            {chip.name}
-            {chip.parts > 1 && <span className="tabular text-faint">{chip.parts}</span>}
+        <div className={cn(rest, 'hidden min-w-0 flex-1 items-center gap-1 overflow-hidden @[900px]:flex')} aria-label="Stems this will write">
+          {shownChips.slice(0, 8).map((chip) => (
+            <span key={chip.name} className="chip">
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: stemColor(chip.name, theme) }} />
+              {chip.name}
+              {chip.parts > 1 && <span className="tabular text-faint">{chip.parts}</span>}
+            </span>
+          ))}
+          {shownChips.length > 8 && <span className="chip">+{shownChips.length - 8}</span>}
+        </div>
+        {/* Tight or too large for this machine. It is advice: Add files works all the same. */}
+        {note && (
+          <Tooltip label={note}>
+            <FitChip fit={fit} data-testid="recipe-fit" className={rest} />
+          </Tooltip>
+        )}
+        {missing.length > 0 && (
+          <span className={cn(rest, 'chip flex-none !border-warn/40 !text-warn')}>
+            <Download size={10} />
+            needs {formatBytes(missing.reduce((sum, m) => sum + m.bytes, 0))}
           </span>
-        ))}
-        {shownChips.length > 8 && <span className="chip">+{shownChips.length - 8}</span>}
-      </div>
-      {/* Tight or too large for this machine. It is advice: Add files works all the same. */}
-      {note && (
-        <Tooltip label={note}>
-          <FitChip fit={fit} data-testid="recipe-fit" />
-        </Tooltip>
-      )}
-      {missing.length > 0 && (
-        <span className="chip flex-none !border-warn/40 !text-warn">
-          <Download size={10} />
-          needs {formatBytes(missing.reduce((sum, m) => sum + m.bytes, 0))}
-        </span>
-      )}
-      </div>
+        )}
 
-      <input
-        ref={input}
-        type="file"
-        multiple
-        hidden
-        data-testid="file-input"
-        onChange={(event) => {
-          const files = [...(event.target.files ?? [])]
-          event.target.value = ''
-          if (files.length) onAddFiles(files)
-        }}
-      />
-      {/* One accent action: adding files. A link is the second way in, so it stays quiet. */}
-      <Tooltip label={`Fetch the song behind a copied link: YouTube, SoundCloud, Bandcamp and more (${shortcut('V')})`}>
-        <Button className="flex-none" onClick={onPasteLink}>
-          <Link2 size={14} />
-          Paste link
-        </Button>
-      </Tooltip>
-      <Button variant={quietAdd ? 'default' : 'primary'} className="flex-none" onClick={() => input.current?.click()}>
-        <Plus size={14} />
-        Add files
-      </Button>
+        {/* The line break of the narrow layout: everything after it starts a new line. */}
+        <span className="order-3 h-0 basis-full @[900px]:hidden" aria-hidden="true" />
+
+        <input
+          ref={input}
+          type="file"
+          multiple
+          hidden
+          data-testid="file-input"
+          onChange={(event) => {
+            const files = [...(event.target.files ?? [])]
+            event.target.value = ''
+            if (files.length) onAddFiles(files)
+          }}
+        />
+        {/* One accent action: adding files. A link is the second way in, so it stays quiet. */}
+        <div className="order-2 ml-auto flex flex-none items-center gap-3 @[900px]:order-5">
+          <Tooltip label={`Fetch the song behind a copied link: YouTube, SoundCloud, Bandcamp and more (${shortcut('V')})`}>
+            <Button className="flex-none" onClick={onPasteLink}>
+              <Link2 size={14} />
+              Paste link
+            </Button>
+          </Tooltip>
+          <Button variant={quietAdd ? 'default' : 'primary'} className="flex-none" onClick={() => input.current?.click()}>
+            <Plus size={14} />
+            Add files
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

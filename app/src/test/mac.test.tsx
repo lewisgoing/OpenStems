@@ -190,10 +190,10 @@ describe('an update the app cannot install itself', () => {
     expect(bridge.installUpdate).not.toHaveBeenCalled()
   })
 
-  it('is one word in the quick-drop window', async () => {
+  it('names the version in the quick-drop window too', async () => {
     bridge.updates.mockResolvedValueOnce(offer)
     render(tree(<UpdatePill compact />))
-    expect(await screen.findByRole('button', { name: 'Get' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Get 0.3.0' })).toBeInTheDocument()
   })
 
   it('says in Settings where the version comes from', async () => {

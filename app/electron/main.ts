@@ -353,7 +353,10 @@ if (!app.requestSingleInstanceLock()) {
       }
       send('setup:status', status)
     })
-    updater.onStatus((status) => send('update:status', status))
+    updater.onStatus((status) => {
+      send('update:status', status)
+      tray.setUpdate(status)
+    })
     updater.schedule(() => prefs.value.checkForUpdates)
     tray.create()
     // Started in the tray, the app shows no window, unless first-run setup needs the user.
