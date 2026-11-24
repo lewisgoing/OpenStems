@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenStems: stem separation on your own GPU</title>
+  <meta name="description" content="Drop a song in, drag DAW-ready stems out. A free desktop app for Windows and Apple Silicon Macs that separates songs into stems on your own graphics card. No cloud, no account, no upload.">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0c0d0f">
+  <meta property="og:title" content="OpenStems">
+  <meta property="og:description" content="Drop a song in. Drag DAW-ready stems out. Stem separation on your own GPU.">
+  <meta property="og:image" content="images/app.png">
+  <link rel="icon" href="icon.png">
+  <link rel="preload" href="fonts/archivo.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css">
+  <script>document.documentElement.classList.add('js')</script>
+  <script src="main.js" defer></script>
+</head>
+<body>
+
+<a class="skip" href="#download">Skip to download</a>
+
+<header class="top">
+  <a class="brand press" href="#" aria-label="OpenStems, back to the top">
+    <svg class="mark" viewBox="0 0 40 40" aria-hidden="true">
+      <rect x="6" y="7" width="22" height="5" rx="2.5" fill="var(--vocals)"/>
+      <rect x="6" y="14.5" width="12" height="5" rx="2.5" fill="var(--drums)"/>
+      <rect x="6" y="22" width="28" height="5" rx="2.5" fill="var(--bass)"/>
+      <rect x="6" y="29.5" width="18" height="5" rx="2.5" fill="var(--lime)"/>
+    </svg>
+    <span>openstems</span>
+  </a>
+  <nav class="nav" aria-label="Sections">
+    <a class="press" href="#how"><b>01</b> how</a>
+    <a class="press" href="#features"><b>02</b> features</a>
+    <a class="press" href="#download"><b>03</b> download</a>
+    <a class="press" href="#changelog"><b>04</b> changelog</a>
+    <a class="press" href="#support"><b>05</b> support</a>
+  </nav>
+  <div class="status" aria-live="polite">
+    <span class="led" aria-hidden="true"></span>
+    <span class="mono">ver</span>
+    <span class="seg" data-seg="0.4.0" id="top-version" aria-label="version 0.4.0"></span>
+  </div>
+</header>
+
+<main>
+
+<!-- Hero: a spec-sheet lockup, centered, and the device below it -->
+<section class="hero" aria-labelledby="hero-title">
+  <div class="lockup">
+    <p class="code intro" style="--i:0"><span>OS/01</span><span class="rule"></span><span class="mono">stem separator</span></p>
+    <h1 id="hero-title" class="intro" style="--i:1">
+      <span class="line">drop a song in.</span>
+      <span class="line">drag stems out.</span>
+    </h1>
+    <dl class="specs intro" style="--i:2">
+      <div><dt>runs on</dt><dd>your gpu</dd></div>
+      <div><dt>cloud</dt><dd>none</dd></div>
+      <div><dt>account</dt><dd>none</dd></div>
+      <div><dt>price</dt><dd>free · mit</dd></div>
+    </dl>
+    <p class="lede intro" style="--i:3">
+      A desktop app for producers. Drop files, folders or a link, pick a recipe, and every song
+      comes back as stems exactly as long as the source, so they line up at bar 1 in your DAW.
+    </p>
+    <div class="cta intro" style="--i:4">
+      <a class="btn btn-solid press" href="#download">download <span class="mono" data-fill="version">0.4.0</span></a>
+      <a class="btn press" href="https://github.com/lewisgoing/OpenStems">source on github</a>
+    </div>
+  </div>
+</section>
+
+<!-- How: the separation, scrubbed by scrolling -->
+<section class="how" id="how" aria-labelledby="how-title">
+  <div class="how-sticky">
+    <div class="how-head">
+      <p class="eyebrow"><b>01</b> how it works</p>
+      <h2 id="how-title" class="sr-only">How it works</h2>
+      <ol class="steps" aria-label="Three steps">
+        <li data-step="0"><b data-n="01">drop</b><span>Files, folders or a pasted link. They queue with the recipe, quality and format you pick.</span></li>
+        <li data-step="1"><b data-n="02">separate</b><span>One GPU worker runs the queue and keeps the last model warm. Progress is live.</span></li>
+        <li data-step="2"><b data-n="03">drag out</b><span>Solo, mute, then drag one stem, all of them, or a mix straight into the DAW.</span></li>
+      </ol>
+    </div>
+
+    <figure class="device" aria-label="A song separated into six stems: vocals, drums, bass, guitar, piano and other">
+      <div class="device-bar">
+        <span class="mono">input</span>
+        <span class="file mono" id="file-name">demo song.wav</span>
+        <span class="device-readouts">
+          <span class="readout"><span class="seg seg-red" id="seg-pct" data-seg="000"></span><span class="mono">%</span></span>
+          <span class="readout"><span class="seg" data-seg="128"></span><span class="mono">bpm</span></span>
+        </span>
+      </div>
+      <div class="screen" id="screen">
+        <div class="mix" id="mix" data-wave="mix" aria-hidden="true"></div>
+        <!-- six stems: the full-song recipe -->
+        <div class="lane" data-stem="vocals"  style="--c:var(--vocals);--n:0"><span class="lane-name"><i></i>vocals</span><div class="wave" data-wave="vocals"></div><span class="drag">drag</span></div>
+        <div class="lane" data-stem="drums"   style="--c:var(--drums);--n:1"><span class="lane-name"><i></i>drums</span><div class="wave" data-wave="drums"></div><span class="drag">drag</span></div>
+        <div class="lane" data-stem="bass"    style="--c:var(--bass);--n:2"><span class="lane-name"><i></i>bass</span><div class="wave" data-wave="bass"></div><span class="drag">drag</span></div>
+        <div class="lane" data-stem="guitar"  style="--c:var(--guitar);--n:3"><span class="lane-name"><i></i>guitar</span><div class="wave" data-wave="guitar"></div><span class="drag">drag</span></div>
+        <div class="lane" data-stem="piano"   style="--c:var(--piano);--n:4"><span class="lane-name"><i></i>piano</span><div class="wave" data-wave="piano"></div><span class="drag">drag</span></div>
+        <div class="lane" data-stem="other"   style="--c:var(--other);--n:5"><span class="lane-name"><i></i>other</span><div class="wave" data-wave="other"></div><span class="drag">drag</span></div>
+      </div>
+      <figcaption class="device-foot mono">
+        <span>recipe <b>full-song</b></span>
+        <span>6 stems · sample-exact length</span>
+        <span class="hide-sm">3:25 song in 14 s · rtx 5070 ti · fast</span>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- Features: a spec sheet -->
+<section class="features" id="features" aria-labelledby="features-title">
+  <div class="section-head">
+    <p class="eyebrow"><b>02</b> what it does</p>
+    <h2 id="features-title">Built for the DAW, not the browser.</h2>
+  </div>
+
+  <div class="sheet">
+    <article class="cell reveal" style="--i:0;--c:var(--vocals)">
+      <p class="cell-code mono">f.01</p>
+      <h3>Hear them before you take them</h3>
+      <p>A waveform per stem, solo and mute, and playback that starts every stem together. Tempo and key are detected for each song.</p>
+    </article>
+    <article class="cell reveal" style="--i:1;--c:var(--drums)">
+      <p class="cell-code mono">f.02</p>
+      <h3>A drum track, split into its kit</h3>
+      <p>The Drum kit recipe takes the drums out, then splits them into kick, snare, toms, hi-hat, ride and crash.</p>
+    </article>
+    <article class="cell reveal" style="--i:2;--c:var(--bass)">
+      <p class="cell-code mono">f.03</p>
+      <h3>Any mix, as one file</h3>
+      <p>Mute or solo stems and what you hear leaves as one file, such as the song without its vocals.</p>
+    </article>
+    <article class="cell reveal" style="--i:3;--c:var(--lime)">
+      <p class="cell-code mono">f.04</p>
+      <h3>Trim to the bar</h3>
+      <p>Choose a part on a grid that snaps to bars and beats, fix the grid where detection got it wrong, and drag the clip out.</p>
+    </article>
+    <article class="cell reveal" style="--i:4;--c:var(--guitar)">
+      <p class="cell-code mono">f.05</p>
+      <h3>Tempo that FL Studio reads</h3>
+      <p>With tempo sync on, WAV stems carry the detected tempo, so FL Studio can stretch them to the project.</p>
+    </article>
+    <article class="cell reveal" style="--i:5;--c:var(--piano)">
+      <p class="cell-code mono">f.06</p>
+      <h3>Paste a link</h3>
+      <p>A web address is fetched, queued and separated like a file. The quick-drop window in the tray or menu bar takes them too.</p>
+    </article>
+  </div>
+
+  <!-- The drum kit, split on arrival -->
+  <figure class="kit reveal-group" id="kit" aria-label="The drums stem split into kick, snare, toms, hi-hat, ride and crash">
+    <div class="kit-head">
+      <p class="mono"><span class="dot" style="--c:var(--drums)"></span>drums</p>
+      <p class="mono kit-arrow" aria-hidden="true">→ drum-kit</p>
+    </div>
+    <div class="kit-src" data-wave="drums" style="--c:var(--drums)"></div>
+    <div class="kit-parts">
+      <div class="kit-part" style="--i:0;--c:var(--kick)"><span class="mono">kick</span><div data-wave="kick"></div></div>
+      <div class="kit-part" style="--i:1;--c:var(--snare)"><span class="mono">snare</span><div data-wave="snare"></div></div>
+      <div class="kit-part" style="--i:2;--c:var(--toms)"><span class="mono">toms</span><div data-wave="toms"></div></div>
+      <div class="kit-part" style="--i:3;--c:var(--hh)"><span class="mono">hh</span><div data-wave="hh"></div></div>
+      <div class="kit-part" style="--i:4;--c:var(--ride)"><span class="mono">ride</span><div data-wave="ride"></div></div>
+      <div class="kit-part" style="--i:5;--c:var(--crash)"><span class="mono">crash</span><div data-wave="crash"></div></div>
+    </div>
+  </figure>
+
+  <figure class="shot reveal">
+    <img src="images/app.png" width="2560" height="1600" loading="lazy" decoding="async"
+      alt="The OpenStems window: a queue of songs on the left and the stems of the chosen song as colored waveforms on the right">
+    <figcaption class="mono"><span>fig. 1</span> the queue and the stems panel, on Windows</figcaption>
+  </figure>
+
+  <dl class="recipes reveal">
+    <div><dt class="mono">full-song</dt><dd>vocals, drums, bass, guitar, piano, other</dd></div>
+    <div><dt class="mono">every-stem</dt><dd>13 stems: lead and backing vocals, the kit, bass, guitar, piano, other</dd></div>
+    <div><dt class="mono">drum-kit</dt><dd>kick, snare, toms, hh, ride, crash, drums</dd></div>
+    <div><dt class="mono">vocals-instrumental</dt><dd>vocals, instrumental</dd></div>
+    <div><dt class="mono">acapella-clean</dt><dd>dry vocals, lead, backing</dd></div>
+    <div><dt class="mono">melody · drumless · cleanup</dt><dd>and more, with your own recipes as TOML files</dd></div>
+  </dl>
+</section>
+
+<!-- Download -->
+<section class="download" id="download" aria-labelledby="download-title">
+  <div class="section-head">
+    <p class="eyebrow"><b>03</b> download</p>
+    <h2 id="download-title">Free. <span class="muted" data-fill="released">Version 0.4.0.</span></h2>
+  </div>
+
+  <div class="platforms">
+    <article class="platform reveal" style="--i:0">
+      <header>
+        <p class="mono">p.01</p>
+        <h3>Windows</h3>
+        <p class="tag mono">nvidia · amd preview</p>
+      </header>
+      <a class="btn btn-solid btn-big press" id="dl-win" href="https://github.com/lewisgoing/OpenStems/releases/latest">
+        <span>download for windows</span>
+        <span class="mono btn-meta" data-fill="win-meta">.exe</span>
+      </a>
+      <ul class="reqs">
+        <li><b>NVIDIA</b> GTX 16 series, RTX 20 series and later. Built and tested on an RTX 5070 Ti. GTX 900 and 10 series: an untested build of their own.</li>
+        <li><b>AMD Radeon</b> an untested preview, on the cards AMD's PyTorch for Windows supports (RX 9070, RX 7900 XTX and others).</li>
+        <li><b>First launch</b> sets up Python and PyTorch for your card, about 3 GB, then the recommended models, 3.4 GB.</li>
+        <li><b>SmartScreen</b> asks once, since the installer is not code-signed: More info, then Run anyway. No administrator rights needed.</li>
+      </ul>
+    </article>
+
+    <article class="platform reveal" style="--i:1">
+      <header>
+        <p class="mono">p.02</p>
+        <h3>macOS</h3>
+        <p class="tag mono">apple silicon preview</p>
+      </header>
+      <a class="btn btn-solid btn-big press" id="dl-mac" href="https://github.com/lewisgoing/OpenStems/releases/latest">
+        <span>download for mac</span>
+        <span class="mono btn-meta" data-fill="mac-meta">.dmg</span>
+      </a>
+      <ul class="reqs">
+        <li><b>Apple Silicon</b> M1 or later, macOS 14 or later. Intel Macs are not supported.</li>
+        <li><b>A preview</b> run on one Mac so far, an M1 Max. Reports from other Macs are welcome.</li>
+        <li><b>First launch</b> sets up Python and PyTorch, about 350 MB, then the recommended models.</li>
+      </ul>
+      <details class="steps-mac">
+        <summary class="press">Opening it the first time</summary>
+        <div>
+          <p>The app is signed with the project's own certificate, not an Apple Developer ID, so macOS will not open it on a double click.</p>
+          <ol>
+            <li>Double-click OpenStems. macOS says it could not verify the app. Click Done.</li>
+            <li>Open System Settings and click Privacy &amp; Security.</li>
+            <li>Under Security, OpenStems is named as blocked: click Open Anyway (there for about an hour after step 1).</li>
+            <li>Confirm, and enter your login password if asked.</li>
+          </ol>
+          <p>If macOS says it "is damaged", move it to Applications and run this in Terminal:</p>
+          <pre><code>xattr -dr com.apple.quarantine /Applications/OpenStems.app</code></pre>
+        </div>
+      </details>
+    </article>
+  </div>
+
+  <p class="aside mono reveal">
+    <a href="https://github.com/lewisgoing/OpenStems/releases">every release</a>
+    <span aria-hidden="true">·</span>
+    <a href="https://github.com/lewisgoing/OpenStems#development">build from source</a>
+    <span aria-hidden="true">·</span>
+    <span>installed apps update themselves</span>
+  </p>
+</section>
+
+<!-- Changelog -->
+<section class="changelog" id="changelog" aria-labelledby="changelog-title">
+  <div class="section-head">
+    <p class="eyebrow"><b>04</b> changelog</p>
+    <h2 id="changelog-title">What changed.</h2>
+  </div>
+  <div class="log" id="log">
+    <p class="log-fallback">The changelog is in <a href="https://github.com/lewisgoing/OpenStems/blob/main/CHANGELOG.md">CHANGELOG.md</a>.</p>
+  </div>
+  <p class="aside mono">
+    <a href="https://github.com/lewisgoing/OpenStems/blob/main/CHANGELOG.md">the whole changelog</a>
+  </p>
+</section>
+
+<!-- Support -->
+<section class="support" id="support" aria-labelledby="support-title">
+  <div class="support-inner reveal">
+    <p class="eyebrow"><b>05</b> support</p>
+    <h2 id="support-title">Free, and staying free.</h2>
+    <p>OpenStems has no subscription, no account and no ads, and its source is open. If it saves you an afternoon, you can support the developer.</p>
+    <div class="cta">
+      <a class="btn btn-solid press" id="support-link" href="https://ko-fi.com/" rel="noopener">support the developer</a>
+      <a class="btn press" href="https://github.com/lewisgoing/OpenStems">star on github</a>
+      <a class="btn press" href="https://github.com/lewisgoing/OpenStems/issues/new">report a bug</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="tagline">
+    <p><span>openstems</span><span class="mono" data-fill="version">0.4.0</span></p>
+    <p><span>only</span><span>free</span></p>
+  </div>
+  <p class="mono foot-meta">
+    <span>mit license</span>
+    <span>no cookies, no analytics: this page asks github for the newest release and nothing else</span>
+  </p>
+</footer>
+
+</body>
+</html>
