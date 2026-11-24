@@ -597,7 +597,9 @@ class Service:
                 }
                 for s in result.stems
             ]
-            self.jobs.output_changed(where, stems, manifest.get("analysis") or {})
+            self.jobs.output_changed(
+                where, stems, manifest.get("analysis") or {}, list(manifest.get("notes") or [])
+            )
         self.bus.publish("stemsets.changed")
         found = self.index.stem_set(where)
         if found is None:
