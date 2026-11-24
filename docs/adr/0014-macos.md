@@ -39,9 +39,10 @@ unproven, and "For whoever tests on a Mac" says how to find out.
   `PLAN.md`). Signing with one, and notarization, are wired to electron-builder's standard
   environment variables and happen only when those are set. Without them the app is signed
   ad hoc, which names nobody. See "Signing".
-- **A manual update without a Developer ID.** macOS installs an update only into an app
-  signed with a Developer ID. A build without one therefore says a new version exists and
-  opens the release page. ADR 0010 has the details.
+- **A manual update without a certificate.** macOS installs an update only into an app
+  signed with a certificate, so a build signed ad hoc says a new version exists and opens
+  the release page (ADR 0010). From 0.3.2 the build is signed with the project's own
+  certificate and updates itself; 0.3.2 installed 0.3.3 on the owner's M1 Max (ADR 0018).
 
 ## The loaders dropped MPS; OpenStems does not use that part
 
@@ -169,7 +170,8 @@ runs (as repository secrets for a CI job). Nothing else changes:
 
 With the first two the app is signed. With the last three as well it is notarized. A signed
 app updates itself through `electron-updater` as on Windows: the app asks `codesign` once at
-start whether it carries a Developer ID signature (`updater.macAppIsSigned`).
+start whether it carries a certificate's signature, a Developer ID or the project's own
+(`updater.macAppIsSigned`, `updatelogic.canInstallUpdates`; ADR 0018).
 
 A Mac release carries `OpenStems-<version>-arm64.dmg`, `OpenStems-<version>-arm64.zip`, their
 blockmaps and `latest-mac.yml`. The check of an app without a Developer ID reads
