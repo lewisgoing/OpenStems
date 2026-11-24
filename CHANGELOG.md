@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.9 (2026-11-23)
 
 - **Clear finished lines up in the quick-drop window.** Its hover no longer sits on top of
   the first song, and the button ends where the rows end, with or without a scrollbar.
