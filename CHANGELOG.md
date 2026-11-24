@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.8 (2026-11-23)
 
 - **A welcome on the first start.** Three short steps after setup: where stems and models
   go, with the free space on each drive (and a warning when the recommended models would
