@@ -40,8 +40,9 @@ Engine (run from `engine/`):
 - `uv run python ../scripts/accept_recipes.py SONG`: run every recipe with alignment checks
 - Stem to MIDI benchmark (Phase 7, `docs/research/stem-to-midi.md`):
   - `python -I ../scripts/midi_bench_data.py [--skip-slakh] [--max-gb N]`: fetch the CC BY
-    sets into `D:\lew-stems\bench`. Slakh's archive is shuffled, so complete songs need most of
-    its 104 GB streamed.
+    sets into `D:\lew-stems\bench`. Slakh's archive is shuffled, so it is downloaded whole to D:
+    (104 GB free needed; it resumes after a drop or a restart), checked, the test songs
+    extracted and the archive deleted.
   - `uv run --no-sync --with mido==1.3.3 --with mir_eval==0.8.2 python ../scripts/midi_bench.py score|pack`:
     score transcribers with mir_eval, or build the audio pack the owner runs through Melodyne
     and NeuralNote.
