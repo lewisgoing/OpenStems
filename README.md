@@ -178,6 +178,10 @@ the naming template.
   source sample rate" to get 48 kHz stems from a 48 kHz file.
 - **Tempo and key in file names.** `{bpm}` and `{key}` work in the naming template, for
   example `{track} {bpm}bpm {key} - {stem}`.
+- **Correct the tempo and key.** Detection is sometimes wrong (half or double the tempo,
+  the relative major). Type your own over it: on a song waiting in the queue, where the
+  fields say "auto", or on finished stems in the stems panel. File names, the manifest and
+  the tempo FL Studio reads follow, without separating the song again.
 - **Tempo-synced stems for FL Studio.** With "Tempo-sync for FL Studio" on in Settings, WAV
   stems and mixes carry the detected tempo, and FL Studio stretches them to your project's
   tempo when you drop them in. WAV only, and as accurate as the detected tempo.

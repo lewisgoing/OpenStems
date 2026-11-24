@@ -53,6 +53,10 @@ class RunOptions:
     normalize: bool = False
     detect_tempo_key: bool = False
     tempo_sync: bool = False
+    # The user's own tempo and key for this song, in place of what detection finds. Not
+    # part of the cache key: a cached result is re-tagged, not separated again.
+    bpm: float | None = None
+    key: str | None = None
     midi_stems: list[str] = field(default_factory=list)
     force: bool = False
 
@@ -181,6 +185,16 @@ class Pipeline:
 
     # -- run ------------------------------------------------------------------
 
+    @staticmethod
+    def _retagged(out_dir: Path, cached: StemSet, options: RunOptions) -> StemSet:
+        """A cached result with the tempo and key this run was given, if it was given any."""
+        from openstems.pipeline.retag import set_analysis
+
+        changes = {k: v for k, v in (("bpm", options.bpm), ("key", options.key)) if v is not None}
+        if not changes:
+            return cached
+        return stem_set_from_manifest(out_dir, set_analysis(out_dir, changes)) or cached
+
     def run(
         self,
         track_path: str | Path,
@@ -212,6 +226,7 @@ class Pipeline:
             if existing is not None and existing.get("cache_key") == key:
                 cached = stem_set_from_manifest(out_dir, existing)
                 if cached is not None:
+                    cached = self._retagged(out_dir, cached, options)
                     cached.cached = True
                     report("done", 1.0, "From cache")
                     return cached
@@ -537,7 +552,12 @@ class Pipeline:
                     "decoded_sample_rate": SAMPLE_RATE,
                     "duration": round(samples / SAMPLE_RATE, 6),
                 },
-                "analysis": {"bpm": extras.get("bpm"), "key": extras.get("key")},
+                "analysis": {
+                    "bpm": extras.get("bpm"),
+                    "key": extras.get("key"),
+                    # What detection found, when the user's figures replaced it.
+                    **({"detected": extras["detected"]} if extras.get("detected") else {}),
+                },
                 "recipe": recipe.to_dict(),
                 "quality": options.quality,
                 "options": {"sum_to_mix": options.sum_to_mix, **options.key_dict()},
