@@ -14,7 +14,7 @@ queues it as an ordinary job, with the recipe, quality and options that were sel
 the link was pasted.
 
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) does the fetching, as a Python dependency of the
-engine, pinned to `2026.10.26` with its `default` and `deno` extras. Those bring
+engine, pinned to `2026.11.23` (first `2026.10.26`) with its `default` and `deno` extras. Those bring
 `yt-dlp-ejs` and the Deno runtime (`deno` 2.9.8 from PyPI): since late 2025 yt-dlp needs an
 external JavaScript runtime for YouTube. The engine passes Deno's path to yt-dlp itself,
 because the environment's `Scripts` folder is not on `PATH` when the app starts the engine.

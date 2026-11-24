@@ -1,6 +1,6 @@
 [project]
 name = "openstems"
-version = "0.3.3"
+version = "0.3.4"
 description = "Local GPU stem separation: engine, CLI and local API"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -22,7 +22,7 @@ dependencies = [
     "uvicorn>=0.54",
     "websockets>=15",
     "librosa>=0.11",
-    "yt-dlp[default,deno]==2026.10.26",
+    "yt-dlp[default,deno]==2026.11.23",
 ]
 
 [project.scripts]

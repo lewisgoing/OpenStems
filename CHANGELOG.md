@@ -1,7 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.3.4 (2026-11-23)
 
+- **Pasted links: yt-dlp 2026.11.23**, from 2026.10.26. Sites change how they serve audio,
+  and a newer yt-dlp is what keeps links working. Tried with a real YouTube link on Windows.
 - For the project, nothing changes in the app: a daily check opens an issue in the
   repository when a newer yt-dlp is out, the usual sign that pasted links need an update
   (`.github/workflows/links-check.yml`, `scripts/check_ytdlp.py`).
