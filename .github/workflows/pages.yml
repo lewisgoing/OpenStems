@@ -1,0 +1,52 @@
+name: Site
+
+# The landing page on GitHub Pages: site/ plus the changelog, the icon and two README
+# pictures (scripts/build-site.mjs). A release republishes it so its changelog is current.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/**
+      - CHANGELOG.md
+      - docs/images/app.png
+      - docs/images/drums.png
+      - app/resources/icon.png
+      - scripts/build-site.mjs
+      - .github/workflows/pages.yml
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/build-site.mjs _site
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
