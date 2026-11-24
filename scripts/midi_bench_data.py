@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import re
 import shutil
@@ -38,7 +39,41 @@ USER_AGENT = "midi-bench-fetch/1"
 
 
 def _open(url: str):
-    return urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": USER_AGENT}))
+    return urllib.request.urlopen(
+        urllib.request.Request(url, headers={"User-Agent": USER_AGENT}), timeout=60
+    )
+
+
+class ResumingReader:
+    """A read-only stream over a URL that reconnects with an HTTP Range request from the byte
+    it reached when the connection drops, so a long stream survives network blips."""
+
+    def __init__(self, url: str, attempts: int = 50) -> None:
+        self.url, self.attempts, self.pos = url, attempts, 0
+        self.response = _open(url)
+
+    def read(self, size: int = -1) -> bytes:
+        for attempt in range(self.attempts):
+            try:
+                data = self.response.read(size)
+                if data or size == 0:
+                    self.pos += len(data)
+                    return data
+                return b""
+            except (OSError, http.client.HTTPException) as error:
+                print(f"slakh: connection lost at {self.pos / 1e9:.2f} GB ({error}); retrying")
+                time.sleep(min(60, 5 * (attempt + 1)))
+                try:
+                    request = urllib.request.Request(
+                        self.url, headers={"User-Agent": USER_AGENT, "Range": f"bytes={self.pos}-"}
+                    )
+                    self.response = urllib.request.urlopen(request, timeout=60)
+                except (OSError, http.client.HTTPException):
+                    continue
+        raise OSError("slakh: gave up after repeated connection losses")
+
+    def close(self) -> None:
+        self.response.close()
 
 
 def _safe_target(root: Path, name: str) -> Path:
@@ -134,7 +169,8 @@ def fetch_slakh(out: Path, wanted: int, max_gb: float | None = None) -> None:
     started = time.time()
     seen_bytes = 0
     next_report = 5e9
-    with _open(SLAKH_URL) as response, tarfile.open(fileobj=response, mode="r|gz") as tar:
+    response = ResumingReader(SLAKH_URL)
+    with tarfile.open(fileobj=response, mode="r|gz") as tar:
         for member in tar:
             seen_bytes += member.size
             if seen_bytes >= next_report:
