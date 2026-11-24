@@ -1,8 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Check, GripVertical, Layers, Play, RotateCcw, Trash2, X, Zap } from 'lucide-react'
+import { AlertTriangle, Check, GripVertical, Layers, Play, RotateCcw, Scissors, Trash2, X, Zap } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { Job, Model, Recipe } from '@/api/client'
-import { keys, useJobActions, useJobs, useSetAnalysis } from '@/api/queries'
+import { keys, useJobActions, useJobs, useSetAnalysis, useSettings } from '@/api/queries'
 import { JobNotes } from '@/components/Fit'
 import { LinkRow, useOpenLinks } from '@/components/LinkRow'
 import { RecipeBar } from '@/components/RecipeBar'
@@ -15,6 +15,7 @@ import { cn, formatPercent, paletteColor } from '@/lib/format'
 import { useTheme } from '@/lib/theme'
 import { tempoKeyOf } from '@/lib/tempokey'
 import { modKey, shortcut } from '@/platform'
+import { canTrim, jobRange } from '@/trimmer/song'
 
 export const ACTIVE = new Set<Job['state']>(['preparing', 'running', 'writing'])
 
@@ -36,10 +37,16 @@ interface QueueViewProps {
   onSelect: (job: Job | null) => void
   onAddFiles: (files: File[]) => void
   onPasteLink: () => void
+  /** Open a song in the trimmer: one waiting to start, or separated. `instant` from the keyboard. */
+  onTrim?: (job: Job, instant: boolean) => void
+  /** The trimmer is over the view: its keys are the trimmer's, not the queue's. */
+  covered?: boolean
 }
 
-export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, onPasteLink }: QueueViewProps) {
+export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, onPasteLink, onTrim, covered = false }: QueueViewProps) {
   const { data: jobs = [] } = useJobs()
+  const { data: settings } = useSettings()
+  const separatePart = Boolean(settings?.separate_selection)
   const links = useOpenLinks()
   const actions = useJobActions()
   const toast = useToast()
@@ -88,7 +95,7 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
               Queue <span className="tabular ml-1 font-normal text-faint">{jobs.length + links.length}</span>
             </span>
             <div className="flex items-center gap-1.5">
-              <StartButton held={held} onStart={() => actions.startAll.mutate(undefined, { onError: toast.error })} />
+              <StartButton held={held} listen={!covered} onStart={() => actions.startAll.mutate(undefined, { onError: toast.error })} />
               <Button
                 size="sm"
                 variant="ghost"
@@ -108,11 +115,14 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
                 if (job.id === selectedJob) onSelect(null)
                 actions.remove.mutate(job.id, { onError: toast.error })
               }
+              const trim = onTrim && canTrim(job) ? (instant: boolean) => onTrim(job, instant) : undefined
               const menu = jobMenuItems(job, {
                 start: () => actions.start.mutate(job.id, { onError: toast.error }),
                 cancel: () => actions.cancel.mutate(job.id, { onError: toast.error }),
                 retry: () => actions.retry.mutate(job.id, { onError: toast.error }),
                 showStems: job.id === selectedJob ? undefined : () => onSelect(job),
+                // Chosen from the keyboard (a click with no pointer behind it), it opens at once.
+                trim: trim && ((event?: { detail?: number }) => trim(event?.detail === 0)),
                 ...revealHandlers(job, (message) => toast.show(message)),
                 // Only where there is somewhere to move it.
                 moveTop: queuedIds.indexOf(job.id) > 0 ? () => moveTo(job.id, 0) : undefined,
@@ -123,6 +133,7 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
               <JobRow
                 key={job.id}
                 job={job}
+                separatePart={separatePart}
                 menu={menu}
                 index={cascade.current ? index : 0}
                 selected={job.id === selectedJob}
@@ -132,6 +143,7 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
                 onCancel={() => actions.cancel.mutate(job.id, { onError: toast.error })}
                 onRetry={() => actions.retry.mutate(job.id, { onError: toast.error })}
                 onRemove={remove}
+                onTrim={trim}
                 onDragStart={() => setDragged(job.id)}
                 onDragEnd={() => {
                   setDragged(null)
@@ -161,9 +173,9 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
  * The one button of manual start: there while songs wait for it, gone when none do. It says
  * how many it starts. Ctrl+Enter (Cmd+Enter on a Mac) does the same from the keyboard.
  */
-export function StartButton({ held, onStart }: { held: number; onStart: () => void }) {
+export function StartButton({ held, onStart, listen = true }: { held: number; onStart: () => void; listen?: boolean }) {
   useEffect(() => {
-    if (held === 0) return
+    if (held === 0 || !listen) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Enter' || !modKey(event) || event.altKey || event.shiftKey) return
       event.preventDefault()
@@ -171,7 +183,7 @@ export function StartButton({ held, onStart }: { held: number; onStart: () => vo
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [held, onStart])
+  }, [held, onStart, listen])
   if (held === 0) return null
   return (
     <Button size="sm" variant="primary" title={`Start the songs that are waiting (${shortcut('Enter')})`} onClick={onStart}>
@@ -210,6 +222,8 @@ function EmptyQueue() {
 
 interface JobRowProps {
   job: Job
+  /** The separate_selection setting: a waiting song's part is all that Start separates. */
+  separatePart: boolean
   /** What a right-click on the row offers. */
   menu: MenuItem[]
   index: number
@@ -220,13 +234,15 @@ interface JobRowProps {
   onCancel: () => void
   onRetry: () => void
   onRemove: () => void
+  /** Open it in the trimmer; absent when it cannot be trimmed (yet). */
+  onTrim?: (instant: boolean) => void
   onDragStart: () => void
   onDragEnd: () => void
   onDragOver: () => void
   onDrop: () => void
 }
 
-function JobRow({ job, menu, index, selected, dropTarget, onSelect, onStart, onCancel, onRetry, onRemove, onDragStart, onDragEnd, onDragOver, onDrop }: JobRowProps) {
+function JobRow({ job, separatePart, menu, index, selected, dropTarget, onSelect, onStart, onCancel, onRetry, onRemove, onTrim, onDragStart, onDragEnd, onDragOver, onDrop }: JobRowProps) {
   const active = ACTIVE.has(job.state)
   const done = job.state === 'done'
   const queued = job.state === 'queued'
@@ -265,7 +281,9 @@ function JobRow({ job, menu, index, selected, dropTarget, onSelect, onStart, onC
         />
       }
     >
-      <div className="flex items-center gap-2.5">
+      {/* A container: narrow (the stems panel open in a small window), Trim keeps its icon only
+          and the recipe gives way before the song's name does. */}
+      <div className="@container/row flex items-center gap-2.5">
         {queued ? (
           <div
             draggable
@@ -290,12 +308,12 @@ function JobRow({ job, menu, index, selected, dropTarget, onSelect, onStart, onC
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
             <SourceTitle name={job.track_name} source={job.track_path} className="min-w-0 font-medium" />
-            <span className="flex-none text-[12px] text-faint">
+            <span className="min-w-0 shrink-[4] truncate text-[12px] text-faint">
               {job.recipe_name} · {job.quality}
             </span>
           </div>
           <div className="mt-0.5 truncate text-[12px] text-muted" data-testid="job-status">
-            {statusText(job)}
+            {statusText(job, separatePart)}
           </div>
           <JobNotes notes={job.notes} className="mt-0.5" />
         </div>
@@ -311,6 +329,28 @@ function JobRow({ job, menu, index, selected, dropTarget, onSelect, onStart, onC
             onChange={(change) => setAnalysis.job.mutateAsync({ id: job.id, ...change })}
             onError={toast.error}
           />
+        )}
+
+        {onTrim && (
+          <Tooltip label={done ? 'Cut a part out of the song or its stems' : 'Cut a part out of the song before it is separated'}>
+            <Button
+              size="sm"
+              // Narrower still, a waiting row's tempo and key fields need the room: its Trim is
+              // in the row's menu.
+              className={cn('flex-none', queued && '@max-[400px]/row:hidden')}
+              aria-label={`Trim ${job.track_name}`}
+              data-testid="row-trim"
+              data-trim-song={job.id}
+              onClick={(event) => {
+                // The row opens the stems panel on a click; this button opens the trimmer instead.
+                event.stopPropagation()
+                onTrim(event.detail === 0)
+              }}
+            >
+              <Scissors size={13} />
+              <span className="@max-[480px]/row:sr-only">Trim</span>
+            </Button>
+          </Tooltip>
         )}
 
         {done && job.stems.length > 0 && (
@@ -379,11 +419,17 @@ export function StateIcon({ job }: { job: Job }) {
   return <span className="h-3.5 w-3.5 flex-none rounded-full border border-line-strong" aria-hidden="true" />
 }
 
-export function statusText(job: Job): string {
+/**
+ * What a row says about a song. `separatePart` is the separate_selection setting: with it on, a
+ * waiting song with a part chosen in the trimmer says that Start separates only that part.
+ */
+export function statusText(job: Job, separatePart = false): string {
   switch (job.state) {
-    case 'queued':
-      if (job.held) return 'Ready to start'
-      return job.queue_position ? `Queued, ${job.queue_position} ahead` : 'Queued, up next'
+    case 'queued': {
+      const waiting = job.held ? 'Ready to start' : job.queue_position ? `Queued, ${job.queue_position} ahead` : 'Queued, up next'
+      const part = separatePart ? jobRange(job) : null
+      return part ? `${waiting}, ${part.label} only` : waiting
+    }
     case 'preparing':
     case 'running':
     case 'writing':

@@ -111,7 +111,7 @@ export function Segmented<T extends string>({ label, value, options, onChange, c
           aria-label={option.name}
           title={option.hint}
           tabIndex={option.value === value ? 0 : -1}
-          className="segmented-option"
+          className="segmented-option press"
           onPointerDown={() => setAnimate(true)}
           onClick={() => onChange(option.value)}
           onKeyDown={(event) => {
@@ -303,10 +303,17 @@ export function ProgressBar({ value, indeterminate, color }: { value: number; in
 export function CommitInput({
   value,
   onCommit,
+  commitUnchanged = false,
   ...props
 }: Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value'> & {
   value: string
   onCommit: (value: string) => void
+  /**
+   * Enter commits what the field shows even when it is unchanged, for a value shown rounded
+   * (bar 1, kept to a tenth of a millisecond, shows milliseconds): the owner of the field
+   * compares the numbers. Leaving the field still commits only a change.
+   */
+  commitUnchanged?: boolean
 }) {
   const [draft, setDraft] = useState(value)
   const focused = useRef(false)
@@ -327,7 +334,10 @@ export function CommitInput({
         if (draft !== value) onCommit(draft)
       }}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') event.currentTarget.blur()
+        if (event.key === 'Enter') {
+          if (commitUnchanged && draft === value) onCommit(draft)
+          event.currentTarget.blur()
+        }
         if (event.key === 'Escape') {
           setDraft(value)
           requestAnimationFrame(() => (event.target as HTMLInputElement).blur())

@@ -227,6 +227,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/jobs/{job_id}/range": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Job Range
+         * @description Choose the part of a waiting song to separate alone, or take it away again with
+         *     null. Only that part is separated when the separate_selection setting is on when
+         *     the song starts; otherwise the whole song is. Refused once the song has started.
+         */
+        post: operations["set_job_range"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/jobs/{job_id}/retry": {
         parameters: {
             query?: never;
@@ -899,6 +921,8 @@ export interface components {
             };
             /** Output Dir */
             output_dir?: string | null;
+            /** @description The part of the song these stems are, when only a part of it was separated: their timeline starts at the part's start, not at the song's. Null for the whole song. */
+            part?: components["schemas"]["JobRange"] | null;
             /** Progress */
             progress: number;
             /** Quality */
@@ -963,10 +987,53 @@ export interface components {
              * @description Subset of output stems.
              */
             outputs?: string[] | null;
+            /** @description The part of the song to separate alone. Set with POST /v1/jobs/{job_id}/range once the song is in the queue: refused when a job is created. Separated alone only when the separate_selection setting is on when the song runs; otherwise the whole song is. */
+            range?: components["schemas"]["JobRange"] | null;
             /** Sum To Mix */
             sum_to_mix?: boolean | null;
             /** Trim Silence */
             trim_silence?: boolean | null;
+        };
+        /**
+         * JobRange
+         * @description A part of a song, chosen in the trimmer while the song waits in the queue. With the
+         *     separate_selection setting on when the song runs, only that part is separated, as a
+         *     song of its own named "<song> (<label>)".
+         */
+        JobRange: {
+            /**
+             * End
+             * @description Where it ends, in seconds into the song.
+             */
+            end: number;
+            /**
+             * Label
+             * @description The part named as a clip of it is: "bars 9-16", "9.3-11.2" or "0m21.40s-0m33.10s". Named again whenever the tempo or bar 1 of the job changes.
+             */
+            label: string;
+            /**
+             * Start
+             * @description Where the part starts, in seconds into the song.
+             */
+            start: number;
+        };
+        /**
+         * JobRangeRequest
+         * @description A part of a song as the trimmer chose it, to separate alone.
+         */
+        JobRangeRequest: {
+            /**
+             * End
+             * @description Where it ends. Kept inside the song.
+             */
+            end: number;
+            /** @description The grid the part was chosen on, which names it. A job with no tempo of its own keeps the grid's tempo and bar 1 (bar 1 alone when it has that tempo), so its run lays the bars out where the name says. Left out: the tempo and bar 1 the job was given, when it has both; else the part is named by its times. */
+            grid?: components["schemas"]["ClipGrid"] | null;
+            /**
+             * Start
+             * @description Where the part starts, in seconds into the song.
+             */
+            start: number;
         };
         /**
          * LinkInfo
@@ -1301,6 +1368,16 @@ export interface components {
             /** Key */
             key?: string | null;
         };
+        /**
+         * SetJobRange
+         * @description The part of a waiting song to separate alone: {"range": {"start", "end", "grid"}}
+         *     sets it, {"range": null} takes it away again. Its label is decided when it is set, and
+         *     again whenever the job's tempo or bar 1 changes.
+         */
+        SetJobRange: {
+            /** @description The part, or null to separate the whole song. */
+            range: components["schemas"]["JobRangeRequest"] | null;
+        };
         /** SetStemSetAnalysis */
         SetStemSetAnalysis: {
             /** Bpm */
@@ -1345,6 +1422,8 @@ export interface components {
              * @enum {string}
              */
             output_format: "wav32f" | "wav24" | "flac" | "mp3";
+            /** Separate Selection */
+            separate_selection: boolean;
             /** Sum To Mix */
             sum_to_mix: boolean;
             /** Tempo Sync */
@@ -1386,6 +1465,8 @@ export interface components {
             output_dir?: string | null;
             /** Output Format */
             output_format?: ("wav32f" | "wav24" | "flac" | "mp3") | null;
+            /** Separate Selection */
+            separate_selection?: boolean | null;
             /** Sum To Mix */
             sum_to_mix?: boolean | null;
             /** Tempo Sync */
@@ -1486,6 +1567,8 @@ export interface components {
             created_at: string;
             /** Directory */
             directory: string;
+            /** @description The part of the song these stems are, when only a part of it was separated: their timeline starts at the part's start, not at the song's. Null for the whole song. */
+            part?: components["schemas"]["JobRange"] | null;
             /** Recipe Id */
             recipe_id: string;
             /** Recipe Name */
@@ -2446,6 +2529,68 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobInfo"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_job_range: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetJobRange"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

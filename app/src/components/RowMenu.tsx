@@ -1,5 +1,5 @@
 import { ContextMenu } from '@base-ui/react/context-menu'
-import { ArrowDownToLine, ArrowUpToLine, FileAudio, FolderOpen, Layers, Play, RotateCcw, Trash2, X } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpToLine, FileAudio, FolderOpen, Layers, Play, RotateCcw, Scissors, Trash2, X } from 'lucide-react'
 import type { ReactElement, ReactNode } from 'react'
 import type { Job, Link } from '@/api/client'
 import { words } from '@/platform'
@@ -27,6 +27,8 @@ export interface JobHandlers {
   retry?: () => void
   /** Open this song's stems: the panel in the full window, the row in the quick-drop window. */
   showStems?: () => void
+  /** Open the song in the trimmer (the full window only), when it waits to start or is separated. */
+  trim?: () => void
   /** Show the stems in Explorer or Finder. */
   reveal?: () => void
   /** Show the song's own file in Explorer or Finder. */
@@ -47,6 +49,7 @@ export function jobMenuItems(job: Pick<Job, 'state' | 'held' | 'stems' | 'track_
   const items: (MenuItem | false | undefined)[] = [
     job.held && on.start && { id: 'start', label: 'Start now', icon: <Play size={13} />, run: on.start },
     hasStems && on.showStems && { id: 'stems', label: 'Show stems', icon: <Layers size={13} />, run: on.showStems },
+    (queued || hasStems) && on.trim && { id: 'trim', label: 'Trim', icon: <Scissors size={13} />, run: on.trim },
     hasStems && on.reveal && { id: 'reveal', label: `Show in ${fileManager}`, icon: <FolderOpen size={13} />, run: on.reveal },
     Boolean(job.track_path) &&
       on.revealSource && { id: 'source', label: `Show the original in ${fileManager}`, icon: <FileAudio size={13} />, run: on.revealSource },
