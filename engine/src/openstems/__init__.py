@@ -9,4 +9,4 @@ import sys as _sys
 if _sys.platform == "darwin":
     _os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
-__version__ = "0.3.4"
+__version__ = "0.3.5"
