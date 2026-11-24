@@ -60,6 +60,33 @@ def fake_oom(model_id: str) -> str | None:
     return None
 
 
+class PagingFileFull(OSError):
+    """What Windows raises while loading a library when its paging file is full."""
+
+    winerror = 1455
+
+
+_broken: list[str] = []  # the model whose load broke this process (`fake_import_fails`)
+
+
+def fake_import_fails(model_id: str) -> None:
+    """Act out PyTorch's import failing, from ``OPENSTEMS_FAKE_IMPORT_FAILS`` (comma-separated
+    model ids, or ``all``): loading one of those models fails as the import does on Windows
+    with its paging file full. The process is then left as a real one is, with half of
+    PyTorch loaded: every load after it fails, whatever the model, with the error that
+    gives. A fresh process loads again."""
+    if _broken:
+        raise AttributeError("module 'torch' has no attribute 'device' (FakeEngine)")
+    for item in os.environ.get("OPENSTEMS_FAKE_IMPORT_FAILS", "").split(","):
+        name = item.strip()
+        if name and name in (model_id, "all"):
+            _broken.append(model_id)
+            raise PagingFileFull(
+                "[WinError 1455] The paging file is too small for this operation to complete. "
+                'Error loading "torch_cuda.dll" or one of its dependencies. (FakeEngine)'
+            )
+
+
 class FakeLoadedModel:
     vram_bytes = 0
 
@@ -118,7 +145,8 @@ class FakeEngine:
     ``OPENSTEMS_FAKE_DELAY`` (seconds per chunk) slows it down so queues can be observed.
     ``OPENSTEMS_FAKE_OOM`` makes chosen models run out of memory (`fake_oom`), so the
     low-memory path can be acted out without a GPU. ``OPENSTEMS_FAKE_LATE`` leaves chosen
-    stems silent at their start (`fake_late`).
+    stems silent at their start (`fake_late`). ``OPENSTEMS_FAKE_IMPORT_FAILS`` acts out a
+    failed import of PyTorch that breaks the process (`fake_import_fails`).
     """
 
     name = "fake"
@@ -131,6 +159,7 @@ class FakeEngine:
         self, spec: ModelSpec, store: ModelStore, device: str | None = None
     ) -> FakeLoadedModel:
         self.loads += 1
+        fake_import_fails(spec.id)
         if fake_oom(spec.id) == "load" and device != "cpu":
             raise OutOfMemory(f"{spec.id}: not enough memory to load the model (FakeEngine)")
         return FakeLoadedModel(spec, self.delay, device or FAKE_GPU)

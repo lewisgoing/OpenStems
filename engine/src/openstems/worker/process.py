@@ -5,12 +5,16 @@ queues. A cancel is a shared integer: the sequence number of the job to stop.
 
 A warm model is graphics memory. The app can sit in the tray for days, so after a stretch
 with no job the worker lets its models go; the next job loads its model again.
+
+A job that fails with an unexpected error ends the process (`run_job`): the supervisor
+starts a fresh one, so the next job never inherits what that error broke.
 """
 
 from __future__ import annotations
 
 import os
 import queue
+import sys
 import time
 import traceback
 from multiprocessing.queues import Queue
@@ -24,6 +28,14 @@ PROGRESS_INTERVAL = 0.1  # seconds between progress events
 IDLE_UNLOAD_SECONDS = 600.0  # with no job for this long, the warm models are unloaded
 # On a small machine a warm model is memory the user's other apps want back.
 SMALL_IDLE_UNLOAD_SECONDS = 60.0
+# Windows' "The paging file is too small for this operation to complete": the memory the
+# system can promise (RAM and paging file together) has run out. Loading PyTorch's CUDA
+# libraries promises several GB, so it is where a full system drive shows first.
+PAGING_FILE_FULL = 1455
+PAGING_FILE_NOTE = (
+    "Windows ran out of memory (its paging file is full). Close some programs or free "
+    "space on the system drive (usually C:), then try again."
+)
 
 
 def idle_unload_seconds(small: bool = False) -> float:
@@ -97,7 +109,41 @@ def stem_set_payload(result: Any) -> dict[str, Any]:
     }
 
 
-def run_job(runtime: Any, payload: dict[str, Any], events: Queue, cancel: CancelToken) -> None:
+def windows_words(code: int) -> str:
+    """Windows' own sentence for an error code, in the machine's language. Empty elsewhere."""
+    if sys.platform != "win32":
+        return ""
+    import ctypes
+
+    return ctypes.FormatError(code).strip()
+
+
+def paging_file_full(exc: BaseException) -> bool:
+    """Whether Windows refused for lack of memory it can promise. PyTorch's own loader raises
+    the error with its code (`OSError.winerror`). A DLL that Python loads itself, such as
+    the one behind `torch._C`, fails as an ImportError with only Windows' sentence."""
+    if getattr(exc, "winerror", None) == PAGING_FILE_FULL:
+        return True
+    words = windows_words(PAGING_FILE_FULL)
+    return bool(words) and words in str(exc)
+
+
+def failure_message(exc: BaseException) -> str:
+    """What a job that failed with an unexpected error says. Windows refuses to load
+    PyTorch's libraries when the memory it can promise runs out (its paging file is full):
+    the error names a DLL, so say instead what the user can do about it."""
+    if paging_file_full(exc):
+        return PAGING_FILE_NOTE
+    return f"{exc.__class__.__name__}: {exc}"
+
+
+def run_job(runtime: Any, payload: dict[str, Any], events: Queue, cancel: CancelToken) -> bool:
+    """Run one job and report how it ended. False when it failed with an unexpected error
+    (neither the user's nor a cancel), which may have left this process unable to run
+    another: a failed import keeps half of a library loaded for good (PyTorch's, when
+    Windows runs out of memory while loading it), and a CUDA error spoils the GPU's context.
+    The "failed" event says so, `worker_main` lets the process end, and the supervisor
+    starts a fresh one for the next job."""
     job_id = payload["id"]
     last = {"t": 0.0, "stage": ""}
 
@@ -119,10 +165,13 @@ def run_job(runtime: Any, payload: dict[str, Any], events: Queue, cancel: Cancel
     except Cancelled:
         events.put(("cancelled", job_id))
     except DomainError as exc:
-        events.put(("failed", job_id, str(exc)))
+        events.put(("failed", job_id, str(exc), None, False))
     except Exception as exc:
         traceback.print_exc()
-        events.put(("failed", job_id, f"{exc.__class__.__name__}: {exc}"))
+        # ("failed", job, message, traceback for the engine's log, whether this process ends)
+        events.put(("failed", job_id, failure_message(exc), traceback.format_exc(), True))
+        return False
+    return True
 
 
 def _exit_with_parent(parent_pid: int) -> None:
@@ -165,5 +214,6 @@ def worker_main(
             runtime.pipeline.host.evict(command[1])
         elif kind == "run":
             seq, payload = command[1], command[2]
-            run_job(runtime, payload, events, SharedCancel(cancel_seq, seq))
+            if not run_job(runtime, payload, events, SharedCancel(cancel_seq, seq)):
+                return  # a fresh process takes this one's place (`run_job`)
             events.put(("idle", seq))
