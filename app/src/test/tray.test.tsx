@@ -654,6 +654,13 @@ describe('the quick-drop window', () => {
     expect(audition.toggle).not.toHaveBeenCalled()
   })
 
+  it('drags the original song by its title: a fetched link becomes a file', () => {
+    jobs = [{ ...doneJob('a', 'First', 10), track_path: 'D:/out/_links/First.webm' }]
+    render(quickDrop())
+    fireEvent.dragStart(screen.getByRole('button', { name: 'Drag the original file of First' }))
+    expect(bridge.startDrag).toHaveBeenLastCalledWith(['D:/out/_links/First.webm'])
+  })
+
   it('plays a stem when its pill is clicked, by pointer or keyboard, and shows which one plays', () => {
     jobs = [doneJob('a', 'First', 10)]
     render(quickDrop())

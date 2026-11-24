@@ -649,6 +649,28 @@
 .stem-handle:active {
   cursor: grabbing;
 }
+/* A song's title that drags its original file. It stays text, so the hint is a dotted
+   underline on hover; the press scales from the left, where the words begin. */
+.source-title {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+  transform-origin: left center;
+  text-decoration: underline dotted transparent;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  transition:
+    transform 140ms var(--ease-out),
+    text-decoration-color 140ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .source-title:hover {
+    text-decoration-color: var(--color-faint);
+  }
+}
 .chip {
   display: inline-flex;
   align-items: center;

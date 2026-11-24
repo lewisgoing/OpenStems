@@ -260,6 +260,7 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
         ? {
             key: job.id,
             title: job.track_name,
+            source: job.track_path,
             subtitle: job.recipe_name,
             directory: job.output_dir,
             stems: job.stems,
@@ -274,6 +275,7 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
         ? {
             key: set.directory,
             title: set.track_name,
+            source: set.source_exists ? set.track_path : undefined,
             subtitle: set.recipe_name,
             directory: set.directory,
             stems: set.stems,
@@ -336,6 +338,7 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
           <StemsPanel
             key={panel.key}
             title={panel.title}
+            source={panel.source}
             subtitle={panel.subtitle}
             directory={panel.directory}
             stems={panel.stems}

@@ -278,6 +278,12 @@ fetches: no test touches the network, and `slow`, `fail` or `playlist` in the ad
 slow, fail or refuse. In the app both windows share `components/LinkRow.tsx`, and pasting and
 dropping links live in `state/dropflow.tsx` beside files.
 
+Original file: a song's title drags its own file out (`components/SourceTitle.tsx`, in the
+stems panel, the queue, History and the tray). The main process lets a drag through only
+for the extensions in `DRAGGABLE` (`electron/main.ts`), which must hold the engine's
+`AUDIO_SUFFIXES` (`cli_inputs.py`): change both together. A title dragged out and let go
+over the app's own window is not queued again (`lib/sourcedrag.ts`).
+
 Mixes: `POST /v1/mixes` (`pipeline/mix.py`) sums stem files into `<stem folder>/Mixes/`. The
 app asks for the file before a drag can start (`state/mix.ts`, `useMixFile`). The mix's name
 is decided in `mix_label` (Python, the file) and `mixLabel` (TypeScript, the screen): change

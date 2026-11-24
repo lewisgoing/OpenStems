@@ -3,6 +3,7 @@ import { useDeferredValue, useState } from 'react'
 import type { Recipe, StemSet } from '@/api/client'
 import { useStemSets } from '@/api/queries'
 import { FitChip } from '@/components/Fit'
+import { SourceTitle } from '@/components/SourceTitle'
 import { Button, Select, Tooltip } from '@/components/ui'
 import { cn, stemColor } from '@/lib/format'
 import { useTheme } from '@/lib/theme'
@@ -54,7 +55,7 @@ export function HistoryView({ recipes, selected, onSelect, onRerun }: HistoryVie
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
-                  <span className="truncate font-medium">{set.track_name}</span>
+                  <SourceTitle name={set.track_name} source={set.source_exists ? set.track_path : null} className="min-w-0 font-medium" />
                   <span className="flex-none text-[12px] text-faint">
                     {set.recipe_name} · {formatDate(set.created_at)}
                   </span>

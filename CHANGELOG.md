@@ -1,12 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.3.7 (2026-11-23)
 
 - **A new version shows in the tray.** While an update waits, the tray icon (on a Mac, the
   menu bar item) keeps its four bars and lifts a small dot over the fourth, blue on Windows,
   and its tooltip names the version. It gives way to work in progress and to stems that are
   ready, and stays until the update is installed. The button in the quick-drop window now
-  names the version too: "Update 0.3.6".
+  names the version too: "Update 0.3.8".
 - **The bar above the queue keeps "Sum to mix" with the other settings.** In a narrower
   window the Paste link and Add files buttons stay beside the recipe, and quality, format and
   "Sum to mix" share the line below; the switch moves to a line of its own only when there is
@@ -15,6 +15,16 @@
   (every-stem's 13) shows them all: the pill that said one was hidden took the room the stem
   itself needed. With all of them in view they can be mixed there too. Songs with many more
   stems still send the rest to the full app.
+
+## 0.3.6 (2026-11-23)
+
+- **Drag the original song by its title.** The song's name in the stems panel, the queue,
+  History and the quick-drop window now drags the original file out, into a DAW or a
+  folder, like a stem. A song fetched from a link drags out in the format the site sent
+  (often `.webm` or `.m4a`), before or after it is separated, so OpenStems also works as a
+  song downloader. Letting go over OpenStems itself does not queue the song again. A title
+  whose file was moved or deleted stays plain text. On Windows and on a Mac alike (not seen
+  on a Mac yet).
 
 ## 0.3.5 (2026-11-23)
 
