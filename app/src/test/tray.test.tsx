@@ -35,7 +35,7 @@ import type { Job, Link, Model, Recipe, StemFile, SystemInfo } from '@/api/clien
 import { ToastProvider } from '@/components/toast'
 import { TooltipProvider } from '@/components/ui'
 import { SelectionProvider } from '@/state/selection'
-import TrayApp, { QuickDrop, activityOf } from '@/tray/TrayApp'
+import TrayApp, { QuickDrop, activityOf, pillCount } from '@/tray/TrayApp'
 import { TraySettings } from '@/views/SettingsView'
 import { bridge } from './setup'
 
@@ -701,6 +701,18 @@ describe('the quick-drop window', () => {
     expect(screen.getByTestId('quick-drag-all')).toHaveTextContent('20 stems')
     fireEvent.click(screen.getByRole('button', { name: '+8 in the full app' }))
     expect(bridge.showMain).toHaveBeenCalled()
+  })
+
+  it('shows a thirteenth stem rather than a pill saying one is hidden', () => {
+    // A "+1" pill would take the room the stem itself needs (every-stem writes 13).
+    expect([12, 13, 14, 53].map(pillCount)).toEqual([12, 13, 12, 12])
+    const thirteen = Array.from({ length: 13 }, (_, i) => `stem ${i + 1}`)
+    jobs = [doneJob('a', 'First', 10, thirteen)]
+    render(quickDrop())
+    expect(screen.getAllByTestId('quick-stem')).toHaveLength(13)
+    expect(screen.queryByRole('button', { name: /in the full app/ })).not.toBeInTheDocument()
+    // All of them can be seen, so they can be mixed here too.
+    expect(screen.getByRole('button', { name: /Mix/ })).toBeInTheDocument()
   })
 
   it('cancels a running job, retries a failed one and clears the finished ones', () => {

@@ -11,6 +11,10 @@
   window the Paste link and Add files buttons stay beside the recipe, and quality, format and
   "Sum to mix" share the line below; the switch moves to a line of its own only when there is
   no room for it.
+- **No "+1 in the full app" in the quick-drop window.** A song with one stem more than fits
+  (every-stem's 13) shows them all: the pill that said one was hidden took the room the stem
+  itself needed. With all of them in view they can be mixed there too. Songs with many more
+  stems still send the rest to the full app.
 
 ## 0.3.5 (2026-11-23)
 
