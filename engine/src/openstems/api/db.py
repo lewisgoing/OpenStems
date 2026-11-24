@@ -39,10 +39,13 @@ CREATE TABLE IF NOT EXISTS stem_sets (
     cache_key TEXT NOT NULL,
     created_at TEXT NOT NULL,
     stems TEXT NOT NULL,
-    analysis TEXT NOT NULL
+    analysis TEXT NOT NULL,
+    part TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS stem_sets_name ON stem_sets (track_name);
 """
+# Columns added since the first version, for an index that was made before them.
+_ADDED = {"stem_sets": {"part": "TEXT NOT NULL DEFAULT ''"}}
 
 
 class Index:
@@ -55,6 +58,11 @@ class Index:
         self._db.row_factory = sqlite3.Row
         with self._lock:
             self._db.executescript(SCHEMA)
+            for table, columns in _ADDED.items():
+                have = {row[1] for row in self._db.execute(f"PRAGMA table_info({table})")}
+                for column, kind in columns.items():
+                    if column not in have:
+                        self._db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
             self._db.commit()
 
     def close(self) -> None:
@@ -120,8 +128,8 @@ class Index:
         with self._lock:
             self._db.execute(
                 "INSERT OR REPLACE INTO stem_sets (directory, track_name, track_path, "
-                "track_hash, recipe_id, recipe_name, cache_key, created_at, stems, analysis) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "track_hash, recipe_id, recipe_name, cache_key, created_at, stems, analysis, "
+                "part) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     directory,
                     source.get("name", ""),
@@ -133,6 +141,8 @@ class Index:
                     manifest.get("created_at", ""),
                     json.dumps(stems),
                     json.dumps(manifest.get("analysis") or {}),
+                    # The part of the song, when only a part of it was separated.
+                    json.dumps(source["range"]) if source.get("range") else "",
                 ),
             )
             self._db.commit()
@@ -216,4 +226,5 @@ def _stem_set_row(row: sqlite3.Row) -> dict[str, Any]:
         "created_at": row["created_at"],
         "analysis": json.loads(row["analysis"]),
         "stems": stems,
+        "part": json.loads(row["part"]) if row["part"] else None,
     }

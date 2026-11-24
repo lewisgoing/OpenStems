@@ -618,6 +618,17 @@
             ],
             "title": "Output Dir"
           },
+          "part": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobRange"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The part of the song these stems are, when only a part of it was separated: their timeline starts at the part's start, not at the song's. Null for the whole song."
+          },
           "progress": {
             "title": "Progress",
             "type": "number"
@@ -835,6 +846,17 @@
             "description": "Subset of output stems.",
             "title": "Outputs"
           },
+          "range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobRange"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The part of the song to separate alone. Set with POST /v1/jobs/{job_id}/range once the song is in the queue: refused when a job is created. Separated alone only when the separate_selection setting is on when the song runs; otherwise the whole song is."
+          },
           "sum_to_mix": {
             "anyOf": [
               {
@@ -859,6 +881,65 @@
           }
         },
         "title": "JobOptions",
+        "type": "object"
+      },
+      "JobRange": {
+        "description": "A part of a song, chosen in the trimmer while the song waits in the queue. With the\nseparate_selection setting on when the song runs, only that part is separated, as a\nsong of its own named \"<song> (<label>)\".",
+        "properties": {
+          "end": {
+            "description": "Where it ends, in seconds into the song.",
+            "title": "End",
+            "type": "number"
+          },
+          "label": {
+            "description": "The part named as a clip of it is: \"bars 9-16\", \"9.3-11.2\" or \"0m21.40s-0m33.10s\". Named again whenever the tempo or bar 1 of the job changes.",
+            "title": "Label",
+            "type": "string"
+          },
+          "start": {
+            "description": "Where the part starts, in seconds into the song.",
+            "title": "Start",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "label"
+        ],
+        "title": "JobRange",
+        "type": "object"
+      },
+      "JobRangeRequest": {
+        "description": "A part of a song as the trimmer chose it, to separate alone.",
+        "properties": {
+          "end": {
+            "description": "Where it ends. Kept inside the song.",
+            "title": "End",
+            "type": "number"
+          },
+          "grid": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClipGrid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The grid the part was chosen on, which names it. A job with no tempo of its own keeps the grid's tempo and bar 1 (bar 1 alone when it has that tempo), so its run lays the bars out where the name says. Left out: the tempo and bar 1 the job was given, when it has both; else the part is named by its times."
+          },
+          "start": {
+            "description": "Where the part starts, in seconds into the song.",
+            "title": "Start",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "JobRangeRequest",
         "type": "object"
       },
       "LinkInfo": {
@@ -1655,6 +1736,27 @@
         "title": "SetAnalysis",
         "type": "object"
       },
+      "SetJobRange": {
+        "description": "The part of a waiting song to separate alone: {\"range\": {\"start\", \"end\", \"grid\"}}\nsets it, {\"range\": null} takes it away again. Its label is decided when it is set, and\nagain whenever the job's tempo or bar 1 changes.",
+        "properties": {
+          "range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobRangeRequest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The part, or null to separate the whole song."
+          }
+        },
+        "required": [
+          "range"
+        ],
+        "title": "SetJobRange",
+        "type": "object"
+      },
       "SetStemSetAnalysis": {
         "properties": {
           "bpm": {
@@ -1759,6 +1861,10 @@
             "title": "Output Format",
             "type": "string"
           },
+          "separate_selection": {
+            "title": "Separate Selection",
+            "type": "boolean"
+          },
           "sum_to_mix": {
             "title": "Sum To Mix",
             "type": "boolean"
@@ -1811,7 +1917,8 @@
           "watch_enabled",
           "vram_budget_gb",
           "use_gpu",
-          "auto_start"
+          "auto_start",
+          "separate_selection"
         ],
         "title": "SettingsModel",
         "type": "object"
@@ -1949,6 +2056,17 @@
               }
             ],
             "title": "Output Format"
+          },
+          "separate_selection": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Separate Selection"
           },
           "sum_to_mix": {
             "anyOf": [
@@ -2232,6 +2350,17 @@
           "directory": {
             "title": "Directory",
             "type": "string"
+          },
+          "part": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobRange"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The part of the song these stems are, when only a part of it was separated: their timeline starts at the part's start, not at the song's. Null for the whole song."
           },
           "recipe_id": {
             "title": "Recipe Id",
@@ -3670,6 +3799,91 @@
           }
         ],
         "summary": "Cancel Job"
+      }
+    },
+    "/v1/jobs/{job_id}/range": {
+      "post": {
+        "description": "Choose the part of a waiting song to separate alone, or take it away again with\nnull. Only that part is separated when the separate_selection setting is on when\nthe song starts; otherwise the whole song is. Refused once the song has started.",
+        "operationId": "set_job_range",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetJobRange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Job Range"
       }
     },
     "/v1/jobs/{job_id}/retry": {

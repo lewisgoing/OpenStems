@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import platform
 import subprocess
@@ -15,14 +16,14 @@ from openstems import __version__
 from openstems.api.db import Index
 from openstems.api.downloads import DownloadManager
 from openstems.api.events import EventBus
-from openstems.api.jobs import JobManager
+from openstems.api.jobs import STARTED, JobManager
 from openstems.api.links import LinkManager
 from openstems.api.watcher import FolderWatcher
 from openstems.audio.decode import probe
 from openstems.cli_inputs import expand_inputs
 from openstems.doctor import DoctorReport
 from openstems.domain.errors import DomainError
-from openstems.domain.grid import make_grid
+from openstems.domain.grid import clean_selection, make_grid
 from openstems.domain.memory import GB, MemoryPlan, memory_is_estimated, recommended_ids
 from openstems.domain.recipe import Recipe, single_model_recipe
 from openstems.engines.host import fake_mode, memory_plan
@@ -441,6 +442,9 @@ class Service:
         here, not later in the queue."""
         recipe = self.resolve_recipe(recipe_id, model_id)
         opts = {k: v for k, v in options.items() if v is not None}
+        if "range" in opts:
+            # Checked against the song's length and named in one place: set_job_range.
+            raise DomainError("a part of a song is chosen once the song is in the queue")
         from openstems.pipeline.retag import clean_changes
 
         opts.update(clean_changes(opts))  # a tempo or key typed by the user
@@ -492,11 +496,23 @@ class Service:
         files = [Path(p) for p in paths]
         if not files:
             raise DomainError("a mix needs at least two stems")
+        directory = self._stem_folder(files, "a mix is made of stems of one song")
+        return render_mix(directory, [file.name for file in files])
+
+    def _stem_folder(self, files: list[Path], mixed: str) -> Path:
+        """The one stem folder that ``files`` are in, each of them still there. Stems of
+        several folders (or outside every served one) are refused with ``mixed``; a stem
+        gone from its folder is named, since asking again cannot bring it back."""
         directory = files[0].parent
         for file in files:
-            if file.parent != directory or not self.is_served(file) or not file.is_file():
-                raise DomainError("a mix is made of stems of one song")
-        return render_mix(directory, [file.name for file in files])
+            if file.parent != directory or not self.is_served(file):
+                raise DomainError(mixed)
+        for file in files:
+            if not file.is_file():
+                raise DomainError(
+                    f"{file.name} is no longer in its folder: separate the song again"
+                )
+        return directory
 
     # -- clips ----------------------------------------------------------------
 
@@ -544,10 +560,7 @@ class Service:
                 )
             return [clip]
         files = [Path(p) for p in paths]
-        directory = files[0].parent
-        for file in files:
-            if file.parent != directory or not self.is_served(file) or not file.is_file():
-                raise DomainError("a clip is made of stems of one song")
+        directory = self._stem_folder(files, "a clip is made of stems of one song")
         with self._lock("clips", _path_key(str(directory))):
             return render_clips(
                 directory, [file.name for file in files], start, end, together, checked
@@ -687,6 +700,22 @@ class Service:
             self.set_analysis(job["output_dir"], changes)
             return self.jobs.get(job_id)
         return self.jobs.set_analysis(job_id, changes)
+
+    def set_job_range(self, job_id: str, part: dict[str, Any] | None) -> dict[str, Any]:
+        """The part of a waiting song to separate alone, kept inside the song, or None to
+        take it away. It is named now ("bars 9-16"): by the grid it was chosen on, else by
+        the tempo and bar 1 the job was given, else by its times. A job without a tempo (or
+        bar 1) of its own keeps the grid's, so its run lays out the bars the part was named
+        by (`JobManager.set_range`)."""
+        job = self.jobs.get(job_id)
+        if job["state"] != "queued":
+            raise DomainError(STARTED)  # before the file is read; asked again under the lock
+        if part is None:
+            return self.jobs.set_range(job_id, None)
+        grid = make_grid(**part["grid"]) if part.get("grid") is not None else None
+        length = probe(job["track_path"]).duration  # 0 when the file does not say
+        start, end = clean_selection(part["start"], part["end"], length or math.inf)
+        return self.jobs.set_range(job_id, (start, end), grid)
 
     def set_analysis(self, directory: str, changes: dict[str, Any]) -> dict[str, Any]:
         """The tempo, key and bar 1 of stems that are written, by the user: in the

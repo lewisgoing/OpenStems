@@ -12,6 +12,10 @@ Quality = Literal["fast", "balanced", "best"]
 OutputFormat = Literal["wav32f", "wav24", "flac", "mp3"]
 Fit = Literal["fits", "tight", "no"]
 _DOWNBEAT = "Where bar 1 starts, in seconds, in place of the detected one."
+_PART = (
+    "The part of the song these stems are, when only a part of it was separated: their "
+    "timeline starts at the part's start, not at the song's. Null for the whole song."
+)
 
 
 class Health(BaseModel):
@@ -183,6 +187,19 @@ class ImportModel(BaseModel):
     )
 
 
+class JobRange(BaseModel):
+    """A part of a song, chosen in the trimmer while the song waits in the queue. With the
+    separate_selection setting on when the song runs, only that part is separated, as a
+    song of its own named "<song> (<label>)"."""
+
+    start: float = Field(description="Where the part starts, in seconds into the song.")
+    end: float = Field(description="Where it ends, in seconds into the song.")
+    label: str = Field(
+        description='The part named as a clip of it is: "bars 9-16", "9.3-11.2" or '
+        '"0m21.40s-0m33.10s". Named again whenever the tempo or bar 1 of the job changes.'
+    )
+
+
 class JobOptions(BaseModel):
     sum_to_mix: bool | None = None
     output_format: OutputFormat | None = None
@@ -199,6 +216,13 @@ class JobOptions(BaseModel):
         default=None, description="The song's key, such as Am, in place of the detected one."
     )
     downbeat: float | None = Field(default=None, description=_DOWNBEAT)
+    range: JobRange | None = Field(
+        default=None,
+        description="The part of the song to separate alone. Set with "
+        "POST /v1/jobs/{job_id}/range once the song is in the queue: refused when a job "
+        "is created. Separated alone only when the separate_selection setting is on when "
+        "the song runs; otherwise the whole song is.",
+    )
 
 
 class CreateJob(BaseModel):
@@ -302,6 +326,31 @@ class CreateClips(BaseModel):
     )
 
 
+class JobRangeRequest(BaseModel):
+    """A part of a song as the trimmer chose it, to separate alone."""
+
+    start: float = Field(description="Where the part starts, in seconds into the song.")
+    end: float = Field(description="Where it ends. Kept inside the song.")
+    grid: ClipGrid | None = Field(
+        default=None,
+        description="The grid the part was chosen on, which names it. A job with no "
+        "tempo of its own keeps the grid's tempo and bar 1 (bar 1 alone when it has that "
+        "tempo), so its run lays the bars out where the name says. Left out: the tempo "
+        "and bar 1 the job was given, when it has both; else the part is named by its "
+        "times.",
+    )
+
+
+class SetJobRange(BaseModel):
+    """The part of a waiting song to separate alone: {"range": {"start", "end", "grid"}}
+    sets it, {"range": null} takes it away again. Its label is decided when it is set, and
+    again whenever the job's tempo or bar 1 changes."""
+
+    range: JobRangeRequest | None = Field(
+        description="The part, or null to separate the whole song.",
+    )
+
+
 class ClipInfo(BaseModel):
     path: str
     name: str
@@ -379,6 +428,7 @@ class JobInfo(BaseModel):
     )
     queue_position: int | None = None
     held: bool = Field(default=False, description="Queued, and waiting for the user's Start.")
+    part: JobRange | None = Field(default=None, description=_PART)
     created_at: float
     started_at: float | None = None
     finished_at: float | None = None
@@ -416,6 +466,7 @@ class SettingsModel(BaseModel):
     vram_budget_gb: float
     use_gpu: bool
     auto_start: bool
+    separate_selection: bool
 
 
 class SettingsPatch(BaseModel):
@@ -438,6 +489,7 @@ class SettingsPatch(BaseModel):
     vram_budget_gb: float | None = None
     use_gpu: bool | None = None
     auto_start: bool | None = None
+    separate_selection: bool | None = None
 
 
 class SetAnalysis(BaseModel):
@@ -464,6 +516,7 @@ class StemSetInfo(BaseModel):
     analysis: dict[str, Any] = {}
     stems: list[StemFile]
     source_exists: bool = True
+    part: JobRange | None = Field(default=None, description=_PART)
 
 
 class StemSetList(BaseModel):

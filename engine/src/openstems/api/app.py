@@ -289,6 +289,19 @@ def create_app(token: str, service: Service | None = None) -> FastAPI:
         stems."""
         return service.set_job_analysis(job_id, body.model_dump(exclude_unset=True))
 
+    @app.post(
+        "/v1/jobs/{job_id}/range",
+        response_model=s.JobInfo,
+        dependencies=secured,
+        responses=errors,
+    )
+    def set_job_range(job_id: str, body: s.SetJobRange, service: Svc) -> dict[str, Any]:
+        """Choose the part of a waiting song to separate alone, or take it away again with
+        null. Only that part is separated when the separate_selection setting is on when
+        the song starts; otherwise the whole song is. Refused once the song has started."""
+        part = body.range.model_dump() if body.range is not None else None
+        return service.set_job_range(job_id, part)
+
     @app.delete(
         "/v1/jobs/{job_id}", response_model=s.Removed, dependencies=secured, responses=errors
     )

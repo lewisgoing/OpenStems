@@ -15,7 +15,6 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
-import math
 import os
 import stat
 import uuid
@@ -28,14 +27,12 @@ import numpy as np
 from openstems.audio.decode import decode, probe
 from openstems.audio.write import audio_rate, read_comment, read_window, write_audio
 from openstems.domain.errors import DomainError
-from openstems.domain.grid import Grid, clip_label
+from openstems.domain.grid import Grid, clean_selection, clip_label
 from openstems.domain.naming import DEFAULT_TEMPLATE, MAX_COMPONENT, render_name, safe_component
 from openstems.pipeline.mix import mix_label
 from openstems.pipeline.run import SAMPLE_RATE, output_dir_for, read_manifest
 
 CLIPS_DIR = "Clips"
-# The shortest selection worth a file, in seconds (MIN_RANGE in the app).
-MIN_SECONDS = 0.02
 # How far "<name> (2).wav", "(3)" and so on go: one more for each file of that name that is
 # in use or holds something else.
 MAX_COPIES = 99
@@ -80,7 +77,7 @@ def render_clips(
             raise DomainError(f"cannot read {stem['file']}: {exc}") from exc
     if together and len(set(rates.values())) > 1:
         raise DomainError("these stems have different sample rates and cannot be mixed")
-    start, end = _selection(start, end, _song_seconds(manifest))
+    start, end = clean_selection(start, end, _song_seconds(manifest))
 
     options = manifest.get("options") or {}
     analysis = manifest.get("analysis") or {}
@@ -149,7 +146,7 @@ def render_source_clip(
     """
     rate = probe(source).sample_rate or SAMPLE_RATE
     audio = decode(source, rate)
-    start, end = _selection(start, end, audio.shape[1] / rate)
+    start, end = clean_selection(start, end, audio.shape[1] / rate)
     first, frames = round(start * rate), round((end - start) * rate)
     window = np.zeros((audio.shape[0], frames), dtype=np.float32)
     piece = audio[:, first : first + frames]
@@ -198,18 +195,6 @@ def _entry(
         "samples": int(frames),
         "sample_rate": int(rate),
     }
-
-
-def _selection(start: float, end: float, length: float) -> tuple[float, float]:
-    """The selection inside the song, or a sentence that says why it cannot be a clip."""
-    if not (math.isfinite(start) and math.isfinite(end)):
-        raise DomainError("the selection must be a time in seconds")
-    if end <= start:
-        raise DomainError("the selection must end after it starts")
-    start, end = min(max(start, 0.0), length), min(max(end, 0.0), length)
-    if end - start < MIN_SECONDS:
-        raise DomainError("the selection is too short")
-    return start, end
 
 
 def _song_seconds(manifest: Mapping[str, Any]) -> float:

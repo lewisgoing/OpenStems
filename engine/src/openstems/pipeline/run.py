@@ -9,7 +9,7 @@ import shutil
 import time
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,7 @@ from openstems.audio.write import extension, write_audio, write_peaks
 from openstems.catalog.catalog import Catalog
 from openstems.catalog.store import ModelStore
 from openstems.domain.errors import Cancelled, DomainError, OutOfMemory
+from openstems.domain.grid import SongPart, clean_selection, part_downbeat
 from openstems.domain.memory import CPU_NOTE
 from openstems.domain.model import ModelSpec
 from openstems.domain.naming import DEFAULT_TEMPLATE, render_name, safe_component
@@ -62,6 +63,9 @@ class RunOptions:
     downbeat: float | None = None
     midi_stems: list[str] = field(default_factory=list)
     force: bool = False
+    # A part of the song to separate alone, as a song of its own: a job's `range` while the
+    # separate_selection setting is on (`Runtime.options`). None: the whole song.
+    part: SongPart | None = None
 
     def key_dict(self) -> dict[str, Any]:
         return {
@@ -74,6 +78,8 @@ class RunOptions:
             "midi": sorted(self.midi_stems),
             # Only when on, so the cache key of every earlier run stays what it was.
             **({"tempo_sync": True} if self.tempo_sync else {}),
+            # Only for a part, so every other run keeps its key: the frames separated.
+            **({"range": list(self.part.frames(SAMPLE_RATE))} if self.part else {}),
         }
 
 
@@ -221,7 +227,18 @@ class Pipeline:
         report("preparing", 0.0, "Hashing")
         recipe, settings, hashes = self.plan(recipe, options)
         digest, size = hash_file(source, cancel)
-        track = Track(path=str(source.resolve()), content_hash=digest, size=size)
+        part = options.part
+        track = Track(
+            path=str(source.resolve()),
+            content_hash=digest,
+            size=size,
+            part=part.label if part is not None else "",
+        )
+        if part is not None and options.downbeat is not None:
+            # Bar 1 as the part has it, before the cache is looked at: a cached part takes it.
+            options = replace(
+                options, downbeat=part_downbeat(options.downbeat, part.start, options.bpm)
+            )
         key = self.key_for(digest, recipe, settings, hashes, options)
         out_dir = output_dir_for(Path(output_root), track.name, recipe.id)
 
@@ -243,6 +260,9 @@ class Pipeline:
             progress=lambda f: report("preparing", 0.01 + f * (_PREP - 0.01), "Decoding"),
             should_cancel=lambda: cancel.cancelled,
         )
+        if part is not None:
+            mix, part = _cut(mix, part)
+            options = replace(options, part=part)  # where it was cut, for the manifest
         samples = mix.shape[1]
 
         signals, provenance, notes = self._run_passes(recipe, settings, mix, report, cancel)
@@ -556,6 +576,10 @@ class Pipeline:
                     "decoded_samples": samples,
                     "decoded_sample_rate": SAMPLE_RATE,
                     "duration": round(samples / SAMPLE_RATE, 6),
+                    # The part of the file these stems are, when only a part of it was
+                    # separated: their timeline starts at its start. The samples and the
+                    # duration above are the part's.
+                    **({"range": options.part.to_dict()} if options.part else {}),
                 },
                 "analysis": {
                     "bpm": extras.get("bpm"),
@@ -629,6 +653,19 @@ def _needed_stems(recipe: Recipe) -> dict[str, set[str]]:
         if parts:
             needed.setdefault(parts[0], set()).add(parts[1])
     return needed
+
+
+def _cut(mix: np.ndarray, part: SongPart) -> tuple[np.ndarray, SongPart]:
+    """The part of a decoded song to separate alone, and where it was cut: kept inside the
+    song as it decoded, and cut sample-exact at the engine's rate from the frames a clip of
+    the same selection is cut from (`SongPart.frames`). A copy, so the whole song is freed."""
+    try:
+        start, end = clean_selection(part.start, part.end, mix.shape[1] / SAMPLE_RATE)
+    except DomainError:
+        raise DomainError(f"the part to separate ({part.label}) is not in the song") from None
+    cut = SongPart(start, end, part.label)
+    first, frames = cut.frames(SAMPLE_RATE)
+    return _fit_length(np.ascontiguousarray(mix[:, first : first + frames]), frames), cut
 
 
 def _fit_length(audio: np.ndarray, samples: int) -> np.ndarray:

@@ -76,6 +76,8 @@ def stem_set_payload(result: Any) -> dict[str, Any]:
         "cache_key": result.manifest.get("cache_key"),
         "analysis": result.manifest.get("analysis") or {},
         "notes": list(result.manifest.get("notes") or []),
+        # The part of the song these stems are, when only a part of it was separated.
+        "part": (result.manifest.get("source") or {}).get("range"),
         "stems": [
             {
                 "name": s.name,
