@@ -438,8 +438,10 @@ returns, filled in for jobs saved before it existed.
 
 ## Mac
 
-Nothing of the trimmer has been seen on a Mac. Its tests had not yet run in the Mac CI job
-when this was written. What differs is decided in plain functions, tested on Windows with the
+Nothing of the trimmer has been seen by hand on a Mac. In CI on macos-15 (Apple Silicon, the
+FakeEngine) its component tests and the whole end-to-end suite pass, first on PR #31. A test
+that was flaky there showed a race Windows had hidden (a saved grid's draft dropped a tick
+before the song had it), since fixed. What differs is decided in plain functions, tested on Windows with the
 platform stubbed: the words (`freeKey` says Option, `modName` and `modClick` say ⌘), the wheel
 (`isZoomWheel`, `zoomFactor`: Cmd and the wheel, or a pinch, which Chromium reports as a
 wheel with Control held), and the key that adds a chip (`modKey`: Command, since a
