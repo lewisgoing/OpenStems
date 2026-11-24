@@ -234,7 +234,10 @@ the part with no Electron in it (window placement, icon state, the `shell.json` 
 and what differs between Windows and a Mac: window frame, menus, when the app quits, the
 template icons, `menuBarPlacement`) and is what the unit tests cover. On a Mac the icon is a
 menu bar item, the quick-drop window is a panel under the menu bar, closing the window never
-quits and the Dock icon stays. Both windows load one bundle; `?window=tray` picks
+quits and the Dock icon stays. The icon has four states (`trayPresentation`): busy (a ring),
+stems ready (a dot), a new version (`update`: a small dot over a shortened fourth bar, blue on
+Windows) and idle, in that order of priority; `node scripts/make-icons.mjs` draws all four
+for both systems. Both windows load one bundle; `?window=tray` picks
 `src/tray/TrayApp.tsx`. What both windows do with dropped files lives in
 `src/state/dropflow.tsx`. The quick-drop window does not hide on blur, on purpose:
 `docs/adr/0008-tray.md`. In tests the tray is driven through `__openstemsE2E` (`e2e/helpers.ts`),

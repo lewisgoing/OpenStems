@@ -187,18 +187,21 @@ function dragIcon(count) {
  * Tray icon: the stem bars from the title bar, with no tile behind them so they read on a
  * dark and on a light taskbar. While work is going on the fourth bar becomes a ring, and when
  * stems are waiting it becomes a filled dot: the states differ by shape, not only by color.
+ * A new version keeps all four bars and lifts a small blue dot off the fourth, which is
+ * cut short to make room: a badge, not a state of the work.
  */
 function trayIcon(size, state) {
   const c = canvas(size)
   const u = size / 16
-  const heights = [9, 14, 7, 12]
+  const heights = state === 'update' ? [9, 14, 7, 6] : [9, 14, 7, 12]
   const barWidth = 2.6
   const gap = 1.1
-  const idle = state === 'idle'
+  const idle = state === 'idle' || state === 'update'
   const left = idle ? (16 - (4 * barWidth + 3 * gap)) / 2 : 0.5
   heights.slice(0, idle ? 4 : 3).forEach((h, i) => {
     c.rect((left + i * (barWidth + gap)) * u, (15 - h) * u, barWidth * u, h * u, 1.3 * u, STEMS[i])
   })
+  if (state === 'update') updateBadge(c, u, left + 3 * (barWidth + gap) + barWidth / 2, 4.4, '#60a5fa')
   if (!idle) {
     const d = 4.8
     const x = 15.8 - d
@@ -213,19 +216,21 @@ function trayIcon(size, state) {
  * Menu bar icon for a Mac: a template image, black with alpha, which macOS colors for a
  * light or a dark menu bar. It cannot carry color, so the states read by shape alone: four
  * bars; three bars and a ring while work is going on; three bars and a solid dot when stems
- * are waiting. The ring and the dot are larger than on Windows, where color helps.
+ * are waiting. The ring and the dot are larger than on Windows, where color helps. A new
+ * version: four bars, the fourth cut short under a small dot of its own.
  */
 function menuBarIcon(size, state) {
   const c = canvas(size)
   const u = size / 16
-  const heights = [9, 14, 7, 12]
+  const heights = state === 'update' ? [9, 14, 7, 6] : [9, 14, 7, 12]
   const barWidth = 2.6
   const gap = 1.1
-  const idle = state === 'idle'
+  const idle = state === 'idle' || state === 'update'
   const left = idle ? (16 - (4 * barWidth + 3 * gap)) / 2 : 0
   heights.slice(0, idle ? 4 : 3).forEach((h, i) => {
     c.rect((left + i * (barWidth + gap)) * u, (15 - h) * u, barWidth * u, h * u, 1.3 * u, '#000000')
   })
+  if (state === 'update') updateBadge(c, u, left + 3 * (barWidth + gap) + barWidth / 2, 4.6, '#000000')
   if (!idle) {
     const d = 5
     const line = 1.25
@@ -237,14 +242,20 @@ function menuBarIcon(size, state) {
   return c.toPng()
 }
 
+/** The dot of a new version: centred over the fourth bar, near the top of the icon. */
+function updateBadge(c, u, centre, d, color) {
+  const x = Math.min(16 - d, centre - d / 2)
+  c.rect(x * u, 0.6 * u, d * u, d * u, (d / 2) * u, color)
+}
+
 const TRAY_SIZES = [16, 20, 24, 32, 40, 48, 64]
-for (const state of ['idle', 'busy', 'ready']) {
+for (const state of ['idle', 'busy', 'ready', 'update']) {
   const name = state === 'idle' ? 'tray.ico' : `tray-${state}.ico`
   writeFileSync(join(out, name), ico(TRAY_SIZES.map((size) => ({ size, data: trayIcon(size, state) }))))
 }
 // The menu bar images for a Mac: 16 points, and the same drawing at twice the pixels. The
 // names must end in `Template`, with `@2x` after it, or macOS treats them as plain pictures.
-for (const state of ['idle', 'busy', 'ready']) {
+for (const state of ['idle', 'busy', 'ready', 'update']) {
   const name = state === 'idle' ? 'trayTemplate' : `tray-${state}Template`
   writeFileSync(join(out, `${name}.png`), menuBarIcon(16, state))
   writeFileSync(join(out, `${name}@2x.png`), menuBarIcon(32, state))
@@ -252,7 +263,7 @@ for (const state of ['idle', 'busy', 'ready']) {
 // For looking at the tray icons while drawing them: TRAY_PREVIEW=<folder> writes each size as a PNG.
 if (process.env.TRAY_PREVIEW) {
   mkdirSync(process.env.TRAY_PREVIEW, { recursive: true })
-  for (const state of ['idle', 'busy', 'ready']) {
+  for (const state of ['idle', 'busy', 'ready', 'update']) {
     for (const size of [16, 24, 32, 64]) writeFileSync(join(process.env.TRAY_PREVIEW, `${state}-${size}.png`), trayIcon(size, state))
     for (const size of [16, 32, 128]) writeFileSync(join(process.env.TRAY_PREVIEW, `mac-${state}-${size}.png`), menuBarIcon(size, state))
   }

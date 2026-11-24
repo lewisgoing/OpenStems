@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -21,6 +21,7 @@ import {
   startsHidden,
   taskbarEdge,
   trayIconFile,
+  trayUpdateOf,
   trayClickAction,
   trayMenuTemplate,
   trayPresentation,
@@ -381,16 +382,23 @@ describe('what differs between Windows and a Mac', () => {
   })
 
   it('uses .ico files on Windows and template images on a Mac', () => {
-    expect((['idle', 'busy', 'ready'] as const).map((icon) => trayIconFile(icon, 'win32'))).toEqual([
+    expect((['idle', 'busy', 'ready', 'update'] as const).map((icon) => trayIconFile(icon, 'win32'))).toEqual([
       'tray.ico',
       'tray-busy.ico',
       'tray-ready.ico',
+      'tray-update.ico',
     ])
-    expect((['idle', 'busy', 'ready'] as const).map((icon) => trayIconFile(icon, 'darwin'))).toEqual([
+    expect((['idle', 'busy', 'ready', 'update'] as const).map((icon) => trayIconFile(icon, 'darwin'))).toEqual([
       'trayTemplate.png',
       'tray-busyTemplate.png',
       'tray-readyTemplate.png',
+      'tray-updateTemplate.png',
     ])
+    // Every file named here exists, with the @2x picture a Mac asks for beside its template.
+    for (const icon of ['idle', 'busy', 'ready', 'update'] as const) {
+      expect(existsSync(`resources/${trayIconFile(icon, 'win32')}`)).toBe(true)
+      expect(existsSync(`resources/${trayIconFile(icon, 'darwin').replace('.png', '@2x.png')}`)).toBe(true)
+    }
   })
 
   it('quits with the window on Windows unless the app stays in the tray, and never on a Mac', () => {
@@ -468,6 +476,7 @@ describe('the tray icon', () => {
 
   it('is idle with nothing going on', () => {
     expect(trayPresentation(null, null)).toEqual({ icon: 'idle', tooltip: 'OpenStems' })
+    expect(trayPresentation(null, null, null).icon).toBe('idle')
     expect(trayPresentation({ active: 0, current: null, done: null }, null).icon).toBe('idle')
   })
 
@@ -540,6 +549,34 @@ describe('the tray icon', () => {
     // A job that left the list, or never finished, announces nothing.
     expect(activityOf(list, 'gone').done).toBeNull()
     expect(activityOf(list, 'd').done).toBeNull()
+  })
+})
+
+describe('a new version on the tray icon', () => {
+  it('marks the icon while a version waits, from the offer to the restart', () => {
+    expect(trayUpdateOf(null)).toBeNull()
+    expect(trayUpdateOf({ state: 'idle' })).toBeNull()
+    expect(trayUpdateOf({ state: 'checking', version: '0.3.6' })).toBeNull()
+    expect(trayUpdateOf({ state: 'available', version: '0.3.6' })).toEqual({ version: '0.3.6', ready: false })
+    expect(trayUpdateOf({ state: 'downloading', version: '0.3.6' })).toEqual({ version: '0.3.6', ready: false })
+    expect(trayUpdateOf({ state: 'ready', version: '0.3.6' })).toEqual({ version: '0.3.6', ready: true })
+    // An app that cannot install it itself (an unsigned Mac app) only offers the page.
+    expect(trayUpdateOf({ state: 'ready', version: '0.3.6', manual: true })?.ready).toBe(false)
+
+    const offer = { version: '0.3.6', ready: false }
+    expect(trayPresentation(null, null, offer)).toEqual({ icon: 'update', tooltip: 'OpenStems: version 0.3.6 is available' })
+    expect(trayPresentation(null, null, { ...offer, ready: true }).tooltip).toBe(
+      'OpenStems: version 0.3.6 is downloaded: restart to install it',
+    )
+  })
+
+  it('gives way to work in progress and to stems that are waiting', () => {
+    const offer = { version: '0.3.6', ready: false }
+    const done = { id: 'j1', name: 'First Song', stems: 6 }
+    expect(trayPresentation({ active: 1, current: { name: 'First Song', progress: 0.5 }, done: null }, null, offer).icon).toBe('busy')
+    expect(trayPresentation({ active: 0, current: null, done }, null, offer).icon).toBe('ready')
+    // Once those stems are seen, the version is what the icon has left to say.
+    expect(trayPresentation({ active: 0, current: null, done }, 'j1', offer).icon).toBe('update')
   })
 })
 

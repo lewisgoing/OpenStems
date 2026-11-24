@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **A new version shows in the tray.** While an update waits, the tray icon (on a Mac, the
+  menu bar item) keeps its four bars and lifts a small dot over the fourth, blue on Windows,
+  and its tooltip names the version. It gives way to work in progress and to stems that are
+  ready, and stays until the update is installed. The button in the quick-drop window now
+  names the version too: "Update 0.3.6".
+- **The bar above the queue keeps "Sum to mix" with the other settings.** In a narrower
+  window the Paste link and Add files buttons stay beside the recipe, and quality, format and
+  "Sum to mix" share the line below; the switch moves to a line of its own only when there is
+  no room for it.
+
 ## 0.3.5 (2026-11-23)
 
 - **Tempo sync says when it cannot work.** FL Studio reads a sample's tempo from WAV files

@@ -141,7 +141,7 @@ test('screenshots of the update offer', async () => {
     await page.waitForTimeout(400)
     await page.screenshot({ path: join(out, 'update-1-available.png') })
     await clickTray(app)
-    await popup.getByRole('button', { name: 'Update', exact: true }).waitFor()
+    await popup.getByRole('button', { name: 'Update 0.3.0', exact: true }).waitFor()
     await popup.waitForTimeout(300)
     await popup.screenshot({ path: join(out, 'update-2-quick-drop.png') })
     await page.getByRole('button', { name: 'Update to 0.3.0' }).click()

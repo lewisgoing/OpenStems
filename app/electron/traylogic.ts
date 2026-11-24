@@ -143,7 +143,22 @@ export interface TrayActivity {
   done: { id: string; name: string; stems: number } | null
 }
 
-export type TrayIcon = 'idle' | 'busy' | 'ready'
+export type TrayIcon = 'idle' | 'busy' | 'ready' | 'update'
+
+/**
+ * A newer version the app knows about, for the icon: `ready` once it is downloaded and a
+ * restart installs it. Null while there is nothing new.
+ */
+export interface TrayUpdate {
+  version: string
+  ready: boolean
+}
+
+/** What the icon needs to know of self-update (`UpdateStatus` from the updater). */
+export function trayUpdateOf(status: { state: string; version?: string; manual?: boolean } | null): TrayUpdate | null {
+  if (!status?.version || !['available', 'downloading', 'ready'].includes(status.state)) return null
+  return { version: status.version, ready: status.state === 'ready' && !status.manual }
+}
 
 export interface TrayPresentation {
   icon: TrayIcon
@@ -173,9 +188,15 @@ export function isTrayActivity(value: unknown): value is TrayActivity {
 
 /**
  * The icon and tooltip for the current activity. Work in progress wins over finished work:
- * `ready` shows only once the queue is empty, and only until the result has been seen.
+ * `ready` shows only once the queue is empty, and only until the result has been seen. A
+ * new version is the least urgent of all: it marks the icon only when nothing else
+ * does, and stays until it is installed.
  */
-export function trayPresentation(activity: TrayActivity | null, seenDone: string | null): TrayPresentation {
+export function trayPresentation(
+  activity: TrayActivity | null,
+  seenDone: string | null,
+  update: TrayUpdate | null = null,
+): TrayPresentation {
   if (activity && activity.active > 0) {
     const waiting = activity.active - (activity.current ? 1 : 0)
     const more = waiting > 0 ? ` (${waiting} waiting)` : ''
@@ -188,6 +209,10 @@ export function trayPresentation(activity: TrayActivity | null, seenDone: string
     const { name, stems } = activity.done
     const count = `${stems} ${stems === 1 ? 'stem' : 'stems'}`
     return { icon: 'ready', tooltip: `${APP_NAME}: ${shorten(name, 70)} is ready, ${count}`.slice(0, TOOLTIP_MAX) }
+  }
+  if (update) {
+    const what = update.ready ? `${update.version} is downloaded: restart to install it` : `${update.version} is available`
+    return { icon: 'update', tooltip: `${APP_NAME}: version ${what}` }
   }
   return { icon: 'idle', tooltip: APP_NAME }
 }
