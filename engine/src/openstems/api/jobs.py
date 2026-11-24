@@ -5,6 +5,7 @@ starts it. That is how files added without auto-start wait for the Start button.
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 from pathlib import Path
@@ -26,6 +27,8 @@ _STAGE_STATE = {
 _ORDER = [JobState.PREPARING, JobState.RUNNING, JobState.WRITING]
 MAX_FINISHED = 300
 STARTED = "this song has started: its part can no longer change"
+
+log = logging.getLogger(__name__)
 
 
 class JobNotFound(DomainError):
@@ -440,13 +443,30 @@ class JobManager:
             elif kind == "done":
                 self._on_done(event[1], event[2])
             elif kind == "failed":
-                if event[1] == self._current:
-                    self._finish_current(JobState.FAILED, event[2])
+                self._on_failed(*event[1:])
             elif kind == "cancelled":
                 if event[1] == self._current:
                     self._finish_current(JobState.CANCELLED, None)
             elif kind == "idle":
                 self._dispatch()
+
+    def _on_failed(
+        self, job_id: str, error: str, trace: str | None = None, ending: bool = False
+    ) -> None:
+        """A job failed. The traceback of an unexpected error goes to the engine's log, the
+        only place it is kept. ``ending``: the worker ends after this job and a fresh one
+        takes its place (`process.run_job`), so nothing is sent to it in between: the queue
+        moves on when the new one is ready."""
+        if trace:
+            log.error("job %s failed: %s\n%s", job_id, error, trace.rstrip())
+        else:
+            log.warning("job %s failed: %s", job_id, error)
+        if ending:
+            self._worker_ready = False
+        if job_id == self._current:
+            self._finish_current(JobState.FAILED, error)
+        if ending:
+            self.bus.publish("worker.status", **self.worker_status)
 
     def _on_progress(self, job_id: str, stage: str, fraction: float, message: str) -> None:
         job = self._jobs.get(job_id)

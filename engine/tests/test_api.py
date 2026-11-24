@@ -388,6 +388,37 @@ def test_history_lists_and_rebuilds_from_manifests(client: TestClient, songs) ->
     assert len(client.get("/v1/stemsets").json()["stem_sets"]) == 2
 
 
+def test_a_job_that_breaks_the_worker_leaves_the_next_job_a_fresh_one(
+    fake_env: None, songs, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Seen on 0.4.0 (ADR 0024): after a failed import of PyTorch, most likely with Windows'
+    paging file full, the worker kept half of it loaded, and its jobs failed with "module
+    'torch' has no attribute 'device'" until the app was quit, the real error long gone.
+    Full-song's model acts that out here; the second job, with another model, must run in
+    a fresh worker."""
+    from openstems.worker.process import PAGING_FILE_NOTE
+
+    monkeypatch.setenv("OPENSTEMS_FAKE_IMPORT_FAILS", "bs-roformer-sw")
+    service = Service()
+    with TestClient(create_app(TOKEN, service), headers=AUTH) as c:
+        assert service.jobs.supervisor.ready.wait(30)
+        old_pid = service.jobs.supervisor.pid
+        first = c.post("/v1/jobs", json={"path": str(songs[0]), "recipe": "full-song"}).json()
+        second = c.post(
+            "/v1/jobs", json={"path": str(songs[1]), "recipe": "cleanup-dereverb"}
+        ).json()
+
+        jobs = {j["id"]: j for j in wait_for(c, all_terminal)}
+        assert jobs[first["id"]]["state"] == "failed"
+        assert jobs[first["id"]]["error"] == PAGING_FILE_NOTE  # what to do, not a DLL's name
+        assert jobs[second["id"]]["state"] == "done", jobs[second["id"]]["error"]
+        status = c.get("/v1/system").json()["worker"]
+        assert status["pid"] != old_pid and status["restarts"] == 0  # replaced, not crashed
+    # The traceback is kept in the engine's log: the job only says what to do.
+    logged = [r.getMessage() for r in caplog.records if r.name == "openstems.api.jobs"]
+    assert any("Traceback" in m and "WinError 1455" in m for m in logged), [m[:200] for m in logged]
+
+
 def test_jobs_survive_a_restart(fake_env: None, songs) -> None:
     service = Service()
     with TestClient(create_app(TOKEN, service), headers=AUTH) as c:
