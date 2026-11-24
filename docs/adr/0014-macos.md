@@ -285,7 +285,8 @@ for one model.
   whose budget (3.8 GB) is below the estimate for SW at full precision. A second run took
   1413 s.
 - **Not reached**: `every-stem` (Mel-Band RoFormer is not in it; MDX23C is), because the job hit
-  its two-hour limit. The limit is now four hours and the second `full-song` run is gone.
+  its two-hour limit. A longer limit, or dropping the second `full-song` run, would let it
+  reach `every-stem`.
 
 What it does not tell: speed on real hardware. The runner's GPU is virtual and its memory
 small, and the self-test's own ratio (2.4x the CPU) is far below what a real M1 gives, so
