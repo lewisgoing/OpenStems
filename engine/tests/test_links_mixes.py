@@ -3,6 +3,7 @@ fetches, and yt-dlp itself is only checked for being there."""
 
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -131,7 +132,11 @@ def test_the_fetcher_and_its_javascript_runtime_are_installed() -> None:
     from openstems.links import _deno
 
     assert yt_dlp.YoutubeDL
-    assert __version__ == "2026.10.26"
+    # The version pinned in pyproject.toml is the one installed (scripts/check_ytdlp.py
+    # moves the pin; `uv lock` and `uv sync` follow).
+    pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text("utf-8")
+    pinned = re.search(r'"yt-dlp\[[^\]]*\]==([^"]+)"', pyproject)
+    assert pinned and __version__ == pinned.group(1)
     deno = _deno()
     assert deno and Path(deno).is_file()
 

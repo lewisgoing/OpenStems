@@ -265,7 +265,10 @@ a thread with progress as `link.updated` events, then `Service._queue_fetched` q
 ordinary job for the file, kept under `<output>/_links/`. `openstems/links.py` is the fetcher:
 yt-dlp, pinned in `pyproject.toml` with its `deno` extra (the JavaScript runtime YouTube
 needs; its path is passed to yt-dlp, since `Scripts` is not on `PATH` in the packaged app).
-When a site stops working, bump that pin and release. With `OPENSTEMS_ENGINE=fake` a stand-in
+When a site stops working, bump that pin and release: `.github/workflows/links-check.yml`
+runs `scripts/check_ytdlp.py` every day and keeps an issue "Update yt-dlp to <version>" open
+while the pin is behind the newest release. `python scripts/check_ytdlp.py --write` moves the
+pin; then `uv lock` in `engine/`, try a real link, release. With `OPENSTEMS_ENGINE=fake` a stand-in
 fetches: no test touches the network, and `slow`, `fail` or `playlist` in the address make it
 slow, fail or refuse. In the app both windows share `components/LinkRow.tsx`, and pasting and
 dropping links live in `state/dropflow.tsx` beside files.
