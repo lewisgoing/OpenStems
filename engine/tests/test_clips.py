@@ -136,7 +136,12 @@ def test_bar_one_is_a_time_in_seconds() -> None:
     assert clean_downbeat(-60) == -60.0 and clean_downbeat(86400) == 86400.0
     # A half rounds up, as the app's twin rounds: Math.round(x * 10000) / 10000.
     assert clean_downbeat(2.00005) == 2.0001 and round(2.00005, 4) == 2.0
-    for bad in ("soon", float("nan"), float("inf"), -60.001, 86400.5, [1]):
+    # Text is read as the app's twin reads it: " 1.5 ", "1e1" and ".5" are numbers.
+    assert clean_downbeat(" 1.5 ") == 1.5 and clean_downbeat("1e1") == 10.0
+    assert clean_downbeat(".5") == 0.5 and clean_downbeat("+2.") == 2.0
+    # Python's float would take "1_0" and digits of other scripts; the app takes neither.
+    bad_values = ("soon", float("nan"), float("inf"), -60.001, 86400.5, [1], True, "1_0", "١٢")
+    for bad in (*bad_values, "inf", "nan", "0x10", "1,5"):
         with pytest.raises(DomainError, match="bar 1 must be a time in seconds"):
             clean_downbeat(bad)
 
@@ -230,6 +235,17 @@ def test_trimmed_stems_keep_their_place_in_a_clip(pipeline, tmp_path: Path) -> N
     assert lead > 0 and not audio[:, :lead].any()
     assert audio[:, lead].any()
     assert np.array_equal(audio[:, lead:], stem_audio[:, : audio.shape[1] - lead])
+
+
+def test_the_fake_engine_can_leave_a_stem_silent_at_its_start(
+    pipeline, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # For the trimmer's end-to-end test: one stem enters a second late, the rest at once.
+    monkeypatch.setenv("OPENSTEMS_FAKE_LATE", "vocals:1.0, nonsense, drums:x")
+    _, manifest = stem_set(pipeline, tmp_path, trim_silence=True)
+    offsets = {stem["name"]: stem["offset"] for stem in manifest["stems"]}
+    assert offsets["vocals"] == RATE
+    assert all(offset == 0 for name, offset in offsets.items() if name != "vocals")
 
 
 def test_a_clip_can_start_with_the_song_and_end_with_it(pipeline, tmp_path: Path) -> None:
@@ -493,6 +509,11 @@ def test_bad_clip_requests_answer_with_a_sentence(
     tempo = refused(paths=[stem], grid={"bpm": 5, "downbeat": 0})
     assert tempo == "the tempo must be between 20 and 999 BPM"
     assert refused(paths=[str(songs[0]), stem], source=True).startswith("a clip of a song's own")
+    # A stem taken out of its folder is named: pressing again cannot bring it back.
+    gone = Path(one["stems"][1]["path"])
+    gone.unlink()
+    missing = refused(paths=[stem, str(gone)])
+    assert missing == f"{gone.name} is no longer in its folder: separate the song again"
 
 
 # -- a song's own file before separation ------------------------------------------------
@@ -622,13 +643,20 @@ def test_bar_one_of_a_long_song_off_a_whole_tempo(bpm: float, first: float) -> N
         ((0, 1, 2, 3), 126.0, 1.0, 200.0),
         ((0, 2), 90.0, 0.5, 30.0),
         ((0, 2), 128.0, 0.5, 30.0),
+        # A loop exported from a DAW: its first kick at the very start, or a hair after it.
+        ((0, 1, 2, 3), 120.0, 0.0, 30.0),
+        ((0, 1, 2, 3), 90.0, 0.03, 30.0),
+        ((0, 2), 120.0, 0.0, 30.0),
+        ((0, 2), 128.0, 0.03, 30.0),
+        ((0, 2), 90.0, 0.0, 30.0),
     ],
 )
 def test_beats_that_kick_alike_put_bar_one_where_the_music_starts(
     kicks: tuple[int, ...], bpm: float, first: float, seconds: float
 ) -> None:
     # A kick on every beat (four on the floor) or on 1 and 3: no beat stands out, and the
-    # song starts on bar 1.
+    # song starts on bar 1. One that starts with its first kick, with no silence before
+    # it, starts on bar 1 too: that kick counts though nothing comes before it to rise from.
     found, _, downbeat = analysis.detect_grid(drum_song(kicks, bpm, first, seconds), RATE)
     assert found == bpm
     assert downbeat is not None and abs(downbeat - first) < 0.03

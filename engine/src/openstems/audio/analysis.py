@@ -24,6 +24,15 @@ ATTACK_LEAD = 0.005
 # Beats of the bar whose low onsets score within this fraction of the best are alike: a
 # kick on every beat, or on 1 and 3. Of those, bar 1 is the one nearest the music start.
 PHASE_TIE = 0.05
+# The low onset envelope is zero for its first frames (librosa pads its head for the lag
+# and the centred frames), and an attack there has nothing before it to rise from. Before
+# a song that starts at once, as a loop exported from a DAW does, this much silence is put,
+# so its first kick counts like the others.
+_LEAD_SECONDS = 0.25
+_LOW_FFT = 2048
+# Where the envelope of an excerpt from the middle of a song can be trusted: past its padded
+# head (the lag and half a frame) and the three frames either side that a bar line sums.
+_LOW_HEAD = (1 + _LOW_FFT // (2 * _HOP) + 3) * _HOP / ANALYSIS_RATE
 
 _PITCHES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 # Krumhansl-Schmuckler key profiles.
@@ -166,14 +175,22 @@ def _downbeat(
     bar line at or after where the music starts, less half a beat: a pickup before bar 1
     is bar 0. A kick on every beat (four on the floor), or on 1 and 3, makes beats score
     alike: of those within `PHASE_TIE` of the best, the one nearest where the music starts
-    is "1", since most songs start on bar 1.
+    is "1", since most songs start on bar 1. A kick at the very start of the file counts
+    like any other: the envelope is taken with silence before the song (`_LEAD_SECONDS`),
+    or, for an excerpt from the middle of a long song, from past its padded head.
     """
     import librosa
 
     line = _on_the_onsets(mono, line)
+    # The start of the song has silence before it; the middle of one does not, and there
+    # the envelope's head is left out for every beat alike.
+    lead = int(_LEAD_SECONDS * ANALYSIS_RATE) if offset == 0 else 0
+    padded = np.concatenate([np.zeros(lead, dtype=mono.dtype), mono]) if lead else mono
     low = librosa.onset.onset_strength(
-        y=mono, sr=ANALYSIS_RATE, hop_length=_HOP, n_fft=2048, n_mels=16, fmax=LOW_HZ
+        y=padded, sr=ANALYSIS_RATE, hop_length=_HOP, n_fft=_LOW_FFT, n_mels=16, fmax=LOW_HZ
     )
+    shift = lead / ANALYSIS_RATE
+    trusted = 0.0 if lead else _LOW_HEAD
     split = 2 if line.tracked < 0.75 * line.period else 1
     beat = line.period
     bar = beat * beats_per_bar
@@ -187,9 +204,10 @@ def _downbeat(
         phase = line.first + k * beat / split
         earliest = phase - math.floor(phase / bar) * bar  # this phase's first bar line
         times = np.arange(earliest, length, bar)
+        times = times[times >= trusted]
         if plays is not None:
             times = times[(times >= plays[0]) & (times <= plays[1])]
-        frames = librosa.time_to_frames(times, sr=ANALYSIS_RATE, hop_length=_HOP)
+        frames = librosa.time_to_frames(times + shift, sr=ANALYSIS_RATE, hop_length=_HOP)
         frames = frames[frames < low.size]
         score = 0.0
         if frames.size:
