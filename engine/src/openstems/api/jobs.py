@@ -112,7 +112,7 @@ class JobManager:
             self._jobs[job.id] = job
             self._extra[job.id] = {
                 "recipe_name": data.get("recipe_name", job.recipe_id),
-                "stems": [_with_start(stem) for stem in data.get("stems") or []],
+                "stems": _with_empty([_with_start(stem) for stem in data.get("stems") or []]),
                 "analysis": data.get("analysis", {}),
                 "notes": data.get("notes", []),
                 # A job that was waiting for Start still waits after a restart.
@@ -567,6 +567,16 @@ class JobManager:
         job.advance(state, error=error)
         job.message = ""
         self._changed(job)
+
+
+def _with_empty(stems: list[Any]) -> list[Any]:
+    """The stems of a job saved before stems said whether they are empty, with that said
+    (from their peaks files, which a stem of that time has in place of a measured peak)."""
+    if not all(isinstance(stem, dict) for stem in stems) or all("empty" in stem for stem in stems):
+        return stems
+    from openstems.pipeline.levels import mark_empty
+
+    return mark_empty([dict(stem) for stem in stems])
 
 
 def _with_start(stem: Any) -> Any:

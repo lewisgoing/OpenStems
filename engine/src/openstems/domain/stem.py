@@ -55,6 +55,9 @@ class Stem:
     midi: str | None = None
     offset: int = 0  # samples trimmed from the start (0 unless silence trim is on)
     group: str = ""  # the larger stem this one is a part of, if any
+    # The largest sample of the stem as it was separated, before normalize. None in a
+    # manifest from before it was measured. It decides whether the stem is empty.
+    peak: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -70,6 +73,7 @@ class Stem:
             "models": list(self.models),
             "settings": self.settings,
             **({"group": self.group} if self.group else {}),
+            **({"peak": self.peak} if self.peak is not None else {}),
         }
 
 

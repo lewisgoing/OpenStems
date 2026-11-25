@@ -2,12 +2,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Job, Link, Model, Recipe, StemFile, SystemInfo } from '@/api/client'
 import { DropOverlay } from '@/components/DropOverlay'
 import { StemsPanel } from '@/components/StemsPanel'
 import { ToastProvider, useToast } from '@/components/toast'
 import { CommitInput, ProgressBar, Segmented, TooltipProvider } from '@/components/ui'
+import { dragAllHint, splitEmpty, stemCount } from '@/lib/empty'
 import { dragSource } from '@/lib/sourcedrag'
 import { SelectionProvider } from '@/state/selection'
 import { SORT_KEY, loadSort, matchesSearch, searchTerms, sortQueue } from '@/lib/queuesort'
@@ -53,7 +54,7 @@ vi.mock('@/api/queries', () => ({
   useLinkActions: () => linkActions,
   useCreateMix: () => createMix,
   useSystem: () => ({ data: system }),
-  useSettings: () => ({ data: { output_format: 'wav32f' } }),
+  useSettings: () => ({ data: engineSettings }),
   usePatchSettings: () => ({ mutate: vi.fn() }),
 }))
 vi.mock('@/api/engine', () => ({
@@ -64,8 +65,12 @@ vi.mock('@/components/Waveform', () => ({
   useSharedGain: () => 1,
 }))
 
+/** What the engine's settings are read as. A test may add to it and must take it back. */
+const engineSettings: Record<string, unknown> = { output_format: 'wav32f' }
+
 const stem = (name: string): StemFile => ({
   name,
+  empty: false,
   file: `Song - ${name}.wav`,
   path: `D:\\out\\Song\\full-song\\Song - ${name}.wav`,
   peaks: `D:\\out\\Song\\full-song\\.peaks\\${name}.json`,
@@ -882,5 +887,124 @@ describe('renaming a song', () => {
       await userEvent.keyboard('{F2}')
       expect(screen.queryByLabelText('Song name')).not.toBeInTheDocument()
     })
+  })
+})
+
+describe('empty stems, as plain functions', () => {
+  const of = (...empty: boolean[]) => empty.map((value, index) => ({ name: `s${index}`, empty: value }))
+
+  it('leaves the empty ones out while hiding is on, in the stems own order', () => {
+    const stems = of(false, true, false, true)
+    expect(splitEmpty(stems, true)).toEqual({ shown: [stems[0], stems[2]], hidden: [stems[1], stems[3]] })
+    // Off, and with nothing empty, the list is the very same one: nothing re-renders for it.
+    expect(splitEmpty(stems, false).shown).toBe(stems)
+    expect(splitEmpty(of(false, false), true).shown).toHaveLength(2)
+    expect(splitEmpty<{ name: string; empty?: boolean }>([{ name: 'old' }], true)).toEqual({ shown: [{ name: 'old' }], hidden: [] })
+  })
+
+  it('shows every stem of a song that has nothing in any', () => {
+    const silent = of(true, true)
+    expect(splitEmpty(silent, true)).toEqual({ shown: silent, hidden: [] })
+    expect(splitEmpty([], true)).toEqual({ shown: [], hidden: [] })
+  })
+
+  it('counts stems and says what a drag carries', () => {
+    expect([0, 1, 2, 13].map(stemCount)).toEqual(['0 stems', '1 stem', '2 stems', '13 stems'])
+    expect(dragAllHint(6, 0)).toBe('Drag every stem into your DAW or a folder')
+    expect(dragAllHint(1, 5)).toBe('Drag the one stem with sound into your DAW or a folder. 5 empty ones stay behind')
+    expect(dragAllHint(5, 1)).toBe('Drag the 5 stems with sound into your DAW or a folder. 1 empty one stays behind')
+  })
+})
+
+describe('StemsPanel: empty stems', () => {
+  // A rap song through the six-stem recipe: only the vocals and the drums hold anything.
+  const stems = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'].map((name) => ({
+    ...stem(name),
+    empty: !['vocals', 'drums'].includes(name),
+  }))
+  const onTrim = vi.fn()
+  const panel = (hideEmpty: boolean) =>
+    wrap(<StemsPanel title="Song" subtitle="Full song" directory="D:\out\Song\full-song" stems={stems} hideEmpty={hideEmpty} onTrim={onTrim} onClose={vi.fn()} />)
+  const names = () => screen.getAllByTestId('waveform').map((el) => el.textContent)
+
+  it('lists only the stems with sound, and names the rest in one line', () => {
+    panel(true)
+    expect(names()).toEqual(['vocals', 'drums'])
+    const line = screen.getByTestId('empty-stems')
+    expect(line).toHaveTextContent('4 empty: bass, guitar, piano, other')
+    expect(within(line).getByRole('button', { name: 'Show empty stems' })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('drags, mixes and trims what is shown', async () => {
+    panel(true)
+    fireEvent.dragStart(screen.getByRole('button', { name: 'Drag all stems' }))
+    expect(bridge.startDrag).toHaveBeenLastCalledWith([stems[0]!.path, stems[1]!.path])
+    // Trim opens on the two with sound, not on six.
+    await userEvent.click(screen.getByTestId('panel-trim'))
+    expect(onTrim).toHaveBeenLastCalledWith(['vocals', 'drums'], expect.anything())
+    // Of two stems, one muted leaves the other: its own file, and no mix to write.
+    await userEvent.click(screen.getByRole('button', { name: 'Mute vocals' }))
+    fireEvent.dragStart(screen.getByTestId('drag-mix'))
+    expect(bridge.startDrag).toHaveBeenLastCalledWith([stems[1]!.path])
+    expect(createMix.mutateAsync).not.toHaveBeenCalled()
+  })
+
+  it('brings the empty stems back where they belong, marked, and puts them away again', async () => {
+    panel(true)
+    await userEvent.click(screen.getByRole('button', { name: 'Show empty stems' }))
+    expect(names()).toEqual(['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'])
+    const rows = screen.getAllByTestId('stem-row')
+    expect(rows.map((row) => row.hasAttribute('data-empty'))).toEqual([false, false, true, true, true, true])
+    expect(screen.getByTestId('empty-stems')).toHaveTextContent('4 empty shown: bass, guitar, piano, other')
+    fireEvent.dragStart(screen.getByRole('button', { name: 'Drag all stems' }))
+    expect(bridge.startDrag.mock.calls.at(-1)?.[0]).toHaveLength(6)
+    await userEvent.click(screen.getByTestId('panel-trim'))
+    expect(onTrim).toHaveBeenLastCalledWith(null, expect.anything())
+    await userEvent.click(screen.getByRole('button', { name: 'Hide empty stems' }))
+    expect(names()).toEqual(['vocals', 'drums'])
+  })
+
+  it('shows every stem with the setting off, and has no line about it', () => {
+    panel(false)
+    expect(names()).toHaveLength(6)
+    expect(screen.queryByTestId('empty-stems')).not.toBeInTheDocument()
+    // Still told apart: an empty stem's name steps back.
+    expect(screen.getAllByTestId('stem-row')[3]).toHaveAttribute('data-empty')
+  })
+
+  it('has nothing to hide in a song whose stems all hold something', () => {
+    wrap(<StemsPanel title="Song" subtitle="Full song" directory="D:\out" stems={['vocals', 'drums'].map(stem)} hideEmpty onClose={vi.fn()} />)
+    expect(names()).toEqual(['vocals', 'drums'])
+    expect(screen.queryByTestId('empty-stems')).not.toBeInTheDocument()
+  })
+})
+
+describe('QueueView: empty stems', () => {
+  beforeEach(() => localStorage.setItem(SORT_KEY, 'run'))
+  afterEach(() => {
+    delete engineSettings.hide_empty_stems
+  })
+  const stems = ['vocals', 'drums', 'bass'].map((name) => ({ ...stem(name), empty: name !== 'vocals' }))
+  const view = () =>
+    wrap(<QueueView recipes={[]} models={[]} selectedJob={null} onSelect={vi.fn()} onAddFiles={vi.fn()} onPasteLink={vi.fn()} />)
+
+  it('counts and drags the stems with sound while hiding is on', () => {
+    jobs = [job({ state: 'done', progress: 1, stems })]
+    engineSettings.hide_empty_stems = true
+    view()
+    const handle = screen.getByRole('button', { name: 'Drag all stems of Song' })
+    expect(handle).toHaveTextContent('1 stem')
+    expect(handle).not.toHaveTextContent('stems')
+    fireEvent.dragStart(handle)
+    expect(bridge.startDrag).toHaveBeenLastCalledWith([stems[0]!.path])
+  })
+
+  it('counts and drags them all with it off', () => {
+    jobs = [job({ state: 'done', progress: 1, stems })]
+    view()
+    const handle = screen.getByRole('button', { name: 'Drag all stems of Song' })
+    expect(handle).toHaveTextContent('3 stems')
+    fireEvent.dragStart(handle)
+    expect(bridge.startDrag.mock.calls.at(-1)?.[0]).toHaveLength(3)
   })
 })

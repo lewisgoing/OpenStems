@@ -141,23 +141,27 @@ def _folders_of(job: dict[str, Any]) -> set[str]:
 
 def _job_stems(where: str, result: StemSet) -> list[dict[str, Any]]:
     """The stems of the stem folder ``where`` as a job lists them."""
+    from openstems.pipeline.levels import mark_empty
     from openstems.pipeline.run import SAMPLE_RATE
 
-    return [
-        {
-            "name": s.name,
-            "file": s.file,
-            "path": os.path.join(where, s.file),
-            "peaks": os.path.join(where, s.peaks) if s.peaks else None,
-            "midi": os.path.join(where, s.midi) if s.midi else None,
-            "offset": s.offset,
-            "start": s.offset / SAMPLE_RATE,
-            "samples": s.samples,
-            "sample_rate": s.sample_rate,
-            "group": s.group or None,
-        }
-        for s in result.stems
-    ]
+    return mark_empty(
+        [
+            {
+                "name": s.name,
+                "file": s.file,
+                "path": os.path.join(where, s.file),
+                "peaks": os.path.join(where, s.peaks) if s.peaks else None,
+                "midi": os.path.join(where, s.midi) if s.midi else None,
+                "offset": s.offset,
+                "start": s.offset / SAMPLE_RATE,
+                "samples": s.samples,
+                "sample_rate": s.sample_rate,
+                "group": s.group or None,
+                "peak": s.peak,
+            }
+            for s in result.stems
+        ]
+    )
 
 
 class Service:
@@ -182,6 +186,7 @@ class Service:
 
     def start(self) -> None:
         self.index.prune_missing()
+        self.index.mark_empty_stems()
         self.jobs.start()
         self._configure_watcher()
         self.watcher.start()

@@ -980,6 +980,14 @@
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--color-faint);
 }
+/* An empty stem, when it is shown: it steps back, so the ones with sound are found at a
+   glance. Playing or in a mix it takes its color like any other. */
+.stem-pill[data-empty] {
+  color: var(--color-muted);
+}
+.stem-pill[data-empty] .stem-dot {
+  opacity: 0.4;
+}
 /* Not a stem: it sits at the far end of the stems, under the other handles of the row, and
    stays neutral when on. The accent belongs to the play button. */
 .mix-toggle {

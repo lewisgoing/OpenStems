@@ -409,6 +409,12 @@ class StemFile(BaseModel):
         description="Seconds into the song where this file begins: later than 0 when its "
         "leading silence was trimmed.",
     )
+    empty: bool = Field(
+        default=False,
+        description="Nothing but what the model let through: its peak stays more than "
+        "45 dB under the loudest stem of the set. The file is written all the same. The "
+        "app leaves such stems out of its lists while the hide_empty_stems setting is on.",
+    )
 
 
 class JobInfo(BaseModel):
@@ -474,6 +480,7 @@ class SettingsModel(BaseModel):
     use_gpu: bool
     auto_start: bool
     separate_selection: bool
+    hide_empty_stems: bool
 
 
 class SettingsPatch(BaseModel):
@@ -497,6 +504,7 @@ class SettingsPatch(BaseModel):
     use_gpu: bool | None = None
     auto_start: bool | None = None
     separate_selection: bool | None = None
+    hide_empty_stems: bool | None = None
 
 
 class SetAnalysis(BaseModel):

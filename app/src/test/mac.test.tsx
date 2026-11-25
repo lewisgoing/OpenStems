@@ -289,6 +289,7 @@ describe('the trimmer on a Mac', () => {
     sample_rate: 44100,
     group,
     start: 0,
+    empty: false,
   })
   const job = {
     id: 'j1',

@@ -540,6 +540,7 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
               return origin.kind === 'job' ? rename.job.mutateAsync({ id: origin.id, name }) : renameSet(origin.set, name)
             }}
             stems={panelJob?.stems ?? panel.stems}
+            hideEmpty={Boolean(settings?.hide_empty_stems)}
             analysis={panelJob?.analysis ?? panel.analysis}
             notes={panelJob?.notes ?? panel.notes}
             initialMix={panel.initialMix}

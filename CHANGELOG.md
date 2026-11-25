@@ -14,6 +14,21 @@
   separated. A project in a DAW that already uses the stems will need to find them again,
   as after renaming a folder by hand. The same on Windows and a Mac, where it has not been
   seen yet.
+
+## 0.4.3 (2026-11-25)
+
+- **Empty stems stay out of the way.** A song with no guitar still gets a guitar stem, with
+  nothing in it but a hiss. Such stems are now left out of the stems panel, of the pills in
+  the quick-drop window and of the handles that drag every stem, so the stems with sound are
+  what you see and what lands in your DAW. A line under the list ("4 empty: bass, guitar,
+  piano, other") and a "+4 empty" pill bring them back for that song, a little dimmed. Every
+  file is still written. A stem counts as empty when its loudest moment stays more than
+  45 dB under the loudest stem of the song. Songs separated before this version are judged
+  from their waveforms. "Hide empty stems" in Settings > Defaults, under Sum to mix, turns
+  it off. A song with one stem now reads "1 stem". The same on Windows and a Mac, where it
+  has not been seen yet.
+- **Settings.** "Show the welcome again" (Getting started) moved to the foot of Settings,
+  above About.
 - **The trimmer: bar 1, lengths and the loop.** Bar 1's flag dragged before the start of the
   song used to be lost off the left of the ruler. Now it waits at the left edge and can be
   dragged back in. The song's start takes hold of the flag when it is dragged close to it
