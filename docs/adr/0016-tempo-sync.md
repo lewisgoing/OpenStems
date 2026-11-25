@@ -42,10 +42,11 @@ samples" below.)
 
 - WAV only. FL Studio reads tempo from WAV files alone (its manual: the tempo "meta-data" is
   "only saved in .wav files"), so FLAC and MP3 stems carry none. See "Saying so" below.
-- The stems are only as in time as the detected tempo is right. The detector rounds to a
-  whole number within 0.25 BPM; an error of 0.1 BPM at 120 is about 0.15 s after three
-  minutes, and a song played without a click has no single tempo. There is no way to
-  correct the tempo in the app yet.
+- The stems are only as in time as the tempo is right. The detector gives a whole number
+  when it is within 0.25 BPM of one, and one decimal otherwise (`audio/analysis.py`); an
+  error of 0.1 BPM at 120 is about 0.15 s after three minutes, and a song played without a
+  click has no single tempo. A wrong tempo can be typed over since 0.3.2: see "Correcting
+  the tempo" below.
 - The chunk says how fast the audio is, not where the first beat is.
 - Only FL Studio 2026 on Windows was tried. Other programs that read `acid` chunks may also
   act on it. Not tried in FL Studio on a Mac; the bytes written are the same there.
@@ -75,6 +76,9 @@ or a WAV beside each MP3:
 FL Studio does not read a tempo from a file name or from MP3 or FLAC tags, as far as its
 manual says, so there is nothing to write into those formats.
 
+Since 0.3.8 the welcome on a first start (ADR 0021) offers the switch beside the choice of
+format, and marks MP3 and FLAC there "FL Studio reads no tempo from it" while it is on.
+
 ## Long samples (2026-11-23)
 
 A stem written as WAV with the chunk still did not stretch: FL showed its tempo ("155 BPM")
@@ -98,3 +102,81 @@ the sample is already at the project's tempo, so nothing stretches. The tempo sy
 Settings gives this step. A full-length stem is almost always over 90 seconds, so this is the
 ordinary way stems are used with the setting, not an edge case.
 
+## Correcting the tempo (ADR 0019)
+
+A tempo typed over the detected one, before the run or after it, is the one written. For
+stems already written, `write.set_tempo` changes the `acid` chunk in place in every WAV stem
+and in the mixes made from them; the audio is not rewritten. A typed tempo keeps two
+decimals (`retag.clean_bpm`, 20 to 999 BPM), and the chunk holds it as a 32-bit float, so
+FL reads 123.45 as written. An emptied tempo sets the chunk's tempo to 0, which FL does not
+sync (the "tempo 0" row above). The detected figures stay in the manifest under
+`analysis.detected`. MIDI files keep the tempo they were written with.
+
+## Known and not known (2026-11-24)
+
+Seen in FL Studio 2026 on Windows, by the owner:
+
+- FL reads the tempo field of the `acid` chunk and ignores the beat count. A tempo of 0
+  does not sync, with or without a beat count. On a full-length stem, flags 4 or 0 made no
+  difference (neither stretched, for its length); the flags were not varied on short files.
+- 32-bit float, 24-bit and 16-bit WAV all carry it.
+- FL stretches a sample by itself up to about a minute (60 s yes, 90 s no, at 80 and at
+  155 BPM); longer ones need the clip menu's "Fit to tempo" with "(embedded)".
+- "Read sample tempo information" must be on in FL's General settings.
+
+Not tried, or not known:
+
+- FL Studio on a Mac. The bytes are the same; nobody has dropped a stem into it there.
+- Other programs besides Ableton Live (see "Ableton Live" below). Logic, Reaper and others
+  may read an `acid` chunk, ignore it or act on it differently; none was tried.
+- Where the limit between 60 and 90 seconds lies exactly, and whether it is a setting.
+- Whether a typed tempo with decimals stretches as exactly as a whole one; FL shows it, but
+  timing over a full song was not measured.
+- The first beat, for a whole stem. The chunk says how fast the audio is, not where bar 1
+  starts, and FL has no field for it that we know of. Since 0.4.0 the app knows bar 1
+  (`downbeat`, ADR 0023), but a full stem still starts at the song's first sample; one whose
+  song starts off the beat lines up in FL only after moving it by hand.
+
+## Clips from the trimmer (0.4.0, ADR 0023)
+
+A clip dragged out of the trimmer is always a WAV, and with tempo sync on for its song (for a
+song's own file: the setting) it carries the grid's tempo in the same chunk. A clip cut on
+bar lines starts on a downbeat, and a few bars are well under a minute, so a clip gets past
+both limits above: it starts on bar 1 and FL stretches it by itself. Nobody has dropped a
+clip into FL to confirm it yet. Each clip also carries a `LIST`/`INFO` comment
+("OpenStems clip ..."), the app's own mark for not writing over a clip in use; FL is not
+known to read it.
+
+## Ableton Live (2026-11-24)
+
+Ableton Live does not read the chunk. Ableton's help says ACID tags in WAV files "can not be
+used in Live", and the owner confirmed it in Live 13 beta. The test files were one synthetic
+song at 97 BPM, about four minutes, with a two-beat pickup so bar 1 (the first kick) is at
+1.237 s. They were dropped into a Set at 120 BPM:
+
+| File | Auto-warp on | Auto-warp off |
+|---|---|---|
+| no chunk | warped, 97, first marker at 0.00 | unwarped |
+| chunk as written (beats 0) | warped, 97, first marker at 0.00 | unwarped |
+| chunk with the beat count (405) | warped, 97, first marker at 0.00 | unwarped |
+| no chunk, "97bpm" in the name | warped, 97, first marker at 0.00 | not tried |
+| no chunk, cut to start on bar 1 | warped, 97, first marker at 0.00 | not tried |
+| three stems of the song, with the chunk | drums and melody 97, bass 145.50; all at 0.00 | not tried |
+| 8 bars (about 20 s), with and without | both 97 | both 97 (short-sample rule) |
+
+- The 97 is Live's own analysis: the chunk changes nothing, on or off.
+- Live put bar 1 at the start of every file, so where the song has a pickup the grid is off
+  by the pickup (here half a bar). Only the file that starts on bar 1 is right.
+- Live analyzes each stem by itself, and stems of one song can disagree: the bass came out
+  at 97 x 1.5. Stems dropped together are then not on one grid.
+- An 8-bar loop is read as 8 bars with or without the chunk, by Live's rule for short
+  samples, not from the chunk.
+
+So for Live the chunk does nothing (and does no harm: it stays for FL Studio). What would
+give Live the tempo and bar 1 is a Live Set written beside the stems, with each clip's warp
+markers set from the song's tempo and `downbeat`; Live's `.asd` analysis files are an
+undocumented binary format that changed in Live 12 and are not an option. The research
+behind this, with the other routes ranked, is `docs/research/ableton-tempo.md`.
+
+The files come from `scripts/make_ableton_test_files.py`. Not tried in Live: the file name with auto-warp off, Live 11 or 12, and a Mac (the test ran
+on the owner's machine with Live 13 beta).

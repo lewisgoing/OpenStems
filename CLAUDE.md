@@ -388,7 +388,9 @@ stays 0. The option enters a run's cache key only when on. FL reads tempo from W
 a job gets when its stems carry none (an MP3 or FLAC run, or no tempo found; the second goes
 when a tempo is typed in). FL stretches a sample by itself only up to about a minute (60 s
 yes, 90 s no, measured on 2026-11-23, not in its manual); a full stem needs the clip menu's
-"Fit to tempo" with the "(embedded)" tempo, which the hint says. `docs/adr/0016-tempo-sync.md`.
+"Fit to tempo" with the "(embedded)" tempo, which the hint says. Trimmer clips are always
+WAV and carry the mark too. What has been seen in FL and what has not (a Mac, other DAWs, bar 1
+of a whole stem) is listed at the end of `docs/adr/0016-tempo-sync.md`: keep it current.
 
 Tempo and key by hand: a job's `bpm` and `key` options replace what detection finds for
 that run (`pipeline/extras.py`); they are not in the cache key, and a cached result is
