@@ -65,6 +65,8 @@ Engine (run from `engine/`):
   name, stems renamed on the disk, both routes), with the FakeEngine
 - `uv run pytest tests/test_empty_stems.py`: which stems are empty (the rule, the peak a run
   measures, stems from before it, the setting), with the FakeEngine
+- `uv run pytest tests/test_swiftf0.py`: SwiftF0 (the pitch tracker stem to MIDI uses, pinned
+  with `onnxruntime` in `pyproject.toml`) is installed with its model and hears a tone on the CPU
 - `uv run openstems serve`: start the local API (prints a JSON line with port and token)
 - `uv run openstems openapi --out openapi.json`: export the schema after any API change, then
   `pnpm gen:api` in `app/` (a test fails if `engine/openapi.json` is stale)

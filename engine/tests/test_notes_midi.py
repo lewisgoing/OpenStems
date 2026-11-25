@@ -307,12 +307,13 @@ def test_times_land_on_the_tempo_grid() -> None:
 
 
 def test_a_note_refuses_what_the_writer_cannot_carry() -> None:
-    for bad in (
+    cases: list[dict[str, Any]] = [
         {"velocity": 90.5},
         {"velocity": True},
         {"bend": ((0.0, float("nan")),)},
         {"bend": ((float("inf"), 0.0),)},
-    ):
+    ]
+    for bad in cases:
         with pytest.raises(DomainError):
             Note(0.0, 1.0, 60.0, **bad)
 
