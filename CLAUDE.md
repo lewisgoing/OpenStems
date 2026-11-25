@@ -46,6 +46,8 @@ Engine (run from `engine/`):
   with the FakeEngine and synthetic beats
 - `uv run pytest tests/test_separate_selection.py`: a part of a song separated alone (the
   setting, `POST /v1/jobs/{id}/range`, the run), with the FakeEngine
+- `uv run pytest tests/test_rename.py`: a song's name by the user (the rule, a run under a
+  name, stems renamed on the disk, both routes), with the FakeEngine
 - `uv run openstems serve`: start the local API (prints a JSON line with port and token)
 - `uv run openstems openapi --out openapi.json`: export the schema after any API change, then
   `pnpm gen:api` in `app/` (a test fails if `engine/openapi.json` is stale)
@@ -85,7 +87,8 @@ App (run from `app/`):
   The main views are taken in light as well (`light-1-empty.png` to `light-tray.png`),
   the welcome's steps in both (`welcome-1-folders.png` to `light-welcome-3-models.png`) and
   the row menus (`3b-row-menu.png`, `tray-4b-row-menu.png`), and the foot of Settings with
-  its links to the website (`7b-settings-about.png`). The trimmer is taken in both
+  its links to the website (`7b-settings-about.png`). Renaming is taken in both
+  (`rename-1-menu.png` to `rename-5-panel-field.png`, and `light-` the same). The trimmer is taken in both
   (`trim-1-open.png` to `trim-5-queue-part.png`, `light-trim-1-open.png` to
   `light-trim-5-queue-part.png`), on a drum loop the spec writes
 - `pnpm e2e theme`: the theme switch, both windows, the pick across a restart
@@ -97,6 +100,8 @@ App (run from `app/`):
   song's own file; "Separate only the trimmed part"; Trim from the stems panel; a stem that
   enters late (`OPENSTEMS_FAKE_LATE=<stem>:<seconds>` leaves a FakeEngine stem silent at its
   start, so with Trim silence on its file begins later in the song)
+- `pnpm e2e rename`: a song renamed from its row's menu before it runs, then its stems on
+  the disk from the stems panel (also while they play) and from History
 - `pnpm e2e low-memory`: the CPU note and the marks of an 8 GB machine, with the FakeEngine
   (`OPENSTEMS_FAKE_OOM`, `OPENSTEMS_MEMORY_GB`)
 - `README_SHOTS=1 pnpm e2e -g "readme pictures"`: retake the README's pictures into
@@ -400,6 +405,33 @@ finished one is re-tagged) and `POST /v1/stemsets/analysis` (a folder). In the a
 `components/TempoKey.tsx` is the pair of fields, in the queue row of a waiting song and in
 the stems panel. What may be typed is decided in `retag.clean_bpm`/`clean_key` and in
 `app/src/lib/tempokey.ts`: change both together. `docs/adr/0019-edit-tempo-key.md`.
+
+A song's name: a song goes by its file's name until the user gives it another, and the
+name is the song's, not a row's. A job's `name` option (`RunOptions.name`, `Track.title`)
+names a run: the folder `<output>/<name>/<recipe>`, the stems through `{track}`, and
+`source.name` in the manifest; it is not in the cache key. `JobInfo.track_name` is that
+name or else the file's. `POST /v1/jobs/{id}/name` (`Service.rename_job`) names every row
+of the same file: a row that waits keeps it for its run, and stems that are written are
+renamed on the disk. `POST /v1/stemsets/name` (`rename_stem_set`) does the same from a stem
+folder and resolves with the stem set where it is now. `pipeline/rename.py` (`rename_song`)
+is the disk's part: the song's folder first (on Windows it cannot move while a file in it
+is open elsewhere, and then nothing has changed), then the stems and MIDI files of every
+stem folder in it and each manifest, undone if a step fails; a folder or file that has the
+new name stops it. Mixes and clips keep the names they have. `Service._rename_folder` has
+the index and the queue follow (`JobManager.moved`, `set_name`), and refuses while the song
+runs. A file queued again takes the name it was given (`Service._given_name`). A part
+separated alone keeps its label: the job's route composes "<name> (<label>)", the stem
+set's takes the name whole. null gives the file's name back. The song's own file is never
+renamed. What may be typed is decided in `clean_name` (`domain/naming.py`) and `cleanName`
+(`app/src/lib/songname.ts`), both tested against `engine/tests/fixtures/song_names.json`:
+change both together. In the app `components/SongName.tsx` is the title that turns into a
+field in place (`.name-input`: margin takes back padding, so nothing moves; no motion);
+`useRename` in `api/queries.ts` saves. Ways in: Rename in the queue row's menu (an item
+with `takesFocus` keeps the closing menu from taking the focus back: `finalFocus` in
+`RowMenu.tsx`), the pencil and F2 in the stems panel, and a double click on a title where a
+click does not move it (`doubleClick`: not a finished row whose stems are closed, since the
+first click opens them and the list can reflow). The quick-drop window has none.
+`docs/adr/0027-rename.md`.
 
 Clips: a stretch of a song as a file of its own, to drag into a DAW. `POST /v1/clips`
 (`pipeline/clip.py`) cuts it from stems of one stem set, summed into one file or one file

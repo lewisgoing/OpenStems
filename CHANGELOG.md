@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- **Rename a song.** A song no longer has to go by its file's name. Right-click it in the
+  queue and choose Rename, or double-click its title, and type over it: the title becomes a
+  field where it stands, Enter saves, Escape puts back what was there. A song that waits is
+  separated under its new name. For a song that is already separated, the stem folder and
+  the stems in it are renamed too, for every recipe it was run with; the stems panel has a
+  small pencil beside the title and F2 for that, and History takes a double click. The name
+  is the song's: every row of the same file follows, and the file queued again later keeps
+  it. Empty the field to go back to the file's name. The song's own file is never renamed. A
+  name that another song already has is refused, and so is a rename while the song is being
+  separated. A project in a DAW that already uses the stems will need to find them again,
+  as after renaming a folder by hand. The same on Windows and a Mac, where it has not been
+  seen yet.
+
 ## 0.4.2 (2026-11-24)
 
 - **Search the queue and pick its order.** The queue has a search field and a menu for the
