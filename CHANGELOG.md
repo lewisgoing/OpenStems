@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.2 (2026-11-24)
+
+- **Search the queue and pick its order.** The queue has a search field and a menu for the
+  order of the list. The newest song is now first; the menu also has Oldest, Name and Run
+  order, and the pick is remembered. Search finds a song by its name or its recipe's, with
+  every word typed, whatever the case or the accents, and the count reads "2 of 14" while it
+  narrows the list. Ctrl+F (Cmd+F on a Mac) goes to the field; Escape empties it. Dragging a
+  waiting song to another place is in Run order, the order songs are separated in; "Move to
+  the top" and "Move to the bottom" in a row's right-click menu work in every order. The
+  quick-drop window is unchanged. The same on Windows and a Mac, where it has not been seen
+  yet.
+- **Links to the website.** Settings > About opens the website, the changelog, "Will it
+  run?" and the support page in the browser, and on a Mac so does the Help menu.
+
 ## 0.4.1 (2026-11-24)
 
 - **"module 'torch' has no attribute 'device'" no longer sticks.** If PyTorch failed to load

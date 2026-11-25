@@ -178,6 +178,10 @@ menu bar, and a few things differ: see [macOS](#macos).
 
 - **Songs wait for Start.** What you drop is queued; press Start (or Ctrl+Enter) to run it.
   Settings > Queue can make songs start by themselves instead.
+- **Search the queue and pick its order.** The newest song is first. The menu beside the
+  search has Oldest, Name and Run order as well, and remembers the pick. Search (Ctrl+F)
+  finds a song by its name or its recipe's. To change when a waiting song runs, drag it in
+  Run order, or use "Move to the top" and "Move to the bottom" in its right-click menu.
 - **Pick the format** (WAV, FLAC or MP3) next to the quality, in either window.
 - **Paste a link** with Ctrl+V or the link button, and the song is fetched and queued.
 - **The icon tells you what is going on**: a ring while a song is being separated, a dot when
@@ -241,7 +245,7 @@ in the trimmer.
 - **Trim silence and normalize**, per stem. Both are off by default, because trimmed stems no
   longer line up at bar 1 and normalized stems no longer sit at their level in the mix.
 - **Keyboard.** Ctrl+1 to Ctrl+4 switch between Queue, History, Models and Settings; Ctrl+V
-  pastes a link; Ctrl+Enter starts the queue; Space plays and pauses.
+  pastes a link; Ctrl+Enter starts the queue; Ctrl+F searches it; Space plays and pauses.
 - **Light or dark.** The three icons at the foot of the sidebar pick Light, Dark or System,
   which follows the computer's setting. Dark until you pick otherwise. Also under Settings >
   Appearance.
@@ -406,7 +410,7 @@ this repository's releases or built yourself.
 - Closing the window never quits: the app stays in the Dock and the menu bar. Quit with Cmd+Q.
   Settings is also in the OpenStems menu (Cmd+comma).
 - Shortcuts use Cmd where this page says Ctrl: Cmd+V pastes a link, Cmd+1 to Cmd+4 switch
-  views, Cmd+Enter starts the queue. In the trimmer Option places a part freely where Windows
+  views, Cmd+Enter starts the queue, Cmd+F searches it (not seen on a Mac yet). In the trimmer Option places a part freely where Windows
   uses Alt, and a trackpad pinch zooms as well as Cmd and the wheel (not seen on a Mac yet).
 - Settings has "Menu bar" where Windows has "Tray", with "Open at login" in place of "Start
   with Windows" and no "Keep running in the tray" switch.

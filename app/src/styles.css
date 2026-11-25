@@ -651,6 +651,54 @@
   color: var(--color-faint);
 }
 
+/* The queue's search: the height of the small buttons beside it. It gives way before they do
+   when the stems panel leaves the list little room. */
+.queue-search {
+  position: relative;
+  display: flex;
+  flex: 0 1 190px;
+  min-width: 84px;
+  align-items: center;
+}
+.queue-search .input {
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  padding: 0 24px 0 26px;
+  font-size: 12px;
+}
+.queue-search-icon {
+  position: absolute;
+  left: 9px;
+  color: var(--color-faint);
+  pointer-events: none;
+}
+.queue-search:focus-within .queue-search-icon {
+  color: var(--color-muted);
+}
+.queue-search-clear {
+  position: absolute;
+  right: 4px;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-faint);
+  cursor: pointer;
+}
+.queue-search-clear:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent-fg) 70%, transparent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .queue-search-clear:hover {
+    background: var(--color-hover);
+    color: var(--color-text);
+  }
+}
+
 /* ---- toasts: transitions, so rapid toasts retarget instead of restarting ---- */
 
 .toast {

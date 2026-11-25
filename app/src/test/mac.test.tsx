@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import type { ReactNode } from 'react'
+import { type ReactNode, createRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SetupStatus, UpdateStatus } from '../../electron/bridge'
 import { recommendVariant } from '../../electron/variant'
@@ -14,7 +14,7 @@ import { TrimEditor } from '@/trimmer/TrimEditor'
 import { FRESH, type TrimMemory } from '@/trimmer/memory'
 import { isZoomWheel, zoomFactor } from '@/trimmer/model'
 import { songOfJob } from '@/trimmer/song'
-import { StartButton } from '@/views/QueueView'
+import { QueueSearch, StartButton } from '@/views/QueueView'
 import { EngineBuildRow, TraySettings, gpuHint, gpuMemory, selfTestLines } from '@/views/SettingsView'
 import { bridge } from './setup'
 import { TrimPlayer } from './trimstub'
@@ -241,6 +241,29 @@ describe('shortcuts on a Mac', () => {
     expect(onStart).not.toHaveBeenCalled()
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true })
     expect(onStart).toHaveBeenCalledTimes(1)
+  })
+
+  it("goes to the queue's search on Command+F, not on Control+F", () => {
+    const field = createRef<HTMLInputElement>()
+    render(tree(<QueueSearch field={field} query="" onQuery={vi.fn()} />))
+    const search = screen.getByRole('textbox', { name: 'Search the queue' })
+    expect(search).toHaveAttribute('title', 'Search the queue (⌘F)')
+    fireEvent.keyDown(window, { key: 'f', ctrlKey: true })
+    expect(search).not.toHaveFocus()
+    fireEvent.keyDown(window, { key: 'f', metaKey: true })
+    expect(search).toHaveFocus()
+  })
+
+  it('keeps Ctrl+F on Windows', () => {
+    bridge.info.platform = 'win32'
+    const field = createRef<HTMLInputElement>()
+    render(tree(<QueueSearch field={field} query="" onQuery={vi.fn()} />))
+    const search = screen.getByRole('textbox', { name: 'Search the queue' })
+    expect(search).toHaveAttribute('title', 'Search the queue (Ctrl+F)')
+    fireEvent.keyDown(window, { key: 'f', metaKey: true })
+    expect(search).not.toHaveFocus()
+    fireEvent.keyDown(window, { key: 'f', ctrlKey: true })
+    expect(search).toHaveFocus()
   })
 
   it('keeps Ctrl+Enter on Windows', () => {

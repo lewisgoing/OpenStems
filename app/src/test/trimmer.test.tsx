@@ -49,6 +49,7 @@ import {
 } from '@/trimmer/model'
 import { colorChannels, mixColors } from '@/trimmer/canvas'
 import { canTrim, fillFigures, gridChange, jobRange, moveRange, resetChange, songGrid, songOfJob, songOfStemSet, songSeconds } from '@/trimmer/song'
+import { SORT_KEY } from '@/lib/queuesort'
 import { QueueView, statusText } from '@/views/QueueView'
 import { SettingsView } from '@/views/SettingsView'
 import { bridge } from './setup'
@@ -1215,6 +1216,8 @@ describe("a waiting song's part, separated alone", () => {
 /* ---- the ways in ------------------------------------------------------------------- */
 
 describe('the ways into the trimmer', () => {
+  // These are about the rows, not their order: the list is pinned to the order songs run in.
+  beforeEach(() => localStorage.setItem(SORT_KEY, 'run'))
   const settings = { default_recipe: 'full-song', default_quality: 'balanced', sum_to_mix: false } as Parameters<typeof SelectionProvider>[0]['settings']
   const queue = (onTrim = vi.fn()) =>
     render(
@@ -1291,6 +1294,8 @@ describe('the ways into the trimmer', () => {
 /* ---- separating only the part of a waiting song ----------------------------------- */
 
 describe('separating only the part of a waiting song', () => {
+  // These are about the rows, not their order: the list is pinned to the order songs run in.
+  beforeEach(() => localStorage.setItem(SORT_KEY, 'run'))
   const PART = { start: 2.5, end: 4.5, label: 'bar 2' }
   const SEL = { start: 2.5, end: 4.5 }
   const GRID_BODY = { bpm: 120, downbeat: 0.5, beats_per_bar: 4 }

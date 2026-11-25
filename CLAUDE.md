@@ -325,6 +325,17 @@ handlers a window passes (the quick-drop window has no reordering or Trim); `mov
 `QueueView.tsx` is the reorder shared with dragging. `shell:reveal` answers whether the file
 was there. Nothing in the menu deletes a file. `docs/adr/0022-row-menus.md`.
 
+Queue order and search: the engine lists jobs in the order they run; the full window sorts
+and narrows that list itself (`app/src/lib/queuesort.ts`, plain functions: `sortQueue`,
+`searchTerms`, `matchesSearch`, `loadSort`). Newest first by default, also Oldest, Name and
+Run order; the pick is `openstems.queue.sort.v1` in local storage. Links being fetched are
+sorted with the jobs. A waiting song's drag handle is there in Run order only (`reorderable`);
+the menu's moves stay. Search matches every word in the song's or recipe's name, accents and
+case aside; Ctrl+F (Cmd+F) goes to it (`QueueSearch` in `QueueView.tsx`). A row animates in
+only when it is new to the queue (`enter`, read once), never when a search or a sort brings
+it back. Tests about rows, not their order, pin `SORT_KEY` to `run`. The quick-drop window
+has neither. `docs/adr/0026-queue-search-sort.md`.
+
 Manual start: a queued job can be held (`held` on a job; `JobManager.release` lets it go,
 `POST /v1/jobs/start` and `/v1/jobs/{id}/start`). Whether a new job is held follows the
 `auto_start` setting, off by default; the watch folder always starts its files.

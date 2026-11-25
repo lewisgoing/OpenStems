@@ -106,7 +106,36 @@ test('recipe, quality, queue controls and the other views', async () => {
   // The same file again comes back from the cache.
   await addFiles('First Song.mp3')
   await expect(jobs()).toHaveCount(3)
+  // The newest song is first.
+  await expect(jobs().first().getByTestId('job-status')).toHaveText('Done, from the cache')
+
+  // Another order, kept for the next time the queue is shown.
+  const sort = ctx.page.getByRole('combobox', { name: 'Sort the queue' })
+  await expect(sort).toContainText('Newest')
+  await sort.click()
+  await ctx.page.getByRole('option', { name: /^Oldest/ }).click()
   await expect(jobs().last().getByTestId('job-status')).toHaveText('Done, from the cache')
+  await expect(jobs().first()).toContainText('First Song')
+  await ctx.page.getByRole('button', { name: 'History' }).click()
+  await ctx.page.getByRole('button', { name: 'Queue', exact: true }).click()
+  await expect(sort).toContainText('Oldest')
+  await sort.click()
+  await ctx.page.getByRole('option', { name: /^Newest/ }).click()
+  await expect(jobs().first().getByTestId('job-status')).toHaveText('Done, from the cache')
+
+  // Search narrows the list and says how many it left; Ctrl+F goes to it, Escape empties it.
+  const search = ctx.page.getByRole('textbox', { name: 'Search the queue' })
+  await ctx.page.keyboard.press('ControlOrMeta+f')
+  await expect(search).toBeFocused()
+  await ctx.page.keyboard.type('second')
+  await expect(jobs()).toHaveCount(1)
+  await expect(jobs().first()).toContainText('Second Song')
+  await expect(ctx.page.getByTestId('queue-count')).toHaveText('1 of 3')
+  await search.fill('no such song')
+  await expect(ctx.page.getByTestId('queue-no-match')).toContainText('Nothing in the queue matches "no such song".')
+  await ctx.page.keyboard.press('Escape')
+  await expect(search).toHaveValue('')
+  await expect(jobs()).toHaveCount(3)
 
   // Remove one job, then clear the rest.
   await jobs().first().hover()
