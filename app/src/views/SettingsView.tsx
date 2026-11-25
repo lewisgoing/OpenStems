@@ -53,12 +53,6 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
             </Row>
           </Group>
 
-          <Group title="Getting started">
-            <Row label="Welcome" hint="Walk through the folders, the format and the recommended models again. Nothing changes until you pick something.">
-              <Button onClick={showWelcomeAgain}>Show the welcome again</Button>
-            </Row>
-          </Group>
-
           <Group title="Folders">
             <FolderRow label="Output folder" hint="One folder per track and recipe." value={settings.output_dir} onPick={() => pickFolder('output_dir')} />
             <FolderRow label="Models folder" hint="Downloaded weights. Uninstalling the app leaves it alone." value={settings.models_dir} onPick={() => pickFolder('models_dir')} />
@@ -226,6 +220,12 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
               <Button variant="ghost" onClick={() => system && void window.openstems.openFolder(system.logs_dir)}>
                 Open the logs folder
               </Button>
+            </Row>
+          </Group>
+
+          <Group title="Getting started">
+            <Row label="Welcome" hint="Walk through the folders, the format and the recommended models again. Nothing changes until you pick something.">
+              <Button onClick={showWelcomeAgain}>Show the welcome again</Button>
             </Row>
           </Group>
 
