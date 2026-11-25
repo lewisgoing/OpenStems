@@ -366,19 +366,151 @@ function setupChain() {
   io.observe(chain)
 }
 
-function setupSum() {
+// every-stem's 13 outputs, in groups, with the color token each is drawn in
+const SUM_LANES = [
+  [['lead', 'lead vocals', 'vocals'], ['backing', 'backing vocals', 'backing']],
+  [['kick', 'kick', 'kick'], ['snare', 'snare', 'snare'], ['toms', 'toms', 'toms'], ['hh', 'hi-hat', 'hh'],
+    ['ride', 'ride', 'ride'], ['crash', 'crash', 'crash'], ['otherdrums', 'other drums', 'otherdrums']],
+  [['bass', 'bass', 'bass']],
+  [['guitar', 'guitar', 'guitar'], ['piano', 'piano', 'piano'], ['other', 'other', 'other']],
+]
+
+/**
+ * One canvas: 13 lanes, each bar in its stem's color. Summed, every column's bars slide
+ * into one stack, so the song's waveform is visibly made of the 13 parts.
+ */
+function setupSum(stems) {
   const toggle = document.getElementById('sum-toggle')
-  const box = document.getElementById('sum')
   const read = document.getElementById('sum-read')
-  if (!toggle) return
+  const canvas = document.getElementById('sum-canvas')
+  if (!toggle || !canvas) return
+  const ctx = canvas.getContext('2d')
+  const css = getComputedStyle(document.documentElement)
+  const lanes = SUM_LANES.flatMap((group, g) =>
+    group.map(([key, label, token]) => ({ key, label, g, color: css.getPropertyValue(`--${token}`).trim() || '#ccc' })),
+  )
+  const muted = css.getPropertyValue('--muted').trim() || '#8d9098'
+  const ink = css.getPropertyValue('--ink').trim() || '#ecebe6'
+
+  let t = 0 // 0: lanes, 1: summed
+  let target = 0
+  let last = 0
+  let frame = 0
+
+  function paint() {
+    const dpr = Math.min(2, devicePixelRatio || 1)
+    const w = canvas.clientWidth
+    const h = canvas.clientHeight
+    if (!w || !h) return
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+      canvas.width = Math.round(w * dpr)
+      canvas.height = Math.round(h * dpr)
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, w, h)
+
+    const labelW = w < 560 ? 86 : 132
+    const gap = 14
+    const laneH = (h - gap * (SUM_LANES.length - 1)) / lanes.length
+    const x0 = labelW
+    const plotW = w - x0
+    const step = plotW / COLS < 3 ? 2 : 1 // fold columns in pairs on a phone
+    const cols = Math.floor(COLS / step)
+    const colW = plotW / cols
+    const barW = Math.max(1, colW - (colW > 4 ? 1.6 : 0.8))
+    const value = (key, c) => {
+      const v = stems[key]
+      return step === 1 ? v[c] : Math.max(v[c * 2], v[c * 2 + 1])
+    }
+    const laneMid = (i) => i * laneH + lanes[i].g * gap + laneH / 2
+
+    // the scale of the stack: the tallest column fills the height
+    let most = 0
+    const totals = new Float32Array(cols)
+    for (let c = 0; c < cols; c++) {
+      let sum = 0
+      for (const l of lanes) sum += value(l.key, c)
+      totals[c] = sum
+      most = Math.max(most, sum)
+    }
+    const k = (h - 12) / most
+
+    // labels and baselines fade as the lanes leave
+    const away = easeInOut(clamp(t * 1.6))
+    ctx.font = `${w < 560 ? 10 : 11}px "JetBrains Mono", ui-monospace, monospace`
+    ctx.textBaseline = 'middle'
+    lanes.forEach((l, i) => {
+      const y = laneMid(i)
+      ctx.globalAlpha = 1 - away
+      ctx.fillStyle = l.color
+      ctx.beginPath()
+      ctx.arc(4, y, 3, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = muted
+      ctx.fillText(l.label, 14, y)
+      ctx.globalAlpha = 0.09 * (1 - away)
+      ctx.fillStyle = ink
+      ctx.fillRect(x0, Math.round(y), plotW, 1)
+    })
+    const arrive = easeInOut(clamp(t * 1.6 - 0.6))
+    if (arrive > 0) {
+      ctx.globalAlpha = arrive
+      ctx.fillStyle = ink
+      ctx.fillText('the song', 0, h / 2)
+    }
+    ctx.globalAlpha = 1
+
+    // the bars: each column sweeps over a little after the one to its left
+    lanes.forEach((l, i) => {
+      ctx.fillStyle = l.color
+      const mid = laneMid(i)
+      for (let c = 0; c < cols; c++) {
+        const v = value(l.key, c)
+        if (v < 0.012) continue
+        let below = 0
+        for (let j = 0; j < i; j++) below += value(lanes[j].key, c)
+        const p = easeInOut(clamp(t * 1.35 - (c / cols) * 0.35))
+        const laneBar = Math.min(laneH - 4, v * (laneH - 4))
+        const laneTop = mid - laneBar / 2
+        const stackTop = h / 2 - (totals[c] * k) / 2 + below * k
+        const top = laneTop + (stackTop - laneTop) * p
+        const bar = laneBar + (v * k - laneBar) * p
+        ctx.fillRect(x0 + c * colW, top, barW, Math.max(1, bar))
+      }
+    })
+  }
+
+  function tick(now) {
+    const dt = last ? now - last : 16
+    last = now
+    const dir = Math.sign(target - t)
+    t = clamp(t + (dir * dt) / 1100)
+    paint()
+    if (t !== target) frame = requestAnimationFrame(tick)
+    else frame = 0
+  }
+
   toggle.addEventListener('click', () => {
     const on = toggle.getAttribute('aria-pressed') !== 'true'
     toggle.setAttribute('aria-pressed', String(on))
-    box.classList.toggle('summed', on)
     read.textContent = on
       ? 'summed: within −144.9 dB of the song (a test song)'
       : '13 files, each sample in exactly one'
+    target = on ? 1 : 0
+    if (reduceMotion.matches) {
+      t = target
+      paint()
+      return
+    }
+    if (!frame) {
+      last = 0
+      frame = requestAnimationFrame(tick)
+    }
   })
+
+  new ResizeObserver(() => paint()).observe(canvas)
+  document.fonts?.ready.then(paint)
+  paint()
 }
 
 /* ------------------------------------------------------------------ */
@@ -766,7 +898,7 @@ drawWaves(STEMS)
 setupSupport()
 setupRun()
 setupChain()
-setupSum()
+setupSum(STEMS)
 setupTrim(STEMS)
 setupHow()
 setupReveal()

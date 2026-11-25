@@ -31,15 +31,13 @@
     <span>openstems</span>
   </a>
   <nav class="nav" aria-label="Sections">
-    <a class="press" href="#how"><b>01</b> how</a>
-    <a class="press" href="#every"><b>02</b> every stem</a>
-    <a class="press" href="#trim"><b>03</b> trim</a>
-    <a class="press" href="#features"><b>04</b> features</a>
-    <a class="press" href="#run"><b>05</b> will it run</a>
-    <a class="press" href="#download"><b>06</b> download</a>
-    <a class="press" href="#changelog"><b>07</b> changelog</a>
-    <a class="press" href="#support"><b>08</b> support</a>
-  </nav></header>
+    <a class="press" href="#every">Every stem</a>
+    <a class="press" href="#trim">Trim studio</a>
+    <a class="press" href="#run">Will it run?</a>
+    <a class="press" href="#changelog">Changelog</a>
+  </nav>
+  <a class="nav-cta press" href="#download">Download</a>
+</header>
 
 <main>
 
@@ -174,20 +172,7 @@
       <p class="mono sum-read" id="sum-read">13 files, each sample in exactly one</p>
     </div>
     <div class="sum-lanes" id="sum-lanes">
-      <div class="sl" style="--c:var(--vocals);--n:0"><span>lead vocals</span><div data-wave="lead"></div></div>
-      <div class="sl" style="--c:var(--backing);--n:1"><span>backing vocals</span><div data-wave="backing"></div></div>
-      <div class="sl" style="--c:var(--kick);--n:2"><span>kick</span><div data-wave="kick"></div></div>
-      <div class="sl" style="--c:var(--snare);--n:3"><span>snare</span><div data-wave="snare"></div></div>
-      <div class="sl" style="--c:var(--toms);--n:4"><span>toms</span><div data-wave="toms"></div></div>
-      <div class="sl" style="--c:var(--hh);--n:5"><span>hh</span><div data-wave="hh"></div></div>
-      <div class="sl" style="--c:var(--ride);--n:6"><span>ride</span><div data-wave="ride"></div></div>
-      <div class="sl" style="--c:var(--crash);--n:7"><span>crash</span><div data-wave="crash"></div></div>
-      <div class="sl" style="--c:var(--otherdrums);--n:8"><span>other drums</span><div data-wave="otherdrums"></div></div>
-      <div class="sl" style="--c:var(--bass);--n:9"><span>bass</span><div data-wave="bass"></div></div>
-      <div class="sl" style="--c:var(--guitar);--n:10"><span>guitar</span><div data-wave="guitar"></div></div>
-      <div class="sl" style="--c:var(--piano);--n:11"><span>piano</span><div data-wave="piano"></div></div>
-      <div class="sl" style="--c:var(--other);--n:12"><span>other</span><div data-wave="other"></div></div>
-      <div class="sl sl-mix" aria-hidden="true"><span>mix</span><div data-wave="mix"></div></div>
+      <canvas id="sum-canvas" role="img" aria-label="The 13 stems of every-stem, one lane each: lead and backing vocals; kick, snare, toms, hi-hat, ride, crash and other drums; bass; guitar, piano and other. Summed, they stack into the song's waveform."></canvas>
     </div>
   </div>
 
