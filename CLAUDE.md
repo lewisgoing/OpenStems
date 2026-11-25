@@ -43,9 +43,14 @@ Engine (run from `engine/`):
     sets into `D:\lew-stems\bench`. Slakh's archive is shuffled, so it is downloaded whole to D:
     (104 GB free needed; it resumes after a drop or a restart), checked, the test songs
     extracted and the archive deleted.
-  - `uv run --no-sync --with mido==1.3.3 --with mir_eval==0.8.2 python ../scripts/midi_bench.py score|pack`:
+  - `uv run --no-sync --with mido==1.3.3 --with mir_eval==0.8.2 --with swift-f0==0.3.0 python ../scripts/midi_bench.py score|pack`:
     score transcribers with mir_eval, or build the audio pack the owner runs through Melodyne
-    and NeuralNote.
+    and NeuralNote. `score --pack-only --methods ...,swiftf0-midi,melodyne` compares with
+    Melodyne on the same clips. Melodyne's notes file says 120 BPM, but its notes sit on the
+    tempo in the `<document>.tempo.mid` it writes beside it, which the scorer reads
+    (`melodyne_tempo`). The owner's exports go in `baseline-pack/midi/` as
+    `<clip>.melodyne.mid`, copied from the `<clip>.mid` Melodyne names them; the originals
+    are left as they are.
   - `python ../scripts/make_midi_import_tests.py`: the MIDI files that show how a DAW imports
     bends, MPE and tempo maps.
 - `python ../scripts/compare_builds.py run --out DIR MODEL...` in each environment, then

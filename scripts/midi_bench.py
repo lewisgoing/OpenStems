@@ -3,8 +3,9 @@
 The data comes from scripts/midi_bench_data.py (default D:\\lew-stems\\bench). Run from
 engine/, with mido and mir_eval added for the run only (they are not engine dependencies):
 
-    uv run --no-sync --with mido==1.3.3 --with mir_eval==0.8.2 python ../scripts/midi_bench.py \\
-        score [--sets guitarset,vocadito] [--methods yin,annotator2,melodyne,neuralnote]
+    uv run --no-sync --with mido==1.3.3 --with mir_eval==0.8.2 --with swift-f0==0.3.0 \\
+        python ../scripts/midi_bench.py score [--sets guitarset,vocadito] \\
+        [--methods yin,annotator2,swiftf0-midi,melodyne,neuralnote] [--pack-only]
     ... midi_bench.py pack     # audio for Melodyne and NeuralNote, with instructions
 
 Methods:
@@ -13,17 +14,25 @@ Methods:
   baseline to beat. Monophonic, so polyphonic guitar is expected to score low.
 - ``annotator2``: vocadito's second annotator scored against the first, the human ceiling.
 - ``pyin``, ``swiftf0``, ``swiftf0-notes``, ``crepe``: pitch trackers (see below).
+- ``swiftf0-midi``: ``swiftf0-notes`` as the whole keys the app's MIDI file would carry (M1's
+  tuning-aware rounding). Use it to compare with exports that hold whole keys only, such as
+  Melodyne's: a fractional pitch gains from the 50-cent window near a semitone's edge.
 - ``onsets``, ``superflux``: drum hits with no weights, librosa's spectral flux and its
   SuperFlux variant. Drum stems are scored on timing alone (onset within 50 ms, hits closer
   than 30 ms counted once), with recall per drum part read from the General MIDI notes.
 - ``melodyne``, ``neuralnote``: MIDI the owner exported for the pack, read from
-  ``<bench>/baseline-pack/midi/<item>.<tool>.mid``. Each file is read with its own tempo map
-  and shifted by one global offset found by matching onsets (Melodyne starts its export at the
-  bar of the first note). The offset applied is reported.
+  ``<bench>/baseline-pack/midi/<item>.<tool>.mid`` and shifted by one global offset found by
+  matching onsets. The offset applied is reported, and a file with notes past the end of its
+  audio is flagged (a wrong tempo, or another file's notes in it). Melodyne's notes file says
+  120 BPM, but its notes sit on the beats of Melodyne's document tempo, which Melodyne writes
+  to a second file, ``<document>.tempo.mid`` (``melodyne_tempo``). Its export starts at the
+  document's 0, so its offset is searched within 0.3 s; NeuralNote's within 6 s.
 
 Scores are mir_eval's note metrics at their defaults: onset within 50 ms and pitch within 50
 cents; the offset variant also needs the offset within 20% of the note or 50 ms. Octave errors
 are estimated notes left unmatched that sit an octave from a reference note at the same onset.
+The summary averages each group (a set, a stem and, for GuitarSet, solo or comp) over only the
+items every method in it scored, and names the items it left out.
 """
 
 from __future__ import annotations
@@ -343,6 +352,14 @@ def method_swiftf0_notes(item: Item, bench: Path) -> list[Note] | None:
     return [(n.start, n.end, 69 + 12 * float(np.log2(n.pitch_hz / 440.0)), 0) for n in notes]
 
 
+def method_swiftf0_midi(item: Item, bench: Path) -> list[Note] | None:
+    from openstems.domain.notes import estimate_tuning, round_pitch
+
+    notes = method_swiftf0_notes(item, bench) or []
+    tuning = estimate_tuning([n[2] for n in notes], [n[1] - n[0] for n in notes])
+    return [(s, e, float(round_pitch(p, tuning)[0]), v) for s, e, p, v in notes]
+
+
 def method_crepe(item: Item, bench: Path) -> list[Note] | None:
     import torch
     import torchcrepe
@@ -400,22 +417,81 @@ def method_superflux(item: Item, bench: Path) -> list[Note] | None:
     return _hits(item, superflux=True)
 
 
-def read_midi(path: Path) -> list[Note]:
-    """Notes in seconds, read through the file's own tempo map. Pitch bends are ignored."""
+def _tempo_changes(mid) -> list[tuple[float, int]]:
+    """A MIDI file's tempo map as (beat, microseconds per beat) pairs, the first at beat 0."""
     import mido
 
+    changes: list[tuple[float, int]] = []
+    ticks = 0
+    for msg in mido.merge_tracks(mid.tracks):
+        ticks += msg.time
+        if msg.type == "set_tempo":
+            beat = ticks / mid.ticks_per_beat
+            if changes and changes[-1][0] == beat:
+                changes.pop()
+            changes.append((beat, msg.tempo))
+    if not changes or changes[0][0] > 0:
+        changes.insert(0, (0.0, 500_000))  # MIDI's default, 120 BPM
+    return changes
+
+
+def _seconds(beat: float, changes: list[tuple[float, int]]) -> float:
+    seconds = 0.0
+    for i, (start, tempo) in enumerate(changes):
+        end = changes[i + 1][0] if i + 1 < len(changes) else float("inf")
+        if beat <= end:
+            return seconds + (beat - start) * tempo / 1e6
+        seconds += (end - start) * tempo / 1e6
+    return seconds
+
+
+def read_midi(path: Path, tempo_from: Path | None = None) -> list[Note]:
+    """Notes in seconds, read through the file's own tempo map, or through the tempo map of
+    ``tempo_from`` when given (Melodyne's tempo file). Pitch bends are ignored."""
+    import mido
+
+    mid = mido.MidiFile(path)
+    changes = _tempo_changes(mido.MidiFile(tempo_from) if tempo_from else mid)
     notes: list[Note] = []
     open_notes: dict[tuple[int, int], tuple[float, int]] = {}
-    now = 0.0
-    for msg in mido.MidiFile(path):
-        now += msg.time
+    ticks = 0
+    for msg in mido.merge_tracks(mid.tracks):
+        ticks += msg.time
+        if msg.type not in ("note_on", "note_off"):
+            continue
+        now = _seconds(ticks / mid.ticks_per_beat, changes)
         if msg.type == "note_on" and msg.velocity > 0:
             open_notes[(msg.channel, msg.note)] = (now, msg.velocity)
-        elif msg.type in ("note_off", "note_on"):
+        else:
             started = open_notes.pop((msg.channel, msg.note), None)
             if started is not None:
                 notes.append((started[0], now, float(msg.note), started[1]))
     return sorted(notes)
+
+
+def melodyne_tempo(path: Path) -> Path | None:
+    """The tempo file to read a Melodyne export with: ``<item>.melodyne.tempo.mid`` beside it,
+    or else the folder's ``*.tempo*.mid`` when they all hold the same tempo map.
+
+    In the owner's exports of 2026-11-24 every notes file said 120 BPM, but its notes sat on
+    the beats of Melodyne's document tempo, 64.511 BPM, which only the ``Untitled.tempo.mid``
+    Melodyne wrote beside each export held. Read at 120, every note came out at 0.538 times
+    its real time and each file scored about 0.1; at 64.511 the notes line up within 10 ms."""
+    import mido
+
+    own = path.with_name(path.name.removesuffix(".mid") + ".tempo.mid")
+    if own.is_file():
+        return own
+    found = sorted(path.parent.glob("*.tempo*.mid"))
+    if not found:
+        print(f"  ! {path.name}: no Melodyne tempo file beside it; read at its own tempo")
+        return None
+    if len({tuple(_tempo_changes(mido.MidiFile(p))) for p in found}) > 1:
+        raise SystemExit(
+            f"{path.name}: the tempo files beside it disagree; copy the one Melodyne wrote "
+            f"with this export to {own.name}"
+        )
+    return found[0]
 
 
 def best_offset(reference: list[Note], estimate: list[Note], window: float = 6.0) -> float:
@@ -437,15 +513,26 @@ def best_offset(reference: list[Note], estimate: list[Note], window: float = 6.0
     return float(np.median(near)) if near.size else float(centre)
 
 
-def external(tool: str) -> Callable[[Item, Path], list[Note] | None]:
+def external(tool: str, window: float) -> Callable[[Item, Path], list[Note] | None]:
     def method(item: Item, bench: Path) -> list[Note] | None:
+        import soundfile
+
         path = bench / "baseline-pack" / "midi" / f"{item.name}.{tool}.mid"
         if not path.is_file():
             return None
-        notes = read_midi(path)
-        shift = best_offset(item.reference, notes)
+        notes = read_midi(path, melodyne_tempo(path) if tool == "melodyne" else None)
+        shift = best_offset(item.reference, notes, window)
+        notes = [(s + shift, e + shift, p, v) for s, e, p, v in notes]
+        length = soundfile.info(str(item.audio)).duration
+        late = sum(1 for n in notes if n[0] >= length)
+        early = sum(1 for n in notes if n[0] < 0)
+        if late or early:
+            print(
+                f"  ! {path.name}: {late} notes start after its audio ends ({length:.2f} s) "
+                f"and {early} before 0 (left out): a wrong tempo, or another file's notes?"
+            )
         item.extra[f"{tool}-offset"] = [(shift, shift, 0.0, 0)]
-        return [(s + shift, e + shift, p, v) for s, e, p, v in notes]
+        return [n for n in notes if n[0] >= 0]
 
     return method
 
@@ -456,11 +543,12 @@ METHODS: dict[str, Callable[[Item, Path], list[Note] | None]] = {
     "pyin": method_pyin,
     "swiftf0": method_swiftf0,
     "swiftf0-notes": method_swiftf0_notes,
+    "swiftf0-midi": method_swiftf0_midi,
     "crepe": method_crepe,
     "onsets": method_onsets,
     "superflux": method_superflux,
-    "melodyne": external("melodyne"),
-    "neuralnote": external("neuralnote"),
+    "melodyne": external("melodyne", window=0.3),
+    "neuralnote": external("neuralnote", window=6.0),
 }
 
 
@@ -541,7 +629,7 @@ def score_hits(reference: list[Note], estimate: list[Note]) -> dict[str, float]:
     return row
 
 
-PITCH_TRACKERS = {"yin", "pyin", "swiftf0", "swiftf0-notes", "crepe"}  # not for drum stems
+PITCH_TRACKERS = {"yin", "pyin", "swiftf0", "swiftf0-notes", "swiftf0-midi", "crepe"}  # not drums
 HIT_DETECTORS = {"onsets", "superflux"}  # drum stems only
 
 
@@ -566,10 +654,12 @@ def cmd_score(args: argparse.Namespace) -> None:
                 if estimate is None:
                     continue
                 condition = item.id.rsplit("/", 1)[-1] if set_name == "slakh" else "clean"
+                texture = item.id.rsplit("_", 1)[-1] if set_name == "guitarset" else ""
                 row = {
                     "set": set_name,
                     "item": item.id,
                     "kind": item.kind,
+                    "texture": texture,  # GuitarSet: "solo" (single lines) or "comp" (chords)
                     "condition": condition,
                     "method": name,
                 }
@@ -616,26 +706,31 @@ def cmd_score(args: argparse.Namespace) -> None:
         "| Octave errors |"
     )
     print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
-    keys = sorted({(r["set"], r["kind"], r["condition"]) for r in rows})
-    for set_name, kind, condition in keys:
-        for name in methods:
-            group = [
-                r
-                for r in rows
-                if (r["set"], r["kind"], r["condition"], r["method"])
-                == (set_name, kind, condition, name)
-            ]
-            if not group:
-                continue
+    left_out = []
+    keys = sorted({(r["set"], r["kind"], r["texture"], r["condition"]) for r in rows})
+    for key in keys:
+        rows_in = [r for r in rows if (r["set"], r["kind"], r["texture"], r["condition"]) == key]
+        scored = {m: {r["item"] for r in rows_in if r["method"] == m} for m in methods}
+        scored = {m: items for m, items in scored.items() if items}
+        common = set.intersection(*scored.values())
+        missing = sorted({r["item"] for r in rows_in} - common)
+        if missing:
+            left_out.append(f"{key[0]} {key[1]} {key[2]}: {', '.join(missing)}")
+        set_name, kind, texture, condition = key
+        stem = f"{kind} ({texture})" if texture else kind
+        for name in scored:
+            group = [r for r in rows_in if r["method"] == name and r["item"] in common]
 
-            def mean(key: str, group: list[dict] = group) -> float:
-                return float(np.nanmean([r[key] for r in group]))
+            def mean(field: str, group: list[dict] = group) -> float:
+                return float(np.nanmean([r[field] for r in group]))
 
             print(
-                f"| {set_name} | {kind} | {condition} | {name} | {len(group)} | "
+                f"| {set_name} | {stem} | {condition} | {name} | {len(group)} | "
                 f"{mean('onset_p'):.3f} | {mean('onset_r'):.3f} | {mean('onset_f'):.3f} | "
                 f"{mean('offset_f'):.3f} | {sum(r['octave_errors'] for r in group)} |"
             )
+    for line in left_out:
+        print(f"\nLeft out of the summary, not scored by every method: {line}")
 
 
 def cmd_separate(args: argparse.Namespace) -> None:
@@ -686,14 +781,19 @@ and from NeuralNote, and save it in midi/ under the same name with the tool adde
     midi/guitarset - 00_BN1-129-Eb_comp.melodyne.mid
     midi/guitarset - 00_BN1-129-Eb_comp.neuralnote.mid
 
-Melodyne: put the file on a track and let Melodyne detect it with the algorithm listed below.
-Do not correct any notes: the benchmark measures the first pass, as the app's would be. Then
-Settings > Save as MIDI (or drag the MIDI out). Where it starts the file does not matter: the
-scorer finds the offset.
+Melodyne: open each file in a new document of its own, at the start of the timeline, and let
+Melodyne detect it with the algorithm listed below. One file per document: an export takes
+the document's notes, and a second file left in it ends up in the first one's MIDI. Do not
+correct any notes: the benchmark measures the first pass, as the app's would be. Then
+Settings > Save as MIDI (or drag the MIDI out). Keep the <document>.tempo.mid Melodyne writes
+beside it: the notes file says 120 BPM, but its notes sit on the document's tempo, which only
+that file holds. If one export's tempo differs from the others, name its tempo file
+<file>.melodyne.tempo.mid.
 
 NeuralNote: load the file and export with the default settings.
 
-When both are in midi/, run the scorer with --methods yin,melodyne,neuralnote.
+When both are in midi/, run the scorer with
+--pack-only --methods yin,swiftf0-notes,swiftf0-midi,melodyne,neuralnote.
 
 Files and the Melodyne algorithm for each:
 """
