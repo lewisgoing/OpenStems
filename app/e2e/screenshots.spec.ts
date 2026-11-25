@@ -496,6 +496,15 @@ test('screenshots of the trimmer', async () => {
     await page.getByTestId('all-handle').hover()
     await page.locator('[data-testid="all-handle"][data-state="ready"]').waitFor()
     await shots('3-mix')
+
+    // Bar 1 a beat before the song starts: its flag waits at the left edge of the ruler.
+    await page.getByTestId('downbeat-beat-earlier').click()
+    await page.locator('[data-testid="bar-one-flag"][data-pinned="true"]').waitFor()
+    await page.locator('[data-testid="clip-handle"][data-state="ready"]').waitFor()
+    await shots('6-bar-one-before')
+    await page.getByTestId('grid-reset').click()
+    await page.locator('[data-testid="bar-one-flag"]:not([data-pinned])').waitFor()
+    await page.locator('[data-testid="clip-handle"][data-state="ready"]').waitFor()
     await page.getByTestId('trim-back').click()
     await editor.waitFor({ state: 'detached' })
 

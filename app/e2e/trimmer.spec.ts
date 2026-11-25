@@ -369,6 +369,79 @@ test('with "Separate only the trimmed part" on, Start separates just the part ch
   expect(existsSync(join(ctx.outputDir, 'First Song', 'full-song'))).toBe(false)
 })
 
+test('bar 1 dragged before the song comes back from the edge, and a part of so many bars loops', async () => {
+  await start({ OPENSTEMS_AUTO_START: '' })
+  const { page } = ctx
+  await add('Second Song.flac')
+  await page.getByTestId('job-row').getByTestId('row-trim').click()
+  await opened()
+  const downbeat = async () => Number(await editor().getAttribute('data-downbeat'))
+  // Bars of half a second, bar 1 half a second in.
+  await typeInto('tempo-field', '480')
+  await expect(editor()).toHaveAttribute('data-bpm', '480')
+  await typeInto('downbeat-field', '0.5')
+  await expect(editor()).toHaveAttribute('data-downbeat', '0.5')
+
+  // The flag dragged off the left of the ruler: bar 1 is before the song, and its flag waits at the edge.
+  const flag = page.getByTestId('bar-one-flag')
+  const ruler = await page.getByTestId('trim-ruler').boundingBox()
+  if (!ruler) throw new Error('no ruler')
+  const from = await xOf('trim-ruler', 0.5)
+  await page.mouse.move(from.x + 2, from.y + 8)
+  await page.mouse.down()
+  await page.mouse.move(ruler.x + 100, from.y + 8, { steps: 5 })
+  await page.mouse.move(ruler.x - 60, from.y + 8, { steps: 5 })
+  await page.mouse.up()
+  await expect(flag).toHaveAttribute('data-pinned', 'true')
+  expect(await downbeat()).toBeLessThan(0)
+  await expect(page.getByTestId('downbeat-field')).toHaveValue(/^-0:00\.\d{3}$/)
+
+  // Dragged from the edge, it comes back in under the pointer.
+  const pinned = await flag.boundingBox()
+  if (!pinned) throw new Error('no flag')
+  const to = await xOf('trim-ruler', 1)
+  await page.mouse.move(pinned.x + 6, pinned.y + 8)
+  await page.mouse.down()
+  await page.mouse.move((pinned.x + to.x) / 2, pinned.y + 8, { steps: 5 })
+  await page.mouse.move(to.x, pinned.y + 8, { steps: 5 })
+  await page.mouse.up()
+  await expect(flag).not.toHaveAttribute('data-pinned')
+  expect(await downbeat()).toBeGreaterThan(0.9)
+  expect(await downbeat()).toBeLessThan(1.05)
+
+  // A double click on the flag, or 0:00 beside the field, puts bar 1 at the start.
+  await flag.dblclick()
+  await expect(editor()).toHaveAttribute('data-downbeat', '0')
+  await page.getByTestId('downbeat-later').click()
+  await expect(editor()).toHaveAttribute('data-downbeat', '0.01')
+  await page.getByTestId('downbeat-start').click()
+  await expect(editor()).toHaveAttribute('data-downbeat', '0')
+  await expect(page.getByTestId('downbeat-start')).toHaveAttribute('aria-disabled', 'true')
+
+  // Two bars typed as a length: a part from the start, looped since there was none.
+  await expect(page.getByTestId('loop')).toHaveAttribute('aria-pressed', 'false')
+  await typeInto('bars-field', '2')
+  await expect(editor()).toHaveAttribute('data-sel', '0,1')
+  await expect(page.getByTestId('readout')).toContainText('Bars 1-2 · 2 bars · 1.00 s')
+  await expect(page.getByTestId('loop')).toHaveAttribute('aria-pressed', 'true')
+  // Four bars are the whole song here.
+  await page.getByTestId('bars-4').click()
+  await expect(editor()).toHaveAttribute('data-sel', '0,2')
+  await expect(page.getByTestId('bars-4')).toHaveAttribute('aria-pressed', 'true')
+
+  // A part dragged where there is none is looped; with the loop turned off, the next one is not.
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('loop')).toHaveAttribute('aria-pressed', 'false')
+  await snapTo('Bar')
+  await select(0.6, 0.9)
+  await expect(editor()).toHaveAttribute('data-sel', '0.5,1')
+  await expect(page.getByTestId('loop')).toHaveAttribute('aria-pressed', 'true')
+  await page.getByTestId('loop').click()
+  await select(1.1, 1.4)
+  await expect(editor()).toHaveAttribute('data-sel', '1,1.5')
+  await expect(page.getByTestId('loop')).toHaveAttribute('aria-pressed', 'false')
+})
+
 test("the stems panel's Trim opens the trimmer on what solo and mute leave audible", async () => {
   await start()
   const { page } = ctx

@@ -89,14 +89,16 @@ App (run from `app/`):
   the row menus (`3b-row-menu.png`, `tray-4b-row-menu.png`), and the foot of Settings with
   its links to the website (`7b-settings-about.png`). The trimmer is taken in both
   (`trim-1-open.png` to `trim-5-queue-part.png`, `light-trim-1-open.png` to
-  `light-trim-5-queue-part.png`), on a drum loop the spec writes
+  `light-trim-5-queue-part.png`, and `trim-6-bar-one-before.png` with its light twin: bar 1's
+  flag at the left edge), on a drum loop the spec writes
 - `pnpm e2e theme`: the theme switch, both windows, the pick across a restart
 - `pnpm e2e welcome`: the welcome on a first start (`OPENSTEMS_E2E_WELCOME=1` forces it,
   since the FakeEngine has every model; `__openstemsE2E.pickFolder` stands in for the folder
   picker). `pnpm e2e row-menu`: the right-click menu on queue rows, both windows
 - `pnpm e2e trimmer`: the trimmer on the FakeEngine: a grid fixed by hand and parts of a
   stem, of every stem and of a mix dragged out as WAVs the length of the part; a waiting
-  song's own file; "Separate only the trimmed part"; Trim from the stems panel; a stem that
+  song's own file; bar 1 dragged before the song and back, lengths in bars and the loop a new
+  part gets; "Separate only the trimmed part"; Trim from the stems panel; a stem that
   enters late (`OPENSTEMS_FAKE_LATE=<stem>:<seconds>` leaves a FakeEngine stem silent at its
   start, so with Trim silence on its file begins later in the song)
 - `pnpm exec playwright test e2e/empty-stems.spec.ts`: stems with nothing in them left out of
@@ -452,9 +454,15 @@ mounted under it (`inert`, and not drawn once the editor has come in), so Back f
 scroll and search; only the stems panel goes, frozen during the entrance (`frozen`), and
 `StartButton` stops listening (`listen`). The quick-drop window has none. `song.ts` builds the song from a job or a stem set and holds the grid rules
 (`songGrid`, `gridChange`, `resetChange`); `model.ts` the chips, snapping and moving, the
-readout, the zoom wheel per platform (`isZoomWheel`) and what a handle asks for
+readout, the zoom wheel per platform (`isZoomWheel`), a part of so many bars (`barsRange`,
+`BAR_LENGTHS`, the typed length kept as `openstems.trim.bars.v1`), where a click puts the
+playhead (`seekPlace`: 0:00 when that is nearer than a line) and what a handle asks for
 (`clipRequest`); `Stage.tsx` the ruler (bar 1's flag, the two-point fit with `fitBar`), the
-waveform and the overview; `memory.ts` what each song was left as, for the session, with the
+waveform and the overview. Bar 1 before the song's start keeps its flag at the left edge
+(`pinned`), to be dragged back in; the start takes hold of a flag dragged close to it
+(`flagPlace`), and a double click on the flag or 0:00 in the toolbar puts bar 1 there. A part
+chosen where there was none is looped (`selectionDone` in `TrimEditor.tsx`); Home is
+`toStart`; `memory.ts` what each song was left as, for the session, with the
 timeline it was on (`origin`, moved by `moveRange` when a part comes back separated). One tempo
 per song: the grid, `downbeat` with it, is saved through `useSetAnalysis` (the job's route,
 else the stem set's) when a gesture ends, never on every frame; a nudge or tap still waiting
