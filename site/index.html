@@ -72,7 +72,7 @@
         <button type="button" class="press" aria-pressed="false" data-shot="1">Studio</button>
         <button type="button" class="press" aria-pressed="false" data-shot="2">Tray</button>
       </div>
-      <figcaption id="shot-say">Songs separate in order, and their stems drag straight out.</figcaption>
+      <figcaption id="shot-say">The queue on the left, the selected song's stems on the right.</figcaption>
     </div>
     <div class="shots">
       <img class="on" src="images/app.png" width="2560" height="1600" fetchpriority="high" decoding="async"
@@ -92,9 +92,9 @@
       <p class="eyebrow"><b>01</b> how it works</p>
       <h2 id="how-title" class="sr-only">How it works</h2>
       <ol class="steps" aria-label="Three steps">
-        <li data-step="0"><b data-n="01">drop</b><span>Files, folders or a pasted link. They queue with the recipe, quality and format you pick.</span></li>
-        <li data-step="1"><b data-n="02">separate</b><span>One GPU worker runs the queue and keeps the last model warm. Progress is live.</span></li>
-        <li data-step="2"><b data-n="03">drag out</b><span>Solo, mute, then drag one stem, all of them, or a mix straight into the DAW.</span></li>
+        <li data-step="0"><b data-n="01">drop</b><span>Drop files, folders or a link. Pick a recipe, a quality and a format.</span></li>
+        <li data-step="1"><b data-n="02">separate</b><span>Songs run one at a time on your GPU, and each shows its progress.</span></li>
+        <li data-step="2"><b data-n="03">drag out</b><span>Listen with solo and mute, then drag one stem, all of them or a mix into your DAW.</span></li>
       </ol>
     </div>
 
@@ -131,7 +131,7 @@
   <div class="section-head">
     <p class="eyebrow"><b>02</b></p>
     <h2 id="every-title">Every stem</h2>
-    <p class="section-lede">The <code>every-stem</code> recipe chains four models into the deepest split OpenStems makes: 13 stems in three groups, and together they are the song.</p>
+    <p class="section-lede">The <code>every-stem</code> recipe runs four models one after another and gives you 13 stems. Add them back together and you get the original song.</p>
   </div>
 
   <figure class="chain" id="chain" aria-label="The every-stem chain: four models turn one song into 13 stems">
@@ -198,18 +198,18 @@
   <div class="sheet sheet-3">
     <article class="cell reveal" style="--i:0;--c:var(--drums)">
       <p class="cell-code mono">e.01</p>
-      <h3>Each sample in one file</h3>
-      <p>Vocals and drums are groups, not files: their parts add up to them. Drag all 13 into a DAW and the song plays once, not twice. Summed, the stems of a test song came within −144.9 dB of it.</p>
+      <h3>No overlap between stems</h3>
+      <p>No sound is in two files. There is no separate vocals or drums file, because their parts already add up to them. On a test song, the 13 stems summed to within −144.9 dB of the original.</p>
     </article>
     <article class="cell reveal" style="--i:1;--c:var(--otherdrums)">
       <p class="cell-code mono">e.02</p>
-      <h3>Nothing lost between models</h3>
-      <p>DrumSep leaves room, bleed and hand percussion out of its six pieces: 21.6 and 25.8 dB below the drums on two test songs. Other drums is what is left, the drums minus the six. Backing vocals is the vocals minus the lead.</p>
+      <h3>Leftovers get their own stem</h3>
+      <p>DrumSep's six pieces miss the room sound, bleed and hand percussion. That remainder goes into "other drums". On two test songs it was 21.6 and 25.8 dB quieter than the drums. Backing vocals are made the same way, as the vocals minus the lead.</p>
     </article>
     <article class="cell reveal" style="--i:2;--c:var(--vocals)">
       <p class="cell-code mono">e.03</p>
-      <h3>Groups when you want them</h3>
-      <p>Drag Drums and its seven parts are mixed into one file at that moment. Take the kick out and the file is called "drums no kick". Bass stands alone; guitar, piano and other make Melody.</p>
+      <h3>Drag a whole group</h3>
+      <p>Drag Drums and you get its seven parts mixed into one file. Leave the kick out and the file is named "drums no kick". Guitar, piano and other group together as Melody.</p>
     </article>
   </div>
 </section>
@@ -219,7 +219,7 @@
   <div class="section-head">
     <p class="eyebrow"><b>03</b></p>
     <h2 id="trim-title">Trim studio</h2>
-    <p class="section-lede">Take a few bars out of a song or any of its stems and drag them into your DAW as a WAV, cut on a grid you can check by ear. Try it: drag across the waveform.</p>
+    <p class="section-lede">Select a few bars of a song or its stems and drag them into your DAW as a WAV. The demo below works, so drag across the waveform.</p>
   </div>
 
   <div class="studio reveal" id="studio">
@@ -269,18 +269,18 @@
   <div class="sheet sheet-3">
     <article class="cell reveal" style="--i:0;--c:var(--lime)">
       <p class="cell-code mono">t.01</p>
-      <h3>A grid you can fix</h3>
-      <p>Halve or double the tempo, tap or type it, or drag bar 1's flag onto the first downbeat and a later bar line onto its beat for an exact tempo. Click plays on every beat, so you can hear whether it sits.</p>
+      <h3>Fix the grid</h3>
+      <p>If the detected tempo is wrong, halve it, double it, tap it or type it. For an exact tempo, drag bar 1 onto the first downbeat and a later bar line onto its beat. A metronome click lets you check it by ear.</p>
     </article>
     <article class="cell reveal" style="--i:1;--c:var(--drums)">
       <p class="cell-code mono">t.02</p>
-      <h3>Stems on top of each other</h3>
-      <p>Choose several stems and they are drawn as layers, each in its own color, so you see where the drums drop out or the vocals come in. They leave as one mix, named after what is in it.</p>
+      <h3>Several stems at once</h3>
+      <p>Pick more than one stem and each is drawn in its own color, so you can see where the drums drop out or the vocals come in. They export as one mix.</p>
     </article>
     <article class="cell reveal" style="--i:2;--c:var(--bass)">
       <p class="cell-code mono">t.03</p>
       <h3>Separate only the part</h3>
-      <p>Trim a song still waiting in the queue and, with this setting on, Start separates just those bars: faster, and the stems are as long as the part. Clips go to a Clips folder beside the stems.</p>
+      <p>A setting lets you separate only the bars you selected on a song that is still waiting in the queue. That is faster, and the stems are as long as the selection.</p>
     </article>
   </div>
 </section>
@@ -305,22 +305,22 @@
     <article class="cell reveal" style="--i:2;--c:var(--bass)">
       <p class="cell-code mono">f.03</p>
       <h3>Export a mix</h3>
-      <p>Mute or solo stems and drag out what you hear as a single file, e.g. the song without vocals.</p>
+      <p>Mute or solo stems and drag out what you hear as a single file, for example the song without vocals.</p>
     </article>
     <article class="cell reveal" style="--i:3;--c:var(--lime)">
       <p class="cell-code mono">f.04</p>
       <h3>Fix tempo and key</h3>
-      <p>Type the tempo or key where detection got it wrong. File names, the manifest and the tempo FL Studio reads follow.</p>
+      <p>If detection got the tempo or key wrong, type the right one. File names and the tempo written into the WAVs update to match.</p>
     </article>
     <article class="cell reveal" style="--i:4;--c:var(--guitar)">
       <p class="cell-code mono">f.05</p>
       <h3>Tempo sync for FL Studio</h3>
-      <p>WAV stems can carry the detected tempo. FL Studio stretches short clips automatically; for a full stem, use Fit to tempo in the clip menu.</p>
+      <p>With tempo sync on, WAV stems carry the detected tempo. FL Studio stretches clips up to about a minute long to the project tempo by itself. For a full stem, use Fit to tempo in the clip menu.</p>
     </article>
     <article class="cell reveal" style="--i:5;--c:var(--piano)">
       <p class="cell-code mono">f.06</p>
       <h3>Separate from a link</h3>
-      <p>Paste a URL and it is downloaded and queued like a file. The tray (menu bar on a Mac) window accepts links and files too.</p>
+      <p>Paste a link and the audio is downloaded and queued like a file. The tray window (menu bar on a Mac) takes links and files too.</p>
     </article>
   </div>
 
@@ -389,7 +389,7 @@
         <div data-group="2"><dt>Cleanup</dt><dd class="mono">dereverb, denoise</dd><dd class="state"></dd></div>
         <div data-group="3"><dt>53 stems</dt><dd class="mono">mega-53, experimental</dd><dd class="state"></dd></div>
       </dl>
-      <p class="run-note"><span id="run-note"></span> <span id="run-always">"Too large" is an estimate, not a block: the app still tries the GPU first, and moves a model to the processor if memory runs out.</span></p>
+      <p class="run-note"><span id="run-note"></span> <span id="run-always">"Too large" is an estimate and does not stop you. The app tries the GPU first and moves a model to the processor if memory runs out.</span></p>
     </div>
   </div>
 </section>
@@ -413,10 +413,10 @@
         <span class="mono btn-meta" data-fill="win-meta">.exe</span>
       </a>
       <ul class="reqs">
-        <li><b>NVIDIA</b> GTX 16 series, RTX 20 series and later. Built and tested on an RTX 5070 Ti. GTX 900 and 10 series: an untested build of their own.</li>
-        <li><b>AMD Radeon</b> an untested preview, on the cards AMD's PyTorch for Windows supports (RX 9070, RX 7900 XTX and others).</li>
+        <li><b>NVIDIA</b> GTX 16 series, RTX 20 series and later. Built and tested on an RTX 5070 Ti. GTX 900 and 10 series get a separate build that has not been tested.</li>
+        <li><b>AMD Radeon</b> a preview. A user has reported it working, but the project has not tested it. It needs a card AMD's PyTorch for Windows supports (RX 9070, RX 7900 XTX and others).</li>
         <li><b>First launch</b> sets up Python and PyTorch for your card, about 3 GB, then the recommended models, 3.4 GB.</li>
-        <li><b>SmartScreen</b> asks once, since the installer is not code-signed: More info, then Run anyway. No administrator rights needed.</li>
+        <li><b>SmartScreen</b> warns once, because the installer is not code-signed. Click More info, then Run anyway. No administrator rights needed.</li>
       </ul>
     </article>
 
@@ -442,7 +442,7 @@
           <ol>
             <li>Double-click OpenStems. macOS says it could not verify the app. Click Done.</li>
             <li>Open System Settings and click Privacy &amp; Security.</li>
-            <li>Under Security, OpenStems is named as blocked: click Open Anyway (there for about an hour after step 1).</li>
+            <li>Under Security it says OpenStems was blocked. Click Open Anyway. The button stays there for about an hour after step 1.</li>
             <li>Confirm, and enter your login password if asked.</li>
           </ol>
           <p>If macOS says it "is damaged", move it to Applications and run this in Terminal:</p>

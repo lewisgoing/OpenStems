@@ -368,9 +368,9 @@ function setupChain() {
 
 /** The hero's windows: Queue, Studio, Tray, one at a time. */
 const SHOT_SAY = [
-  'Songs separate in order, and their stems drag straight out.',
-  'Cut a part on the bar grid and drag it out as a clip.',
-  'Drop a song on the tray icon without opening the window.',
+  "The queue on the left, the selected song's stems on the right.",
+  'Select a few bars and drag them out as a clip.',
+  'The tray window takes files and links without opening the app.',
 ]
 function setupShots() {
   const buttons = [...document.querySelectorAll('[data-shot]')]
