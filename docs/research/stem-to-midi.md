@@ -859,6 +859,21 @@ The owner's answers of 2026-11-25, after the check in section 13:
   offered.
 - **Weights trained on real songs' separated stems with weak labels may ship** (M6).
 - **GPL code stays out:** YourMT3+ is a reference in M0, never shipped.
+- **Best results first, licences second** (the owner, later the same day): any model may be
+  used, whatever its licence, and the model that measures best on a stem is that stem's
+  choice. This replaces "non-commercial weights are never shipped" and "GPL code stays out"
+  above and in the table below. What it asks of the build:
+  - M0 measures every candidate, the non-commercial and GPL ones included (YourMT3+,
+    MuScriptor, ADTOF, hFT-Transformer, BassUNet, Noise-to-Notes if it is released).
+  - Every model's catalog entry records the licence of its code, of its weights and of its
+    training data, so a build limited to permissive licences can be cut later by leaving
+    entries out. No code path may assume a restricted model is present.
+  - GPL code is never copied into the engine's own package: it is installed as a component
+    of its own and run in a process of its own, as section 10 already had it for YourMT3+.
+    Whether that is enough for a build the project hands out is a legal question this
+    document does not settle.
+  - Weights are still downloaded at run time from their own hosts, sha256 checked, and never
+    committed (ground rules 5 and 6).
 - **No Klangio or AnthemScore exports:** the owner would rather not do more exports by hand.
   The baseline pack stays Melodyne and NeuralNote.
 - **M0 may run** its separation runs on the development PC.
