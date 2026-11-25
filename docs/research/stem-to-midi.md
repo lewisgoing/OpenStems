@@ -455,12 +455,16 @@ Gain and cost are judgments, to be confirmed in stage M0.
   - a drop folder with fixed names: `<song> - <stem>.melodyne.mid` and
     `<song> - <stem>.neuralnote.mid`.
 - **External MIDI is aligned before scoring:**
-  - Each file's ticks are converted with its own tempo map.
-  - Melodyne starts its export at the bar of the first note.
+  - Each file's ticks are converted with its own tempo map, except Melodyne's. Its notes file
+    says 120 BPM, while the document's tempo goes into a second file it writes beside it,
+    `<document>.tempo.mid`, which the scorer reads instead (seen in the owner's exports).
+  - Melodyne starts its export at the bar of the first note. In the pack that is bar 1, the
+    document's 0.
   - NeuralNote is reported to export at 120 BPM.
-  - The harness finds one global offset per file by cross-correlating onsets within a bounded
-    window, and reports the offset it applied. Otherwise the baselines would score near zero
-    for the wrong reason.
+  - The harness finds one global offset per file by matching onsets within a bounded window
+    (0.3 s for Melodyne, 6 s otherwise), and reports the offset it applied. Otherwise the
+    baselines would score near zero for the wrong reason. A file with notes past the end of its
+    audio is flagged.
 - **Machine:** separation runs go in batches, and the harness caps its CPU workers. Each run of
   `openstems selftest` with models is still asked for first.
 
@@ -495,7 +499,7 @@ What this shows:
   starts from that segmenter, not from a new HMM. The HMM from the Tony paper stays the
   fallback if per-note curves need a different split.
 - **SwiftF0 nearly removes octave errors on guitar** (119 to 5).
-- Melodyne's and NeuralNote's numbers on the same files come from the baseline pack.
+- Melodyne's numbers on the baseline pack are below. NeuralNote's are still to come.
 
 **Bass,** Slakh's own bass stems (oracle), 142 songs, 68,350 notes:
 
@@ -523,6 +527,69 @@ picture M2a was planned on: kick and snare are easy, cymbals are not. Detecting 
 DrumSep's split stems, as M2a plans, is the next measurement and needs the GPU for the split.
 SuperFlux's vibrato suppression buys nothing on drums.
 
+**Melodyne,** the baseline pack, exported by the owner on 2026-11-24. It is the first pass with
+the algorithm the pack names: Melodic for vocals, Polyphonic Decay for guitar. The audio is
+clean, not separated stems. 11 of the pack's 13 clips are scored:
+
+- `00_BN1` waits for a clean export. The file saved under its name also holds `01_BN3`'s notes.
+- `01_Jazz3` has no export yet.
+
+Every method is averaged over the same clips.
+
+| Stem | Clips | Method | Onset F1 | +Offset F1 | Octave errors |
+| --- | --- | --- | --- | --- | --- |
+| Vocals | 6 | Melodyne | 0.502 | 0.234 | 1 |
+| | | Today's YIN | 0.424 | 0.266 | 0 |
+| | | SwiftF0 notes as whole keys (M1's rounding: what the app's MIDI carries) | **0.639** | **0.479** | 0 |
+| | | The same notes at exact pitch (the notes file, or bends) | 0.766 | 0.583 | 0 |
+| | | vocadito's second annotator | 0.749 | 0.661 | 0 |
+| Guitar solos | 3 | Melodyne | 0.713 | 0.486 | 11 |
+| | | Today's YIN | 0.313 | 0.209 | 6 |
+| | | SwiftF0 notes, whole keys and exact pitch alike | **0.786** | **0.612** | 0 |
+| Guitar comps (chords) | 2 | Melodyne | **0.586** | **0.326** | 53 |
+| | | SwiftF0 notes, a single-note tracker | 0.291 | 0.142 | 0 |
+
+What this shows:
+
+- **On single lines, the transcriber M3 plans already beats Melodyne's first pass; today's
+  tracker does not.**
+  - Vocals: onset F1 0.639 against 0.502 as whole keys, and 0.479 against 0.234 with note ends.
+  - Guitar solos: 0.786 against 0.713, and 0.612 against 0.486 with note ends.
+  - Today's YIN loses to Melodyne on both.
+  - Melodyne finds the most guitar notes (recall 0.80 on solos), but it adds notes an octave
+    away (11 on three solos, 53 on two comps), and those cost it precision.
+- **Chords are Melodyne's for now.** Polyphonic Decay scores 0.586 against 0.291 for a
+  single-note tracker, as expected: polyphonic transcription is M4. This is the gap and its
+  cause, as Phase 7's acceptance asks.
+- **The 50-cent window penalizes whole keys on vocals.** These six singers sit 15 to 45 cents
+  off A440.
+  - M1 rounds in the singer's own tuning. A note sung a little sharp of that tuning then lands
+    more than 50 cents from its pitch in Hz and counts as wrong.
+  - So the app's vocals drop from 0.766 at exact pitch to 0.639. Plain rounding at A440 gives
+    0.718.
+  - Melodyne rounds the same way. Where the two roundings differ, its key is the one in the
+    singer's tuning 45 times, against 13 for A440.
+  - Scored as keys in the singer's tuning (each key moved by the reference's own tuning),
+    Melodyne has 0.612 and the app 0.675, and the app leads on all six clips.
+  - M3 should score whole keys that way, and keep exact pitch for the bend modes.
+- **Small and clean.** These are 11 clips of solo recordings, one export each. They show a
+  direction, not a margin. The separated-stem condition that Phase 7's acceptance names needs
+  the GPU, and waits on the machine.
+
+Reading Melodyne's export took three corrections, now in the scorer:
+
+- **Tempo.** Each notes file said 120 BPM. Its notes sat on Melodyne's document tempo,
+  64.511 BPM, half the first clip's 129. Only the `Untitled.tempo.mid` written beside each
+  export held that tempo. Read at 120, every note came out at 0.538 times its real time, and
+  every file scored about 0.1.
+- **Offset.** At the right tempo the onsets line up within about 10 ms, with no drift across
+  any file. Searched over ±6 s, the offset locked onto a repeat in one comp's chord pattern,
+  2.07 s off. It is now searched over ±0.3 s for Melodyne.
+- **One export held two clips.** The `00_BN1` file is exactly that clip's earlier export plus
+  every note of `01_BN3`. The earlier export also has 12 notes after its audio ends.
+  - The pack's instructions now ask for one Melodyne document per clip.
+  - The scorer flags any file with notes past the end of its audio.
+
 ## 8. MIDI export and DAWs
 
 Checked 2026-11-23 against each vendor's current release. "By omission" means the vendor's
@@ -539,6 +606,12 @@ release notes and manual say nothing on the point.
 
 Melodyne 5's export carries no pitch bend in any edition. Several instances go into one file,
 one channel per instance ([Celemony](https://helpcenter.celemony.com/M5/doc/melodyneStudio5/en/M5tour_ExportMIDI_otherDAWs)).
+
+The owner's exports of 2026-11-24 show one more thing; Melodyne's version and host were not
+recorded. The notes file said 120 BPM, while its notes sat on the document's tempo, which went
+into a second file, `<document>.tempo.mid`. A DAW that reads only the notes file plays them at
+the wrong speed unless its own tempo is Melodyne's. The app's writer puts the tempo in the same
+file (a conductor track).
 
 Three exports follow from this:
 
