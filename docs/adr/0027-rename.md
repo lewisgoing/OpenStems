@@ -67,8 +67,13 @@ the screen is the name on the disk.
   the queue and History the row whose stems are open. A row whose stems are closed opens
   them on the first click, which can reflow the list under the pointer, so the second click
   would land elsewhere: there a double click does nothing and the title's hint does not
-  offer it. That was first seen in the queue on Windows and then in History on both CI
-  runners.
+  offer it. That was seen in the queue on Windows, where the toolbar above the list
+  reflows.
+- **History's title keeps its room.** In the smallest window, with the stems panel open, the
+  recipe and date beside a History title did not give way and the title was squeezed to
+  nothing: unreadable, and nothing to double-click. They now truncate before the title
+  does, as in the queue (both CI runners showed it; `e2e/rename.spec.ts` renames in a
+  980 px window).
 - **The menu leaves the keyboard in the field.** A closing menu hands the focus back to its
   row, which would close the field again. An item that takes the focus itself says so
   (`takesFocus`), and the menu then leaves it alone (`finalFocus`).

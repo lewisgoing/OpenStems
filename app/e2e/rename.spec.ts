@@ -19,6 +19,19 @@ test.afterEach(async () => {
 const manifest = (folder: string) =>
   JSON.parse(readFileSync(join(folder, 'manifest.json'), 'utf8')) as { source: { name: string; path: string }; stems: { file: string }[] }
 
+/**
+ * The name in a stem folder's manifest, or null while there is none to read. The manifest is
+ * the last thing a rename writes, after the folder and the files: once it has the new name,
+ * the rename is done.
+ */
+const nameIn = (folder: string) => {
+  try {
+    return manifest(folder).source.name
+  } catch {
+    return null
+  }
+}
+
 test('rename: a waiting song from its menu, then its stems on the disk from the panel and the history', async () => {
   const page = ctx.page
   const original = join(ctx.fixtures, 'First Song.mp3')
@@ -76,7 +89,7 @@ test('rename: a waiting song from its menu, then its stems on the disk from the 
   await page.keyboard.type('Dusk: Live')
   await page.keyboard.press('Enter')
   const second = join(ctx.outputDir, 'Dusk_ Live', 'full-song')
-  await expect.poll(() => existsSync(join(second, 'manifest.json'))).toBe(true)
+  await expect.poll(() => nameIn(second)).toBe('Dusk: Live')
   expect(existsSync(join(ctx.outputDir, 'Night Drive'))).toBe(false)
   const after = manifest(second)
   expect(after.source.name).toBe('Dusk: Live')
@@ -115,18 +128,22 @@ test('rename: a waiting song from its menu, then its stems on the disk from the 
   await page.keyboard.press('Enter')
   await expect(panel.getByRole('heading')).toHaveText('Dawn')
   const dawn = join(ctx.outputDir, 'Dawn', 'full-song')
-  await expect.poll(() => existsSync(join(dawn, 'manifest.json'))).toBe(true)
+  await expect.poll(() => nameIn(dawn)).toBe('Dawn')
   expect(existsSync(join(ctx.outputDir, 'Dusk_ Live'))).toBe(false)
   await expect(page.getByRole('alert')).toHaveCount(0)
 
   // History has the new name. A click opens the song's stems, and then a double click on its
   // title there renames too. Emptied, the song goes by the name of its file again, on the
   // disk as well.
+  // In the smallest window, where the stems panel leaves the list least room: the title is
+  // still there to read and to double-click.
+  await ctx.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((window) => window.isVisible())?.setSize(980, 700))
   await page.getByRole('button', { name: 'History' }).click()
   const past = page.getByTestId('history-row')
   await expect(past).toHaveCount(1)
   await expect(past.getByTestId('drag-source')).toHaveText('Dawn')
   await past.click()
+  await expect(past.getByTestId('drag-source')).toBeVisible()
   await expect(page.getByLabel('Stems').getByRole('heading')).toHaveText('Dawn')
   await past.getByTestId('drag-source').dblclick()
   const pastField = past.getByLabel('Song name')
@@ -136,7 +153,7 @@ test('rename: a waiting song from its menu, then its stems on the disk from the 
   await pastField.press('Enter')
   await expect(past.getByTestId('drag-source')).toHaveText('First Song')
   const third = join(ctx.outputDir, 'First Song', 'full-song')
-  await expect.poll(() => existsSync(join(third, 'manifest.json'))).toBe(true)
+  await expect.poll(() => nameIn(third)).toBe('First Song')
   expect(existsSync(join(ctx.outputDir, 'Dawn'))).toBe(false)
   expect(manifest(third).stems.every((stem) => stem.file.startsWith('First Song - '))).toBe(true)
   // The panel that showed the song follows it to where its stems are now.

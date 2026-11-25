@@ -74,7 +74,9 @@ export function HistoryView({ recipes, selected, onSelect, onRerun, onRename }: 
                     // only once they are open is a double click sure to land twice on the title.
                     doubleClick={selected === set.directory}
                   />
-                  <span className="flex-none text-[12px] text-faint">
+                  {/* Gives way before the song's name does, as in the queue: with the stems
+                      panel open in a small window the name would otherwise be squeezed out. */}
+                  <span className="min-w-0 shrink-[4] truncate text-[12px] text-faint">
                     {set.recipe_name} · {formatDate(set.created_at)}
                   </span>
                 </div>
