@@ -16,6 +16,8 @@ cpSync(join(root, 'app', 'resources', 'icon.png'), join(out, 'icon.png'))
 for (const name of ['app.png', 'drums.png', 'quick-drop.png']) {
   cpSync(join(root, 'docs', 'images', name), join(out, 'images', name))
 }
+// The version shown before GitHub answers (and if it never does) is the app's own, not one typed into the page.
+const { version } = JSON.parse(readFileSync(join(root, 'app', 'package.json'), 'utf8'))
 // a stamp on the stylesheet and script, so a browser never keeps last build's copy
 const stamp = Date.now().toString(36)
 const page = join(out, 'index.html')
@@ -23,6 +25,7 @@ writeFileSync(
   page,
   readFileSync(page, 'utf8')
     .replace('href="style.css"', `href="style.css?v=${stamp}"`)
-    .replace('src="main.js"', `src="main.js?v=${stamp}"`),
+    .replace('src="main.js"', `src="main.js?v=${stamp}"`)
+    .replace(/(data-fill="(?:version|released)">)[^<]*</g, `$1${version}<`),
 )
 console.log(`site written to ${out}`)

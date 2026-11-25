@@ -860,20 +860,27 @@ function inline(text) {
 function parseChangelog(md) {
   const releases = []
   let current = null
-  let bullet = null
+  let bullet = null // what a wrapped line continues
+  let top = null // the list item a nested bullet belongs to
   for (const raw of md.split(/\r?\n/)) {
-    const head = raw.match(/^## (\S+)(?: \(([^)]+)\))?/)
-    if (head) {
-      current = { version: head[1], date: head[2] ?? '', items: [] }
-      releases.push(current)
+    if (/^## /.test(raw)) {
+      // ## 0.4.0 (2026-11-24) or ## [0.4.0] - 2026-11-24. A heading with no number (Unreleased) is skipped with its text.
+      const head = raw.match(/^## \[?v?(\d[^\s\]]*)\]?(?:\s*\(([^)]+)\)|\s+-\s+(\S+))?/)
+      current = head ? { version: head[1], date: head[2] ?? head[3] ?? '', items: [] } : null
+      if (current) releases.push(current)
       bullet = null
+      top = null
       continue
     }
     if (!current) continue
     if (/^### /.test(raw)) { current.items.push({ kind: 'head', text: raw.slice(4) }); bullet = null; continue }
-    if (/^- /.test(raw)) { bullet = { kind: 'li', text: raw.slice(2) }; current.items.push(bullet); continue }
+    if (/^[-*] /.test(raw)) { bullet = top = { kind: 'li', text: raw.slice(2), sub: [] }; current.items.push(bullet); continue }
+    const step = raw.match(/^\d+[.)] (.*)/)
+    if (step) { bullet = top = { kind: 'ol', text: step[1], sub: [] }; current.items.push(bullet); continue }
+    const nested = raw.match(/^\s{2,}[-*] (.*)/)
+    if (nested && top) { bullet = { text: nested[1] }; top.sub.push(bullet); continue }
     if (/^\s+\S/.test(raw) && bullet) { bullet.text += ' ' + raw.trim(); continue }
-    if (raw.trim()) { bullet = { kind: 'p', text: raw.trim() }; current.items.push(bullet); continue }
+    if (raw.trim()) { bullet = { kind: 'p', text: raw.trim() }; top = null; current.items.push(bullet); continue }
     bullet = null
   }
   return releases
@@ -881,12 +888,19 @@ function parseChangelog(md) {
 
 function renderItems(items) {
   let html = ''
-  let open = false
+  let open = '' // the list tag that is open: ul, ol or none
+  const close = () => { if (open) { html += `</${open}>`; open = '' } }
   for (const it of items) {
-    if (it.kind === 'li') { if (!open) { html += '<ul>'; open = true } html += `<li>${inline(it.text)}</li>` }
-    else { if (open) { html += '</ul>'; open = false } html += it.kind === 'head' ? `<p class="mono" style="margin:14px 0 8px;color:var(--ink)">${inline(it.text)}</p>` : `<p style="color:var(--muted);margin-bottom:8px">${inline(it.text)}</p>` }
+    if (it.kind === 'li' || it.kind === 'ol') {
+      const tag = it.kind === 'li' ? 'ul' : 'ol'
+      if (open !== tag) { close(); html += `<${tag}>`; open = tag }
+      const sub = it.sub.length ? `<ul>${it.sub.map((s) => `<li>${inline(s.text)}</li>`).join('')}</ul>` : ''
+      html += `<li>${inline(it.text)}${sub}</li>`
+    }
+    else { close(); html += it.kind === 'head' ? `<p class="mono" style="margin:14px 0 8px;color:var(--ink)">${inline(it.text)}</p>` : `<p style="color:var(--muted);margin-bottom:8px">${inline(it.text)}</p>` }
   }
-  return html + (open ? '</ul>' : '')
+  close()
+  return html
 }
 
 async function loadChangelog() {
@@ -899,10 +913,11 @@ async function loadChangelog() {
     if (!versionFromApi) showVersion(releases[0].version)
     log.innerHTML = releases
       .map((r, i) => {
-        const count = r.items.filter((it) => it.kind === 'li').length
+        const count = r.items.filter((it) => it.kind === 'li' || it.kind === 'ol').length
+        const label = count === 0 ? 'notes' : `${count} ${count === 1 ? 'change' : 'changes'}`
         const body = i === 0
           ? renderItems(r.items)
-          : `<details><summary class="press">${count} ${count === 1 ? 'change' : 'changes'} <span class="mono">show</span></summary>${renderItems(r.items)}</details>`
+          : `<details><summary class="press">${label} <span class="mono">show</span></summary>${renderItems(r.items)}</details>`
         return `<article class="release reveal" style="--i:${Math.min(i, 4)}">
           <div class="release-id">
             <p class="v">${esc(r.version)}</p>

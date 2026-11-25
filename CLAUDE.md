@@ -56,7 +56,8 @@ Engine (run from `engine/`):
 Site (the landing page on GitHub Pages, `site/`, `docs/adr/0025-site.md`):
 
 - `node scripts/build-site.mjs [OUT]`: assemble the site into `_site/` (or OUT) with the
-  changelog, the icon and three README pictures; serve it with `python -m http.server -d OUT`
+  changelog, the icon and three README pictures, and the version from `app/package.json`
+  (what the page shows until GitHub answers); serve it with `python -m http.server -d OUT`
   (the page fetches `CHANGELOG.md`, so `file://` does not work)
 - `.github/workflows/pages.yml` deploys it on a push to `main` that touches it, the
   changelog or those pictures (a pull request only builds it). The support button is hidden
