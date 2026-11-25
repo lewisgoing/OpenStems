@@ -66,6 +66,7 @@ import { TrimPlayer } from './trimstub'
 const createClips = { mutateAsync: vi.fn() }
 const createMix = { mutateAsync: vi.fn() }
 const setAnalysis = { job: { mutateAsync: vi.fn() }, stemSet: { mutateAsync: vi.fn() } }
+const setHidden = { mutateAsync: vi.fn(async (_change: { directory: string; stems: Record<string, boolean | null> }) => ({}) as never) }
 const rename = { job: { mutateAsync: vi.fn(async (_change: { id: string; name: string | null }) => undefined) }, stemSet: { mutateAsync: vi.fn(async (_change: { directory: string; name: string | null }) => undefined) } }
 const actions = {
   startAll: { mutate: vi.fn() },
@@ -111,6 +112,7 @@ vi.mock('@/api/queries', () => ({
   useJobs: () => ({ data: jobs }),
   useJobActions: () => actions,
   useSetAnalysis: () => setAnalysis,
+  useSetHidden: () => setHidden,
   useRename: () => rename,
   useLinks: () => ({ data: [] }),
   useLinkActions: () => ({ add: { mutate: vi.fn() }, retry: { mutate: vi.fn() }, remove: { mutate: vi.fn() } }),

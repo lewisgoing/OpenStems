@@ -8,7 +8,7 @@ import { DropOverlay } from '@/components/DropOverlay'
 import { StemsPanel } from '@/components/StemsPanel'
 import { ToastProvider, useToast } from '@/components/toast'
 import { CommitInput, ProgressBar, Segmented, TooltipProvider } from '@/components/ui'
-import { dragAllHint, splitEmpty, stemCount } from '@/lib/empty'
+import { dragAllHint, hideChoice, isLeftOut, leftOutWord, splitEmpty, stemCount } from '@/lib/empty'
 import { dragSource } from '@/lib/sourcedrag'
 import { SelectionProvider } from '@/state/selection'
 import { SORT_KEY, loadSort, matchesSearch, searchTerms, sortQueue } from '@/lib/queuesort'
@@ -16,6 +16,7 @@ import { QueueView } from '@/views/QueueView'
 import { bridge } from './setup'
 
 const setAnalysis = { job: { mutateAsync: vi.fn() }, stemSet: { mutateAsync: vi.fn() } }
+const setHidden = { mutateAsync: vi.fn(async (_change: { directory: string; stems: Record<string, boolean | null> }) => ({}) as never) }
 const rename = { job: { mutateAsync: vi.fn(async (_change: { id: string; name: string | null }) => undefined) }, stemSet: { mutateAsync: vi.fn(async (_change: { directory: string; name: string | null }) => undefined) } }
 const actions = {
   startAll: { mutate: vi.fn() },
@@ -49,6 +50,7 @@ vi.mock('@/api/queries', () => ({
   useJobs: () => ({ data: jobs }),
   useJobActions: () => actions,
   useSetAnalysis: () => setAnalysis,
+  useSetHidden: () => setHidden,
   useRename: () => rename,
   useLinks: () => ({ data: links }),
   useLinkActions: () => linkActions,
@@ -1006,5 +1008,111 @@ describe('QueueView: empty stems', () => {
     expect(handle).toHaveTextContent('3 stems')
     fireEvent.dragStart(handle)
     expect(bridge.startDrag.mock.calls.at(-1)?.[0]).toHaveLength(3)
+  })
+})
+
+describe('a stem hidden by hand, as plain functions', () => {
+  it('is left out whatever the setting, and an empty one kept by hand stays in', () => {
+    expect(isLeftOut({ hidden: true }, false)).toBe(true)
+    expect(isLeftOut({ hidden: true, empty: false }, true)).toBe(true)
+    expect(isLeftOut({ hidden: false, empty: true }, true)).toBe(false)
+    // No choice: the setting decides, for empty stems only.
+    expect(isLeftOut({ hidden: null, empty: true }, true)).toBe(true)
+    expect(isLeftOut({ empty: true }, false)).toBe(false)
+    expect(isLeftOut({ empty: false }, true)).toBe(false)
+
+    const stems = [{ name: 'vocals' }, { name: 'hh', hidden: true }, { name: 'bass', empty: true }, { name: 'crash', empty: true, hidden: false }]
+    expect(splitEmpty(stems, true)).toEqual({ shown: [stems[0], stems[3]], hidden: [stems[1], stems[2]] })
+    expect(splitEmpty(stems, false)).toEqual({ shown: [stems[0], stems[2], stems[3]], hidden: [stems[1]] })
+    // A song with every stem hidden shows them all: a list of nothing says less.
+    const all = [{ name: 'a', hidden: true }, { name: 'b', hidden: true }]
+    expect(splitEmpty(all, true).shown).toBe(all)
+  })
+
+  it('stores only a choice that differs from what the setting would do', () => {
+    // A stem with sound: hidden by hand, and back to no choice at all.
+    expect(hideChoice({ empty: false }, true)).toBe(true)
+    expect(hideChoice({ empty: false, hidden: true }, true)).toBeNull()
+    // An empty stem the setting leaves out: kept by hand, and back to the setting.
+    expect(hideChoice({ empty: true }, true)).toBe(false)
+    expect(hideChoice({ empty: true, hidden: false }, true)).toBeNull()
+    // With the setting off an empty stem is like any other.
+    expect(hideChoice({ empty: true }, false)).toBe(true)
+    expect(hideChoice({ empty: true, hidden: true }, false)).toBeNull()
+  })
+
+  it('calls the stems left out "hidden" once one of them was hidden by hand', () => {
+    expect(leftOutWord([{ empty: true }, { empty: true }])).toBe('empty')
+    expect(leftOutWord([{ empty: true }, { hidden: true }])).toBe('hidden')
+    expect(dragAllHint(4, 2, 'hidden')).toBe('Drag the 4 stems shown into your DAW or a folder. 2 hidden ones stay behind')
+    expect(dragAllHint(1, 1, 'hidden')).toBe('Drag the one stem shown into your DAW or a folder. 1 hidden one stays behind')
+  })
+})
+
+describe('StemsPanel: hiding a stem by hand', () => {
+  const DIR = 'D:\\out\\Song\\full-song'
+  const base = ['vocals', 'drums', 'bass', 'other'].map(stem)
+  const panel = (stems: StemFile[], hideEmpty = true) =>
+    wrap(<StemsPanel title="Song" subtitle="Full song" directory={DIR} stems={stems} hideEmpty={hideEmpty} onClose={vi.fn()} />)
+  const names = () => screen.getAllByTestId('waveform').map((el) => el.textContent)
+
+  it('every row has Hide, which keeps the choice with the song', async () => {
+    panel(base)
+    expect(screen.queryByTestId('empty-stems')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Hide drums' }))
+    expect(setHidden.mutateAsync).toHaveBeenCalledExactlyOnceWith({ directory: DIR, stems: { drums: true } })
+  })
+
+  it('leaves a hidden stem out of the list, the drag and the trimmer, with the setting on or off', async () => {
+    for (const hideEmpty of [true, false]) {
+      const onTrim = vi.fn()
+      wrap(
+        <StemsPanel title="Song" subtitle="Full song" directory={DIR} stems={base.map((s) => (s.name === 'drums' ? { ...s, hidden: true } : s))} hideEmpty={hideEmpty} onTrim={onTrim} onClose={vi.fn()} />,
+      )
+      expect(names()).toEqual(['vocals', 'bass', 'other'])
+      expect(screen.getByTestId('empty-stems')).toHaveTextContent('1 hidden: drums')
+      fireEvent.dragStart(screen.getByRole('button', { name: 'Drag all stems' }))
+      expect(bridge.startDrag.mock.calls.at(-1)?.[0]).toEqual([base[0]!.path, base[2]!.path, base[3]!.path])
+      await userEvent.click(screen.getByTestId('panel-trim'))
+      expect(onTrim).toHaveBeenLastCalledWith(['vocals', 'bass', 'other'], expect.anything())
+      cleanup()
+    }
+  })
+
+  it('shows it again in its place, marked, with the way back on its row', async () => {
+    panel(base.map((s) => (s.name === 'drums' ? { ...s, hidden: true } : s)))
+    await userEvent.click(screen.getByRole('button', { name: 'Show hidden stems' }))
+    expect(names()).toEqual(['vocals', 'drums', 'bass', 'other'])
+    expect(screen.getByTestId('empty-stems')).toHaveTextContent('1 hidden shown: drums')
+    const rows = screen.getAllByTestId('stem-row')
+    expect(rows.map((row) => row.hasAttribute('data-out'))).toEqual([false, true, false, false])
+    // The stem that is out offers to come back; the others still offer Hide.
+    await userEvent.click(within(rows[1]!).getByRole('button', { name: 'Show drums again' }))
+    expect(setHidden.mutateAsync).toHaveBeenCalledExactlyOnceWith({ directory: DIR, stems: { drums: null } })
+    expect(within(rows[0]!).getByRole('button', { name: 'Hide vocals' })).toBeInTheDocument()
+  })
+
+  it('an empty stem can be kept in the list, and both kinds are named together as hidden', async () => {
+    const stems = base.map((s) => (s.name === 'bass' ? { ...s, empty: true } : s.name === 'drums' ? { ...s, hidden: true } : s))
+    panel(stems)
+    expect(names()).toEqual(['vocals', 'other'])
+    expect(screen.getByTestId('empty-stems')).toHaveTextContent('2 hidden: drums, bass')
+    await userEvent.click(screen.getByRole('button', { name: 'Show hidden stems' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Show bass again' }))
+    expect(setHidden.mutateAsync).toHaveBeenCalledExactlyOnceWith({ directory: DIR, stems: { bass: false } })
+    cleanup()
+    // Kept by hand, it is listed with the setting on, and hiding it again leaves it to the setting.
+    panel(base.map((s) => (s.name === 'bass' ? { ...s, empty: true, hidden: false } : s)))
+    expect(names()).toEqual(['vocals', 'drums', 'bass', 'other'])
+    await userEvent.click(screen.getByRole('button', { name: 'Hide bass' }))
+    expect(setHidden.mutateAsync).toHaveBeenLastCalledWith({ directory: DIR, stems: { bass: null } })
+  })
+
+  it('says why when the choice cannot be kept', async () => {
+    setHidden.mutateAsync.mockRejectedValueOnce(new Error('this song is being separated again: wait until it is done'))
+    panel(base)
+    await userEvent.click(screen.getByRole('button', { name: 'Hide drums' }))
+    expect(await screen.findByText('this song is being separated again: wait until it is done')).toBeInTheDocument()
+    expect(names()).toEqual(['vocals', 'drums', 'bass', 'other'])
   })
 })
