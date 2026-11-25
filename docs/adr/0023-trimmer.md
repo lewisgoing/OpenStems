@@ -182,6 +182,23 @@ got separated meanwhile, come in.
   the right edge turns the page, as a DAW does.
 - Space plays and pauses, L loops the part, Play selection plays it once. Esc clears the
   part, then goes back. No key acts while a field has the focus, and a held key acts once.
+- A part chosen where there was none (a drag, a double click, a length) is looped once the
+  pointer lets go: a part is chosen to be heard round and round, and the first thing done
+  with it was always L. After that the loop is the user's: on, it follows the part; turned
+  off, it stays off for the parts after it, until the part is cleared (`selectionDone`, which
+  compares with the part as it was before the gesture).
+- Home, and the button left of Play, take the playhead and the view to 0:00 (`toStart`). A
+  click puts the playhead on the nearest line, or at the song's start or end when that is
+  nearer or the line is outside the song (`seekPlace`): a grid whose bar 1 is not at 0:00 has
+  no line there, and the start could not be clicked.
+- Length, in the toolbar beside Snap: 4, 8, 16, 32 and 64 bars (`BAR_LENGTHS`), and a field
+  for any other number from 1 to 999, kept in local storage (`openstems.trim.bars.v1`) for
+  the next song and the next start. With a part chosen it keeps its start and takes that
+  length; without one it starts on the bar line at or before the playhead, or the first one
+  in the song. A part that would run past the end moves back by whole bars; in a shorter
+  song it runs to the end (`barsRange`). The length the part has is shown pressed
+  (`barsOf`), and a part that reaches out of sight is shown whole. The lengths themselves
+  are not a setting: one field covers the odd length without a list to manage.
 - The waveform is drawn at any zoom from the decoded audio (`audio/pyramid.ts`), and from
   the engine's peaks until then, on whole device pixels. Layers (`drawLayers`) are ordered
   in every pixel column, quietest in front: each fills from its own peak to the next one in,
@@ -333,6 +350,16 @@ file, negative when bar 1 starts before it) and 4 beats to a bar.
   `grid.clean_downbeat`: -60 to 86400 seconds, kept to four decimals with a half rounded up.
   Its twin in the app, `cleanDownbeat` in `app/src/lib/grid.ts`, rounds the same way, with
   `Math.round(x * 10000) / 10000`: change both together.
+- **Before the song's start.** The view never shows time before 0:00, so a flag dragged
+  there was lost: off the left of the ruler, with a "Bar 1" button that could not scroll to
+  it. Bar 1 may still be put there (a pickup). Its flag then waits at the left edge
+  (`pinned` in `Stage.tsx`, "‹1" with no pole), and a drag from there brings bar 1 in under
+  the pointer; a press without a drag leaves it. While the flag is dragged the song's start
+  takes hold of it within the grab distance (`flagPlace`; Alt, Option on a Mac, places it
+  freely), since 0:00 is where bar 1 most often belongs. 0:00 beside the field, dimmed while
+  bar 1 is there, and a double click on the flag put bar 1 at the start. The double click is
+  told by what its second press took hold of: with the pointer captured, Chromium sends the
+  event from the ruler, not from the flag.
 
 ### A song's own file before separation
 
@@ -441,7 +468,10 @@ returns, filled in for jobs saved before it existed.
 
 ## Mac
 
-Nothing of the trimmer has been seen by hand on a Mac. In CI on macos-15 (Apple Silicon, the
+Nothing of the trimmer has been seen by hand on a Mac. That includes bar 1's flag at the left
+edge, the lengths, the loop that comes with a new part and Home (steps 11 and 12 below);
+Home on a Mac's laptop keyboard is Fn with the left arrow, which Chromium reports as Home,
+and the tooltip says so (`homeKey`). In CI on macos-15 (Apple Silicon, the
 FakeEngine) its component tests and the whole end-to-end suite pass, first on PR #31. A test
 that was flaky there showed a race Windows had hidden (a saved grid's draft dropped a tick
 before the song had it), since fixed. What differs is decided in plain functions, tested on Windows with the
@@ -487,6 +517,15 @@ For the owner, on the M1 Max:
     drawn on top of one another, each in its chip's color, with no thin line between two
     colors on the Retina screen, and stay sharp when zoomed in. With a part chosen, they
     should fade outside it. Then in light (the switch at the foot of the sidebar).
+11. Drag bar 1's flag (the 1 in the ruler) off the left edge: it should stay at the edge as
+    "‹1", and the bar 1 field should show a time with a minus. Drag it from there back onto a
+    beat. Drag it close to the left edge: it should jump to 0:00; with Option held it should
+    not. Double-click the flag, and press 0:00 beside the field: bar 1 at 0:00 both times.
+12. With no part chosen, press 8 under Length: 8 bars from the playhead's bar, with Loop on.
+    Type 12 in the field beside it and press Return: 12 bars. Press L, clear the part with Esc
+    and drag a new one: Loop should be on again. Fn+← (Home) and the button left of Play
+    should take the playhead and the view to 0:00. Check that the toolbar still breaks into
+    lines cleanly with the Length group in it.
 
 ## Limits
 

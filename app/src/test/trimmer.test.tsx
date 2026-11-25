@@ -16,30 +16,36 @@ import { SelectionProvider } from '@/state/selection'
 import { TrimEditor, type TrimEditorProps } from '@/trimmer/TrimEditor'
 import { FRESH, type TrimMemory, forgetAll, recall, remember } from '@/trimmer/memory'
 import {
+  BARS_KEY,
   type Chip,
   OPEN_STEMS,
   type Pick,
   SOURCE,
   audibleOf,
   barRange,
+  barsOf,
+  barsRange,
   choose,
   clipNameParts,
   clipRequest,
   clipsFolder,
   clock,
   defaultPick,
+  flagPlace,
   folderParts,
   isChosen,
   isZoomWheel,
   moved,
   nudgeDownbeat,
   nudgeEdge,
+  parseBars,
   parseClock,
   peaksOf,
   pickOfAudible,
   readout,
   sameGrid,
   sectionsOf,
+  seekPlace,
   spanned,
   targetOf,
   targetTitle,
@@ -557,6 +563,49 @@ describe('selecting on the grid', () => {
     expect(nudgeDownbeat(GRID, 1, false)).toBeCloseTo(0.51, 9)
     expect(nudgeDownbeat(GRID, -1, true)).toBe(0)
     expect(nudgeDownbeat({ ...GRID, downbeat: -59.995 }, -1, false)).toBe(-60)
+  })
+
+  it("puts the playhead on the nearest line, or at the song's start or end when that is nearer", () => {
+    expect(seekPlace(GRID, 17, 'bar', false, D)).toBe(16.5)
+    expect(seekPlace(GRID, 0.4, 'bar', false, D)).toBe(0.5)
+    // No line is at 0:00 on this grid: a click nearer to it than to bar 1 goes there.
+    expect(seekPlace(GRID, 0.2, 'bar', false, D)).toBe(0)
+    expect(seekPlace({ ...GRID, downbeat: -1.5 }, 0.1, 'bar', false, D)).toBe(0)
+    expect(seekPlace(GRID, 59.8, 'bar', false, 60)).toBe(60)
+    expect(seekPlace(GRID, 0.2, 'bar', true, D)).toBe(0.2)
+    expect(seekPlace(GRID, 0.2, 'off', false, D)).toBe(0.2)
+    expect(seekPlace(GRID, -3, 'off', false, D)).toBe(0)
+  })
+
+  it("lets the song's start take hold of bar 1's flag close by, unless it is held free", () => {
+    expect(flagPlace(0.3, 0.6, false)).toBe(0)
+    expect(flagPlace(-0.3, 0.6, false)).toBe(0)
+    expect(flagPlace(1, 0.6, false)).toBe(1)
+    expect(flagPlace(-1, 0.6, false)).toBe(-1)
+    expect(flagPlace(0.3, 0.6, true)).toBe(0.3)
+  })
+
+  it("gives a part so many bars: from the playhead's bar, or the part chosen made that long", () => {
+    expect(barsRange(GRID, null, 17, 8, D)).toEqual({ start: 16.5, end: 32.5 })
+    expect(barsRange(GRID, { start: 16.5, end: 18.5 }, 40, 4, D)).toEqual({ start: 16.5, end: 24.5 })
+    // A part that starts off the grid keeps its start.
+    expect(barsRange(GRID, { start: 17, end: 18 }, 0, 4, D)).toEqual({ start: 17, end: 25 })
+    // The playhead before bar 1: the first bar line in the song.
+    expect(barsRange(GRID, null, 0.2, 8, D)).toEqual({ start: 0.5, end: 16.5 })
+    // Past the end it moves back by whole bars; in a song shorter than that it runs to the end.
+    expect(barsRange(GRID, null, 58, 8, 60)).toEqual({ start: 42.5, end: 58.5 })
+    expect(barsRange(GRID, null, 0, 8, 10)).toEqual({ start: 0.5, end: 10 })
+    expect(barsOf(GRID, { start: 16.5, end: 32.5 })).toBe(8)
+    expect(barsOf(GRID, { start: 17, end: 25 })).toBe(4)
+    expect(barsOf(GRID, { start: 17, end: 24.3 })).toBeNull()
+    expect(barsOf(null, { start: 16.5, end: 32.5 })).toBeNull()
+    expect(barsOf(GRID, null)).toBeNull()
+  })
+
+  it('reads a typed number of bars, whole and from 1 to 999', () => {
+    expect(parseBars('12')).toBe(12)
+    expect(parseBars(' 8 ')).toBe(8)
+    for (const text of ['', '0', '1.5', '-4', 'x', '1000']) expect(parseBars(text)).toBeNull()
   })
 
   it('says where and how long a selection is, by its times without a grid', () => {
@@ -1180,6 +1229,168 @@ describe('the trimmer', () => {
       fireEvent.keyDown(window, { key: 'Escape' })
       drag(27, 43)()
       expect(editorEl()).toHaveAttribute('data-sel', '2.5,4.5')
+    })
+
+    it('loops a part dragged where there was none, and leaves the loop as it was set after that', () => {
+      const { player } = openEditor({ initial: { ...FRESH, pick: { kind: 'stems', names: ['kick'] }, view } })
+      expect(player.state.loop).toBeNull()
+      const letGo = drag(27, 43)
+      // Not while it is dragged: once the pointer lets go.
+      expect(player.state.loop).toBeNull()
+      letGo()
+      expect(player.state.loop).toEqual({ start: 2.5, end: 4.5 })
+      expect(screen.getByTestId('loop')).toHaveAttribute('aria-pressed', 'true')
+      // On, it follows a part dragged anew.
+      drag(107, 123)()
+      expect(player.state.loop).toEqual({ start: 10.5, end: 12.5 })
+      // Turned off, it stays off for the next part: there was one already.
+      fireEvent.click(screen.getByTestId('loop'))
+      drag(27, 43)()
+      expect(editorEl()).toHaveAttribute('data-sel', '2.5,4.5')
+      expect(player.state.loop).toBeNull()
+      // Cleared, the next part is a new one.
+      fireEvent.keyDown(window, { key: 'Escape' })
+      drag(107, 123)()
+      expect(player.state.loop).toEqual({ start: 10.5, end: 12.5 })
+    })
+
+    it('loops a bar taken with a double click where there was no part', () => {
+      const { player } = openEditor({ initial: { ...FRESH, pick: { kind: 'stems', names: ['kick'] }, view } })
+      fireEvent.doubleClick(screen.getByTestId('trim-wave'), { clientX: 30 })
+      expect(editorEl()).toHaveAttribute('data-sel', '2.5,4.5')
+      expect(player.state.loop).toEqual({ start: 2.5, end: 4.5 })
+    })
+
+    it('chooses a part of so many bars with one press, and keeps a length typed for next time', async () => {
+      const { player, unmount } = openEditor({ initial: { ...FRESH, pick: { kind: 'stems', names: ['kick'] }, view } })
+      // No part yet: 8 bars from the playhead's bar, here the first bar line of the song.
+      fireEvent.click(screen.getByTestId('bars-8'))
+      expect(editorEl()).toHaveAttribute('data-sel', '0.5,16.5')
+      expect(screen.getByTestId('bars-8')).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByTestId('readout')).toHaveTextContent('Bars 1-8 · 8 bars')
+      expect(player.state.loop).toEqual({ start: 0.5, end: 16.5 })
+      // With a part: the same start, the new length.
+      fireEvent.click(screen.getByTestId('bars-4'))
+      expect(editorEl()).toHaveAttribute('data-sel', '0.5,8.5')
+      expect(screen.getByTestId('bars-8')).toHaveAttribute('aria-pressed', 'false')
+      expect(screen.getByTestId('bars-4')).toHaveAttribute('aria-pressed', 'true')
+      expect(player.state.loop).toEqual({ start: 0.5, end: 8.5 })
+      await userEvent.type(screen.getByTestId('bars-field'), '3{Enter}')
+      expect(editorEl()).toHaveAttribute('data-sel', '0.5,6.5')
+      expect(localStorage.getItem(BARS_KEY)).toBe('3')
+      await userEvent.type(screen.getByTestId('bars-field'), 'x{Enter}')
+      expect(await screen.findByText('Type a number of bars, from 1 to 999.')).toBeInTheDocument()
+      expect(editorEl()).toHaveAttribute('data-sel', '0.5,6.5')
+      // The next editor offers the length typed last.
+      unmount()
+      openEditor()
+      expect(screen.getByTestId('bars-field')).toHaveValue('3')
+    })
+
+    it('shows a part of many bars whole when it reaches out of sight', () => {
+      openEditor({ initial: { ...FRESH, pick: { kind: 'stems', names: ['kick'] }, view: { t0: 0, t1: 6 } } })
+      fireEvent.click(screen.getByTestId('bars-16'))
+      expect(editorEl()).toHaveAttribute('data-sel', '0.5,32.5')
+      expect(Number(editorEl().getAttribute('data-t0'))).toBe(0)
+      expect(Number(editorEl().getAttribute('data-t1'))).toBeGreaterThan(32.5)
+    })
+
+    it('goes back to 0:00 with Home or its button: the playhead and the view', () => {
+      const { player } = openEditor({ initial: { ...FRESH, view: { t0: 10, t1: 20 } } })
+      player.seek(15)
+      fireEvent.keyDown(window, { key: 'Home', code: 'Home' })
+      expect(player.position).toBe(0)
+      expect(editorEl()).toHaveAttribute('data-t0', '0')
+      expect(editorEl()).toHaveAttribute('data-t1', '10')
+      player.seek(7)
+      fireEvent.click(screen.getByTestId('trim-start'))
+      expect(player.position).toBe(0)
+      // Not while a field is typed in: Home is the field's there.
+      player.seek(7)
+      fireEvent.keyDown(screen.getByTestId('tempo-field'), { key: 'Home', code: 'Home' })
+      expect(player.position).toBe(7)
+    })
+
+    it('puts the playhead at 0:00 for a click nearer to it than to a line', () => {
+      const { player } = openEditor({ initial: { ...FRESH, view } })
+      player.seek(9)
+      const wave = screen.getByTestId('trim-wave')
+      fireEvent.pointerDown(wave, { button: 0, clientX: 2, pointerId: 1 })
+      fireEvent.pointerUp(wave, { clientX: 2, pointerId: 1 })
+      expect(player.position).toBe(0)
+    })
+
+    it('puts bar 1 at 0:00 with one press', async () => {
+      const { onCommit } = openEditor({ initial: { ...FRESH, view } })
+      const start = screen.getByTestId('downbeat-start')
+      expect(start).toHaveAttribute('aria-disabled', 'false')
+      fireEvent.click(start)
+      expect(editorEl()).toHaveAttribute('data-downbeat', '0')
+      expect(onCommit).toHaveBeenCalledWith({ downbeat: 0 })
+      expect(start).toHaveAttribute('aria-disabled', 'true')
+      // At 0:00 already: pressed again, nothing is saved.
+      fireEvent.click(start)
+      expect(onCommit).toHaveBeenCalledTimes(1)
+    })
+
+    describe('with bar 1 before the start of the song', () => {
+      const flag = () => screen.getByTestId('bar-one-flag')
+      const before = () => {
+        const opened = openEditor({ initial: { ...FRESH, view } })
+        // Two beats earlier with the keys: 0.5 s, 0 s, then half a second before the song.
+        fireEvent.keyDown(flag(), { key: 'ArrowLeft', shiftKey: true })
+        fireEvent.keyDown(flag(), { key: 'ArrowLeft', shiftKey: true })
+        expect(editorEl()).toHaveAttribute('data-downbeat', '-0.5')
+        return opened
+      }
+
+      it('keeps the flag at the left edge, and a drag from there brings bar 1 back in', async () => {
+        const { onCommit } = before()
+        expect(flag()).toHaveAttribute('data-pinned', 'true')
+        expect(flag().style.transform).toBe('translateX(0px)')
+        // A press without a drag leaves it where it is.
+        fireEvent.pointerDown(flag(), { button: 0, clientX: 3, pointerId: 1 })
+        fireEvent.pointerUp(flag(), { clientX: 3, pointerId: 1 })
+        expect(editorEl()).toHaveAttribute('data-downbeat', '-0.5')
+        // Dragged, it comes in under the pointer: 28 px to the right is 2.8 s later than the edge.
+        fireEvent.pointerDown(flag(), { button: 0, clientX: 3, pointerId: 1 })
+        fireEvent.pointerMove(flag(), { clientX: 20, pointerId: 1 })
+        fireEvent.pointerMove(flag(), { clientX: 31, pointerId: 1 })
+        fireEvent.pointerUp(flag(), { clientX: 31, pointerId: 1 })
+        // Saves go one after another: this one follows the press's.
+        await waitFor(() => expect(onCommit).toHaveBeenLastCalledWith({ downbeat: 2.8 }))
+        expect(flag()).not.toHaveAttribute('data-pinned')
+      })
+
+      it('puts bar 1 at 0:00 for a double click on the flag', async () => {
+        const { onCommit } = before()
+        // The second press of a double click, then the double click itself, which a browser
+        // sends from the ruler: it has the pointer.
+        fireEvent.pointerDown(flag(), { button: 0, clientX: 3, pointerId: 1 })
+        fireEvent.pointerUp(flag(), { clientX: 3, pointerId: 1 })
+        fireEvent.doubleClick(screen.getByTestId('trim-ruler'), { clientX: 3 })
+        expect(editorEl()).toHaveAttribute('data-downbeat', '0')
+        await waitFor(() => expect(onCommit).toHaveBeenLastCalledWith({ downbeat: 0 }))
+        // A double click elsewhere on the ruler leaves bar 1 alone.
+        fireEvent.click(screen.getByTestId('downbeat-later'))
+        fireEvent.pointerDown(screen.getByTestId('trim-ruler'), { button: 0, clientX: 300, pointerId: 1 })
+        fireEvent.pointerUp(screen.getByTestId('trim-ruler'), { clientX: 300, pointerId: 1 })
+        fireEvent.doubleClick(screen.getByTestId('trim-ruler'), { clientX: 300 })
+        expect(editorEl()).toHaveAttribute('data-downbeat', '0.01')
+      })
+
+      it("lets the song's start take hold of a flag dragged close to it, unless Alt is held", () => {
+        const { onCommit } = openEditor({ initial: { ...FRESH, view } })
+        // Bar 1 is at 0.5 s, 5 px in. Dragged 3 px left it is 2 px from the start: it goes to 0:00.
+        fireEvent.pointerDown(flag(), { button: 0, clientX: 5, pointerId: 1 })
+        fireEvent.pointerMove(flag(), { clientX: 2, pointerId: 1 })
+        expect(editorEl()).toHaveAttribute('data-downbeat', '0')
+        // With Alt it goes exactly where it is put, before the start as well.
+        fireEvent.pointerMove(flag(), { clientX: -5, pointerId: 1, altKey: true })
+        fireEvent.pointerUp(flag(), { clientX: -5, pointerId: 1, altKey: true })
+        expect(onCommit).toHaveBeenLastCalledWith({ downbeat: -0.5 })
+        expect(flag()).toHaveAttribute('data-pinned', 'true')
+      })
     })
   })
 })

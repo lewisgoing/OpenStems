@@ -72,6 +72,14 @@ export function freeKey(): string {
 }
 
 /**
+ * The key that goes to the start: Home, which a Mac's laptop keyboard has only as Fn with the
+ * left arrow. Both arrive as "Home".
+ */
+export function homeKey(): string {
+  return isMac() ? 'Home, or Fn+←' : 'Home'
+}
+
+/**
  * Whether the system's shortcut key is held: Ctrl on Windows, Command on a Mac. Control is
  * not taken on a Mac, where Control+1 switches desktops and a Control-click is a right click.
  */
