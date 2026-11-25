@@ -66,7 +66,9 @@ their addresses and what the app could link to are in `docs/site.md`):
   is emptied. Its requirements, the
   Mac's first-open steps and "Will it run?" (`MACHINES` in `site/main.js`, the README's
   Memory table) copy the README's, and its OpenStems Studio section (anchor `#trim`) copies `rangeLabel`, `rangeLength`
-  and `mixLabel`: change both together
+  and `mixLabel`: change both together. Sizes in `site/style.css` are in rem (media queries and
+  hairlines stay in px): past 1920px the root size grows with the window, to twice at 3840px,
+  so a 4K screen at 100% shows the 1920px layout larger. Write new sizes in rem
 
 App (run from `app/`):
 
