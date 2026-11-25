@@ -82,7 +82,8 @@ App (run from `app/`):
   and a machine with little memory (`memory-1-queue.png` to `memory-7-settings.png`).
   The main views are taken in light as well (`light-1-empty.png` to `light-tray.png`),
   the welcome's steps in both (`welcome-1-folders.png` to `light-welcome-3-models.png`) and
-  the row menus (`3b-row-menu.png`, `tray-4b-row-menu.png`). The trimmer is taken in both
+  the row menus (`3b-row-menu.png`, `tray-4b-row-menu.png`), and the foot of Settings with
+  its links to the website (`7b-settings-about.png`). The trimmer is taken in both
   (`trim-1-open.png` to `trim-5-queue-part.png`, `light-trim-1-open.png` to
   `light-trim-5-queue-part.png`), on a drum loop the spec writes
 - `pnpm e2e theme`: the theme switch, both windows, the pick across a restart
