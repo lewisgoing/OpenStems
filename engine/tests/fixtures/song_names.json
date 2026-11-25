@@ -1,0 +1,14 @@
+[
+  {"typed": "Night Drive", "name": "Night Drive", "note": "kept as typed"},
+  {"typed": "  Night   Drive \t", "name": "Night Drive", "note": "spaces trimmed and runs of them made one"},
+  {"typed": "Night\nDrive", "name": "Night Drive", "note": "a pasted line break is a space"},
+  {"typed": "AC/DC: T.N.T?", "name": "AC/DC: T.N.T?", "note": "characters a file name cannot hold stay in the name"},
+  {"typed": "Mr.", "name": "Mr.", "note": "a dot at the end stays in the name"},
+  {"typed": "夜のドライブ 🌙", "name": "夜のドライブ 🌙", "note": "any script, and emoji"},
+  {"typed": "Café", "name": "Café", "note": "one spelling of an accented letter (NFC)"},
+  {"typed": "", "name": null, "note": "empty: the file's own name"},
+  {"typed": "   ", "name": null, "note": "only spaces: the file's own name"},
+  {"typed": "...", "error": "A name needs more than dots.", "note": "nothing a folder could be called"},
+  {"typed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "note": "120 characters: the longest"},
+  {"typed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "error": "A name can be up to 120 characters.", "note": "121 characters"}
+]

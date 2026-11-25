@@ -216,6 +216,11 @@ class JobOptions(BaseModel):
         default=None, description="The song's key, such as Am, in place of the detected one."
     )
     downbeat: float | None = Field(default=None, description=_DOWNBEAT)
+    name: str | None = Field(
+        default=None,
+        description="The song's name, in place of its file's: its stem folder and stems "
+        "are named by it. Left out, a song the user named before keeps that name.",
+    )
     range: JobRange | None = Field(
         default=None,
         description="The part of the song to separate alone. Set with "
@@ -409,7 +414,9 @@ class StemFile(BaseModel):
 class JobInfo(BaseModel):
     id: str
     track_path: str
-    track_name: str
+    track_name: str = Field(
+        description="The song's name: the one the user gave it, or else its file's."
+    )
     recipe_id: str
     recipe_name: str
     quality: str
@@ -502,6 +509,19 @@ class SetAnalysis(BaseModel):
 
 
 class SetStemSetAnalysis(SetAnalysis):
+    directory: str
+
+
+class SetName(BaseModel):
+    """The name the user gives a song. null gives it its file's name back."""
+
+    name: str | None = Field(
+        description="Up to 120 characters. Characters a file name cannot hold are kept in "
+        "the name and replaced where it names a folder or a file."
+    )
+
+
+class SetStemSetName(SetName):
     directory: str
 
 

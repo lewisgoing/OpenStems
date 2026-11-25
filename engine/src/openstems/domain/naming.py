@@ -33,6 +33,32 @@ def safe_component(name: str, fallback: str = "untitled") -> str:
     return name
 
 
+def clean_name(value: object) -> str | None:
+    """A song's name as the user typed it, or None for "the file's own name".
+
+    The name is what people read: it keeps characters a file name cannot hold, and
+    `safe_component` replaces those where it names a folder or a file. The app checks what
+    is typed by the same rule (``cleanName`` in ``app/src/lib/songname.ts``); the cases are
+    in ``tests/fixtures/song_names.json``.
+    """
+    from openstems.domain.errors import DomainError
+
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise DomainError("a song's name must be text")
+    name = unicodedata.normalize("NFC", value)
+    name = re.sub(r"[\x00-\x1f\x7f]", " ", name)
+    name = re.sub(r"\s+", " ", name).strip()
+    if not name:
+        return None
+    if len(name) > MAX_COMPONENT:
+        raise DomainError(f"a song's name can be up to {MAX_COMPONENT} characters")
+    if not name.strip(" ."):
+        raise DomainError("a song's name needs more than dots")
+    return name
+
+
 def render_name(template: str, **tokens: str) -> str:
     """Fill a naming template. Unknown or empty tokens are dropped along with stray separators."""
 

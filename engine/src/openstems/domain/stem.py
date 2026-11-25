@@ -23,12 +23,14 @@ class Track:
     # A part of the song separated alone, named as a clip of it is ("bars 9-16"). Its stems
     # are a song of their own, "<track> (<part>)", so they never mix with the whole song's.
     part: str = ""
+    # The name the user gave the song, in place of its file's. The file keeps its own.
+    title: str = ""
 
     @property
     def name(self) -> str:
         import os
 
-        name = os.path.splitext(os.path.basename(self.path))[0]
+        name = self.title or os.path.splitext(os.path.basename(self.path))[0]
         if not self.part:
             return name
         # A name too long for a folder is cut in the song's name, never in the part's, or

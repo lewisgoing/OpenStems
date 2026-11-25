@@ -25,7 +25,9 @@ from openstems.doctor import DoctorReport
 from openstems.domain.errors import DomainError
 from openstems.domain.grid import clean_selection, make_grid
 from openstems.domain.memory import GB, MemoryPlan, memory_is_estimated, recommended_ids
+from openstems.domain.naming import clean_name, safe_component
 from openstems.domain.recipe import Recipe, single_model_recipe
+from openstems.domain.stem import StemSet, Track
 from openstems.engines.host import fake_mode, memory_plan
 from openstems.links import Fetched, check_url
 from openstems.procutil import physical_memory_bytes
@@ -41,6 +43,8 @@ LINKS_DIR = "_links"
 # Songs as the app plays and draws them before separation, in the cache folder.
 PREVIEWS_DIR = "previews"
 ACTIVE_STATES = ("queued", "preparing", "running", "writing")
+RUNNING_STATES = ("preparing", "running", "writing")
+RENAME_BUSY = "this song is being separated: rename it when it is done"
 
 
 def _cli_json(args: list[str], timeout: float) -> tuple[dict[str, Any] | None, list[str]]:
@@ -118,6 +122,44 @@ def _path_key(path: str) -> str:
     return os.path.normcase(os.path.normpath(os.path.abspath(path)))
 
 
+def _song_name(path: str, part: str, title: str | None) -> str:
+    """The name a song's folder and stems go by: the user's name for it or else its
+    file's, and the label of the part when only a part of it was separated."""
+    return Track(path=path, content_hash="", size=0, part=part, title=title or "").name
+
+
+def _folders_of(job: dict[str, Any]) -> set[str]:
+    """The song folders a job that is running may be writing to, by name and without
+    case: the whole song's, and its part's when it has one chosen."""
+    title = job["options"].get("name")
+    part = str((job["options"].get("range") or {}).get("label") or "")
+    names = {_song_name(job["track_path"], "", title)}
+    if part:
+        names.add(_song_name(job["track_path"], part, title))
+    return {safe_component(name).lower() for name in names}
+
+
+def _job_stems(where: str, result: StemSet) -> list[dict[str, Any]]:
+    """The stems of the stem folder ``where`` as a job lists them."""
+    from openstems.pipeline.run import SAMPLE_RATE
+
+    return [
+        {
+            "name": s.name,
+            "file": s.file,
+            "path": os.path.join(where, s.file),
+            "peaks": os.path.join(where, s.peaks) if s.peaks else None,
+            "midi": os.path.join(where, s.midi) if s.midi else None,
+            "offset": s.offset,
+            "start": s.offset / SAMPLE_RATE,
+            "samples": s.samples,
+            "sample_rate": s.sample_rate,
+            "group": s.group or None,
+        }
+        for s in result.stems
+    ]
+
+
 class Service:
     def __init__(self) -> None:
         self.bus = EventBus()
@@ -130,6 +172,7 @@ class Service:
         self._doctor: DoctorReport | None = None  # what the doctor found on this machine
         self._examined = False  # the doctor ran since this process started
         self._system_lock = threading.Lock()
+        self._rename_lock = threading.Lock()  # one rename on the disk at a time
         # One lock per clip folder and per preview: two requests that arrive together
         # must not write the same file twice.
         self._locks: dict[tuple[str, str], threading.Lock] = {}
@@ -422,6 +465,11 @@ class Service:
         recipe, opts = self._checked(recipe_id, model_id, quality, options)
         if start is None:
             start = self.runtime.settings.auto_start
+        if "name" not in opts:
+            # A song the user named keeps its name when it is separated again.
+            given = self._given_name(path)
+            if given is not None:
+                opts["name"] = given
         return self.jobs.create(
             path,
             recipe.id,
@@ -448,6 +496,10 @@ class Service:
         from openstems.pipeline.retag import clean_changes
 
         opts.update(clean_changes(opts))  # a tempo or key typed by the user
+        if "name" in opts:
+            opts["name"] = clean_name(opts["name"])
+            if opts["name"] is None:
+                del opts["name"]
         self.runtime.pipeline.plan(recipe, self.runtime.options(quality=quality, **opts))
         return recipe, opts
 
@@ -546,10 +598,12 @@ class Service:
                 raise DomainError("a clip of a song's own file is cut from that one file")
             song = self._known_song(paths[0])
             settings = self.runtime.settings
-            with self._lock("clips", _path_key(str(settings.output_path / song.stem))):
+            # Beside the song's stems, under the name the user gave it if they gave one.
+            name = self._given_name(str(song)) or song.stem
+            with self._lock("clips", _path_key(str(settings.output_path / safe_component(name)))):
                 clip = render_source_clip(
                     song,
-                    song.stem,
+                    name,
                     settings.output_path,
                     start,
                     end,
@@ -721,7 +775,7 @@ class Service:
         """The tempo, key and bar 1 of stems that are written, by the user: in the
         manifest, in file names that hold them and in the tempo FL Studio reads."""
         from openstems.pipeline.retag import set_analysis
-        from openstems.pipeline.run import SAMPLE_RATE, stem_set_from_manifest
+        from openstems.pipeline.run import stem_set_from_manifest
 
         folder = Path(directory)
         if not self.is_served(folder) or not folder.is_dir():
@@ -733,30 +787,136 @@ class Service:
         self.index.save_stem_set(where, manifest)
         result = stem_set_from_manifest(folder, manifest)
         if result is not None:
-            stems = [
-                {
-                    "name": s.name,
-                    "file": s.file,
-                    "path": os.path.join(where, s.file),
-                    "peaks": os.path.join(where, s.peaks) if s.peaks else None,
-                    "midi": os.path.join(where, s.midi) if s.midi else None,
-                    "offset": s.offset,
-                    "start": s.offset / SAMPLE_RATE,
-                    "samples": s.samples,
-                    "sample_rate": s.sample_rate,
-                    "group": s.group or None,
-                }
-                for s in result.stems
-            ]
             self.jobs.output_changed(
-                where, stems, manifest.get("analysis") or {}, list(manifest.get("notes") or [])
+                where,
+                _job_stems(where, result),
+                manifest.get("analysis") or {},
+                list(manifest.get("notes") or []),
             )
         self.bus.publish("stemsets.changed")
+        return self._indexed(where)
+
+    def _indexed(self, where: str) -> dict[str, Any]:
         found = self.index.stem_set(where)
         if found is None:
             raise DomainError("that folder does not hold a set of stems")
         found["source_exists"] = os.path.isfile(found["track_path"])
         return found
+
+    # -- a song's name --------------------------------------------------------
+
+    def _given_name(self, path: str) -> str | None:
+        """The name the user gave the song whose file is ``path``, if they gave it one:
+        on a row of the queue, or else on its stems in the history."""
+        key = _path_key(path)
+        for job in self.jobs.list():
+            if _path_key(job["track_path"]) == key and job["options"].get("name"):
+                return str(job["options"]["name"])
+        own = Path(path).stem
+        for item in self.index.stem_sets():
+            theirs = item["part"] is None and item["track_path"]
+            if theirs and item["track_name"] != own and _path_key(item["track_path"]) == key:
+                return str(item["track_name"])
+        return None
+
+    def rename_job(self, job_id: str, name: str | None) -> dict[str, Any]:
+        """Name a job's song, or with None give it its file's name back.
+
+        The name is the song's, so every row of the same file follows: one that waits
+        keeps it for its run, and stems that are written are renamed on the disk, their
+        folder and their files (`pipeline/rename.py`). Refused while the song runs."""
+        title = clean_name(name)
+        job = self.jobs.get(job_id)
+        key = _path_key(job["track_path"])
+        same = [j for j in self.jobs.list() if _path_key(j["track_path"]) == key]
+        if any(j["state"] in RUNNING_STATES for j in same):
+            raise DomainError(RENAME_BUSY)
+        with self._rename_lock:
+            # One rename per song folder: a part separated alone has a folder of its own.
+            folders: dict[str, tuple[Path, str]] = {}
+            for other in same:
+                out = other.get("output_dir")
+                if other["state"] != "done" or not out or not Path(out).is_dir():
+                    continue
+                part = str((other.get("part") or {}).get("label") or "")
+                full = _song_name(other["track_path"], part, title)
+                folders.setdefault(_path_key(str(Path(out).parent)), (Path(out), full))
+            for directory, full in folders.values():
+                self._rename_folder(directory, full, title)
+            self.jobs.set_name([j["id"] for j in same], title)
+        return self.jobs.get(job_id)
+
+    def rename_stem_set(self, directory: str, name: str | None) -> dict[str, Any]:
+        """Name the song whose stems are in ``directory`` as it is typed, or with None
+        give it its file's name back. Its stems are renamed on the disk, for every recipe
+        it was separated with, and rows of the same file in the queue follow."""
+        from openstems.pipeline.run import read_manifest
+
+        typed = clean_name(name)
+        folder = Path(directory)
+        manifest = read_manifest(folder) if self.is_served(folder) else None
+        if manifest is None:
+            raise DomainError("that folder does not hold a set of stems")
+        source = manifest.get("source") or {}
+        part = str((source.get("range") or {}).get("label") or "")
+        tail = f" ({part})" if part else ""
+        if typed is None:
+            if not source.get("path"):
+                raise DomainError("this song's file is not known: type a name for it")
+            title, full = None, _song_name(str(source["path"]), part, None)
+        elif tail and typed.endswith(tail) and typed[: -len(tail)].strip():
+            # A part keeps its label in its name: what is before it is the song's.
+            title, full = typed[: -len(tail)].strip(), typed
+        else:
+            title, full = typed, typed
+        with self._rename_lock:
+            moved = self._rename_folder(folder, full, title)
+        return self._indexed(moved[_path_key(str(folder))])
+
+    def _rename_folder(self, directory: Path, full: str, title: str | None) -> dict[str, str]:
+        """Rename on the disk the song that the stem folder ``directory`` is of, then have
+        the history and the queue follow. ``full`` is the name its folder and files take,
+        ``title`` the song's name without a part's label (None: its file's own). Returns
+        each stem folder as it compared before, to where it is now."""
+        from openstems.pipeline.rename import rename_song
+        from openstems.pipeline.run import stem_set_from_manifest
+
+        if not self.is_served(directory) or not directory.is_dir():
+            raise DomainError("that folder does not hold a set of stems")
+        song_folder = directory.parent
+        busy = self.jobs.running()
+        if busy is not None and song_folder.name.lower() in _folders_of(busy):
+            raise DomainError(RENAME_BUSY)
+        moved = rename_song(directory, full)
+
+        under = _path_key(str(song_folder)) + os.sep
+        for known in self.index.stem_set_dirs():
+            if _path_key(known).startswith(under):
+                self.index.delete_stem_set(known)
+        folders: dict[str, tuple[str, list[dict[str, Any]] | None]] = {}
+        files: set[str] = set()
+        for item in moved:
+            where = os.path.normpath(str(item.now))
+            if item.manifest.get("complete"):
+                self.index.save_stem_set(where, item.manifest)
+            result = stem_set_from_manifest(item.now, item.manifest)
+            stems = _job_stems(where, result) if result is not None else None
+            folders[_path_key(str(item.was))] = (where, stems)
+            source = item.manifest.get("source") or {}
+            if source.get("path") and not source.get("range"):
+                files.add(_path_key(str(source["path"])))
+        self.jobs.moved(folders, title)
+        # Rows of the same song that have no stems yet run under its new name.
+        self.jobs.set_name(
+            [
+                job["id"]
+                for job in self.jobs.list()
+                if job["state"] != "done" and _path_key(job["track_path"]) in files
+            ],
+            title,
+        )
+        self.bus.publish("stemsets.changed")
+        return {key: where for key, (where, _) in folders.items()}
 
     def all_recipes_for(self, model_id: str) -> Recipe:
         spec = self.runtime.catalog.get(model_id)
