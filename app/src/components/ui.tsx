@@ -2,7 +2,7 @@ import { Dialog as BaseDialog } from '@base-ui/react/dialog'
 import { Select as BaseSelect } from '@base-ui/react/select'
 import { Switch as BaseSwitch } from '@base-ui/react/switch'
 import { Tooltip as BaseTooltip } from '@base-ui/react/tooltip'
-import { Check, ChevronsUpDown } from 'lucide-react'
+import { ArrowUpRight, Check, ChevronsUpDown } from 'lucide-react'
 import {
   type ButtonHTMLAttributes,
   type ReactElement,
@@ -44,6 +44,23 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     />
   )
 })
+
+/* ---- ExternalLink ---------------------------------------------------------- */
+
+/**
+ * A link that opens in the user's browser. It is a real link (the main process sends every
+ * `https://` address a window opens to the browser: `electron/windows.ts`), so it can be
+ * copied and it says where it goes. The arrow marks that it leaves the app.
+ * `inline` is for a link in a sentence; without it the link looks like a button.
+ */
+export function ExternalLink({ href, inline, className, children }: { href: string; inline?: boolean; className?: string; children: ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className={cn(inline ? 'link press' : 'btn pressable', className)}>
+      {children}
+      <ArrowUpRight size={inline ? 11 : 13} aria-hidden className={inline ? 'link-arrow' : 'text-faint'} />
+    </a>
+  )
+}
 
 /* ---- Tooltip --------------------------------------------------------------- */
 

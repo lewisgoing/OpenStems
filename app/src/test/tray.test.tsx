@@ -445,7 +445,7 @@ describe('what differs between Windows and a Mac', () => {
   })
 
   it('gives a Mac the menu its standard shortcuts live in', () => {
-    const host = { name: 'OpenStems', settings: vi.fn(), help: vi.fn() }
+    const host = { name: 'OpenStems', settings: vi.fn(), open: vi.fn() }
     const menu = macMenuTemplate(host)
     const submenu = (index: number) => menu[index]?.submenu as { role?: string; label?: string; accelerator?: string; click?: () => void }[]
     const roles = (index: number) => submenu(index).flatMap((item) => (item.role ? [item.role] : []))
@@ -463,10 +463,16 @@ describe('what differs between Windows and a Mac', () => {
     expect(settings?.accelerator).toBe('Command+,')
     settings?.click?.()
     expect(host.settings).toHaveBeenCalledOnce()
-    const help = submenu(4)[0]
-    expect(help?.label).toBe('OpenStems on GitHub')
-    help?.click?.()
-    expect(host.help).toHaveBeenCalledOnce()
+    // Help opens the website first, and the code last.
+    const help = submenu(4).filter((item) => item.label)
+    expect(help.map((item) => item.label)).toEqual(['OpenStems Website', "What's New", 'Support OpenStems', 'OpenStems on GitHub'])
+    for (const item of help) item.click?.()
+    expect(host.open.mock.calls.map((call) => call[0])).toEqual([
+      'https://lewisgoing.github.io/OpenStems/',
+      'https://lewisgoing.github.io/OpenStems/#changelog',
+      'https://lewisgoing.github.io/OpenStems/#support',
+      'https://github.com/lewisgoing/OpenStems',
+    ])
   })
 })
 

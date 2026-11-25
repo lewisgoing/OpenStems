@@ -1,13 +1,14 @@
 import { FolderOpen } from 'lucide-react'
 import { type ReactNode, useEffect, useState } from 'react'
 import type { SetupStatus, ShellStatus, TorchVariant } from '../../electron/bridge'
+import { REPOSITORY, siteLink } from '../../electron/links'
 import { VARIANT_CARDS, VARIANT_DOWNLOAD, VARIANT_LABEL, variantsFor } from '../../electron/variant'
 import type { Recipe, Settings, SettingsPatch } from '@/api/client'
 import { useMaintenance, usePatchSettings, useSettings, useSystem } from '@/api/queries'
 import { FORMATS, carriesTempo, formatOptions } from '@/components/FormatSelect'
 import { useToast } from '@/components/toast'
 import { UpdateSettings } from '@/components/Update'
-import { Button, CommitInput, Dialog, IconButton, Segmented, Select, Switch } from '@/components/ui'
+import { Button, CommitInput, Dialog, ExternalLink, IconButton, Segmented, Select, Switch } from '@/components/ui'
 import { FitChip } from '@/components/Fit'
 import { ThemeSetting } from '@/components/ThemeSwitch'
 import { showWelcomeAgain } from '@/components/Welcome'
@@ -220,10 +221,9 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
                 Open the logs folder
               </Button>
             </Row>
-            <p className="m-0 text-[12px] text-faint">
-              OpenStems {window.openstems.info.version} · engine {system?.version}
-            </p>
           </Group>
+
+          <AboutSettings engineVersion={system?.version} />
         </div>
       </div>
     </div>
@@ -330,7 +330,17 @@ export function gpuMemory(system: { vram_gb?: number | null; gpu_backend?: strin
 export function MemoryRow({ machine }: { machine: Machine }) {
   if (machine.budget === null) return null
   return (
-    <Row label="Memory for one model" hint={budgetHint(machine)}>
+    <Row
+      label="Memory for one model"
+      hint={
+        <>
+          {budgetHint(machine)}{' '}
+          <ExternalLink inline href={siteLink('run')}>
+            What fits on which machine
+          </ExternalLink>
+        </>
+      }
+    >
       <span className="text-muted" data-testid="memory-budget">
         {formatGb(machine.budget)}
       </span>
@@ -452,6 +462,33 @@ export function TraySettings() {
           <Switch label={loginItem} checked={status.startAtLogin} onChange={(v) => change({ startAtLogin: v })} />
         </Row>
       )}
+    </Group>
+  )
+}
+
+/**
+ * The way out to the website: the page itself, what changed in each version, and how to
+ * support the project. Last in Settings, since nothing here is a setting. Each link opens in
+ * the browser; the app works the same with the page down.
+ */
+export function AboutSettings({ engineVersion }: { engineVersion?: string }) {
+  return (
+    <Group title="About">
+      <Row label="Website" hint="What OpenStems does, with the downloads for Windows and Mac.">
+        <ExternalLink href={siteLink()}>Open the website</ExternalLink>
+      </Row>
+      <Row label="What's new" hint="What changed in each version.">
+        <ExternalLink href={siteLink('changelog')}>Read the changelog</ExternalLink>
+      </Row>
+      <Row label="Support OpenStems" hint="OpenStems is free and open source. A tip helps fund its development.">
+        <ExternalLink href={siteLink('support')}>Support</ExternalLink>
+      </Row>
+      <p className="m-0 text-[12px] text-faint">
+        OpenStems {window.openstems.info.version} · engine {engineVersion} ·{' '}
+        <ExternalLink inline href={REPOSITORY} className="text-faint">
+          Source on GitHub
+        </ExternalLink>
+      </p>
     </Group>
   )
 }
