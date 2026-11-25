@@ -128,7 +128,7 @@ button.btn { appearance: none; background: transparent; color: var(--ink); font-
 /* ---------- hero ---------- */
 .hero { display: grid; place-items: center; padding: clamp(72px, 14vh, 150px) var(--pad) clamp(40px, 8vh, 80px); }
 .lockup { width: min(100%, 520px); }
-.hero-shot { width: min(100%, 860px); margin: clamp(48px, 8vh, 80px) 0 0; position: relative; }
+.hero-shot { isolation: isolate; width: min(100%, 860px); margin: clamp(48px, 8vh, 80px) 0 0; position: relative; }
 .hero-shot::before { /* a faint wash of the stem colors behind the window */
   content: ''; position: absolute; inset: 8% 6% -4%; z-index: -1; filter: blur(70px); opacity: 0.22;
   background: linear-gradient(90deg, var(--vocals), var(--drums), var(--bass), var(--piano));
@@ -168,7 +168,9 @@ h1 .line { display: block; padding: 4px 0 8px; border-bottom: 1px solid var(--li
 /* The hero's entrance plays once on load: a rare moment, so it may take its time */
 /* the headline leads and travels furthest; what follows starts sooner each time and moves less */
 .js .intro { opacity: 0; transform: translateY(var(--y, 10px)); filter: blur(3px); animation: intro 700ms var(--ease-out) forwards; animation-delay: var(--dl, 0ms); }
-@keyframes intro { to { opacity: 1; transform: none; filter: blur(0); } }
+@keyframes intro { to { opacity: 1; transform: none; filter: none; } }
+/* the picture and its 70px glow come in without the blur: blurring them every frame is the page's costliest paint */
+.js .hero-shot.intro { filter: none; }
 
 /* ---------- sections ---------- */
 .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }

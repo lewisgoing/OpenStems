@@ -146,7 +146,10 @@ function setupHow() {
   const pct = document.getElementById('pct')
   const mid = (lanes.length - 1) / 2
 
+  let painted = -1
   function paint(p) {
+    if (p === painted) return // off screen the position is pinned at 0 or 1: nothing to write
+    painted = p
     // 0 to 0.1: the mix as dropped. 0.1 to 0.6: it comes apart. 0.6 on: names and handles.
     mix.style.opacity = String(1 - clamp((p - 0.1) / 0.22))
     mix.style.transform = `scaleY(${1 - 0.25 * easeInOut(clamp((p - 0.1) / 0.3))})`
@@ -164,7 +167,8 @@ function setupHow() {
     })
     const step = p < 0.1 ? 0 : p < 0.66 ? 1 : 2
     steps.forEach((li, i) => li.classList.toggle('on', reduceMotion.matches || i === step))
-    pct.textContent = String(Math.round(clamp((p - 0.12) / 0.5) * 100))
+    const shown = String(Math.round(clamp((p - 0.12) / 0.5) * 100))
+    if (pct.textContent !== shown) pct.textContent = shown
   }
 
   let frame = 0
@@ -178,7 +182,7 @@ function setupHow() {
   const schedule = () => { if (!frame) frame = requestAnimationFrame(update) }
   addEventListener('scroll', schedule, { passive: true })
   addEventListener('resize', schedule)
-  reduceMotion.addEventListener('change', schedule)
+  reduceMotion.addEventListener('change', () => { painted = -1; schedule() })
   update()
 }
 
@@ -481,14 +485,15 @@ function setupSum(stems) {
     ctx.globalAlpha = 1
 
     // the bars: each column sweeps over a little after the one to its left
+    const stacked = new Float32Array(cols) // what the lanes above have added, per column
     lanes.forEach((l, i) => {
       ctx.fillStyle = l.color
       const mid = laneMid(i)
       for (let c = 0; c < cols; c++) {
         const v = value(l.key, c)
+        const below = stacked[c]
+        stacked[c] += v
         if (v < 0.012) continue
-        let below = 0
-        for (let j = 0; j < i; j++) below += value(lanes[j].key, c)
         const p = easeInOut(clamp(t * 1.35 - (c / cols) * 0.35))
         const laneBar = Math.min(laneH - 4, v * (laneH - 4))
         const laneTop = mid - laneBar / 2
@@ -705,6 +710,7 @@ function setupTrim(stems) {
     return Math.min(TRIM_DURATION, Math.max(0, ((clientX - r.left) / r.width) * TRIM_DURATION))
   }
   let drag = null
+  let showFrame = 0
 
   stage.addEventListener('pointerdown', (e) => {
     if (drag || e.button !== 0) return
@@ -732,6 +738,7 @@ function setupTrim(stems) {
     const t = timeAt(e.clientX)
     const free = e.altKey
     const min = unit(free) || 0.05
+    const was = sel
     if (drag.mode === 'new') {
       const b = snapT(t, free)
       const a = drag.anchor
@@ -747,7 +754,8 @@ function setupTrim(stems) {
     } else {
       sel = { start: drag.orig.start, end: Math.max(snapT(t, free), drag.orig.start + min) }
     }
-    show()
+    if (was && was.start === sel.start && was.end === sel.end) return
+    if (!showFrame) showFrame = requestAnimationFrame(() => { showFrame = 0; show() })
   })
   const end = () => { drag = null; stage.classList.remove('dragging') }
   stage.addEventListener('pointerup', end)
