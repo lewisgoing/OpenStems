@@ -71,7 +71,13 @@ PACK = {
         "vocadito_31",
     ],
 }
-MELODYNE_ALGORITHM = {"guitarset": "Polyphonic Decay", "vocadito": "Melodic"}
+
+
+def melodyne_algorithm(clip_id: str) -> str:
+    """Melodyne's algorithm for a pack clip: Melodic for single lines (vocals, guitar solos),
+    Polyphonic Decay for chords (GuitarSet's comps). The first exports, of 2026-11-24, ran every
+    guitar clip through Polyphonic Decay."""
+    return "Polyphonic Decay" if clip_id.endswith("_comp") else "Melodic"
 
 
 @dataclass
@@ -470,8 +476,16 @@ def read_midi(path: Path, tempo_from: Path | None = None) -> list[Note]:
 
 
 def melodyne_tempo(path: Path) -> Path | None:
-    """The tempo file to read a Melodyne export with: ``<item>.melodyne.tempo.mid`` beside it,
-    or else the folder's ``*.tempo*.mid`` when they all hold the same tempo map.
+    """The tempo file to read a Melodyne export with, in this order:
+
+    - ``<clip>.melodyne.tempo.mid`` beside it, when someone has named one;
+    - the ``*.tempo*.mid`` written within 2 s of it. Each export overwrites
+      ``<document>.tempo.mid``, keeps the one before as ``.origN``, and writes both files
+      within milliseconds (7 to 30 s apart from the next export in the owner's set). A copy of
+      an export must keep its time (``cp -p``);
+    - any of the folder's tempo files, when they all hold the same tempo map.
+
+    Raises LookupError when none of these applies, and the caller leaves that clip out.
 
     In the owner's exports of 2026-11-24 every notes file said 120 BPM, but its notes sat on
     the beats of Melodyne's document tempo, 64.511 BPM, which only the ``Untitled.tempo.mid``
@@ -486,12 +500,16 @@ def melodyne_tempo(path: Path) -> Path | None:
     if not found:
         print(f"  ! {path.name}: no Melodyne tempo file beside it; read at its own tempo")
         return None
-    if len({tuple(_tempo_changes(mido.MidiFile(p))) for p in found}) > 1:
-        raise SystemExit(
-            f"{path.name}: the tempo files beside it disagree; copy the one Melodyne wrote "
-            f"with this export to {own.name}"
-        )
-    return found[0]
+    written = path.stat().st_mtime
+    nearest = min(found, key=lambda p: abs(p.stat().st_mtime - written))
+    if abs(nearest.stat().st_mtime - written) <= 2.0:
+        return nearest
+    if len({tuple(_tempo_changes(mido.MidiFile(p))) for p in found}) == 1:
+        return found[0]
+    raise LookupError(
+        f"no tempo file was written with it, and the ones beside it disagree; name the one "
+        f"Melodyne wrote with it {own.name}"
+    )
 
 
 def best_offset(reference: list[Note], estimate: list[Note], window: float = 6.0) -> float:
@@ -520,7 +538,19 @@ def external(tool: str, window: float) -> Callable[[Item, Path], list[Note] | No
         path = bench / "baseline-pack" / "midi" / f"{item.name}.{tool}.mid"
         if not path.is_file():
             return None
-        notes = read_midi(path, melodyne_tempo(path) if tool == "melodyne" else None)
+        tempo = None
+        if tool == "melodyne":
+            import mido
+
+            try:
+                tempo = melodyne_tempo(path)
+            except LookupError as exc:
+                print(f"  ! {path.name}: left out, {exc}")
+                return None
+            if tempo is not None:
+                bpm = [round(mido.tempo2bpm(t), 3) for _, t in _tempo_changes(mido.MidiFile(tempo))]
+                print(f"    {path.name}: tempo {bpm} BPM from {tempo.name}")
+        notes = read_midi(path, tempo)
         shift = best_offset(item.reference, notes, window)
         notes = [(s + shift, e + shift, p, v) for s, e, p, v in notes]
         length = soundfile.info(str(item.audio)).duration
@@ -785,10 +815,10 @@ Melodyne: open each file in a new document of its own, at the start of the timel
 Melodyne detect it with the algorithm listed below. One file per document: an export takes
 the document's notes, and a second file left in it ends up in the first one's MIDI. Do not
 correct any notes: the benchmark measures the first pass, as the app's would be. Then
-Settings > Save as MIDI (or drag the MIDI out). Keep the <document>.tempo.mid Melodyne writes
-beside it: the notes file says 120 BPM, but its notes sit on the document's tempo, which only
-that file holds. If one export's tempo differs from the others, name its tempo file
-<file>.melodyne.tempo.mid.
+Settings > Save as MIDI (or drag the MIDI out). Melodyne also writes <document>.tempo.mid
+beside each export, and keeps the one before as .orig1, .orig2 and so on: leave them all in
+midi/. The notes file says 120 BPM, but its notes sit on the document's tempo, and the scorer
+finds each export's tempo file by the moment both were written.
 
 NeuralNote: load the file and export with the default settings.
 
@@ -809,7 +839,7 @@ def cmd_pack(args: argparse.Namespace) -> None:
             target = pack / "audio" / f"{item.name}.wav"
             if not target.exists():
                 shutil.copyfile(item.audio, target)
-            lines.append(f"  {target.name}  ->  {MELODYNE_ALGORITHM[set_name]}")
+            lines.append(f"  {target.name}  ->  {melodyne_algorithm(item.id)}")
     (pack / "README.txt").write_text(PACK_README + "\n".join(lines) + "\n", encoding="utf-8")
     print(f"{len(lines)} files in {pack / 'audio'}; instructions in {pack / 'README.txt'}")
 

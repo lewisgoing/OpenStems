@@ -528,8 +528,10 @@ DrumSep's split stems, as M2a plans, is the next measurement and needs the GPU f
 SuperFlux's vibrato suppression buys nothing on drums.
 
 **Melodyne,** the baseline pack, exported by the owner on 2026-11-24. It is the first pass with
-the algorithm the pack names: Melodic for vocals, Polyphonic Decay for guitar. The audio is
-clean, not separated stems. 11 of the pack's 13 clips are scored:
+the algorithm the pack named then: Melodic for vocals, and Polyphonic Decay for every guitar
+clip, the three solos included. Melodic is Melodyne's algorithm for single lines, so the pack
+now names it for the solos, and their row stays provisional until those exports come in. The
+audio is clean, not separated stems. 11 of the pack's 13 clips are scored:
 
 - `00_BN1` waits for a clean export. The file saved under its name also holds `01_BN3`'s notes.
 - `01_Jazz3` has no export yet.
@@ -538,26 +540,29 @@ Every method is averaged over the same clips.
 
 | Stem | Clips | Method | Onset F1 | +Offset F1 | Octave errors |
 | --- | --- | --- | --- | --- | --- |
-| Vocals | 6 | Melodyne | 0.502 | 0.234 | 1 |
+| Vocals | 6 | Melodyne (Melodic) | 0.502 | 0.234 | 1 |
 | | | Today's YIN | 0.424 | 0.266 | 0 |
 | | | SwiftF0 notes as whole keys (M1's rounding: what the app's MIDI carries) | **0.639** | **0.479** | 0 |
 | | | The same notes at exact pitch (the notes file, or bends) | 0.766 | 0.583 | 0 |
 | | | vocadito's second annotator | 0.749 | 0.661 | 0 |
-| Guitar solos | 3 | Melodyne | 0.713 | 0.486 | 11 |
+| Guitar solos | 3 | Melodyne (Polyphonic Decay; provisional, Melodic to come) | 0.713 | 0.486 | 11 |
 | | | Today's YIN | 0.313 | 0.209 | 6 |
 | | | SwiftF0 notes, whole keys and exact pitch alike | **0.786** | **0.612** | 0 |
-| Guitar comps (chords) | 2 | Melodyne | **0.586** | **0.326** | 53 |
+| Guitar comps (chords) | 2 | Melodyne (Polyphonic Decay) | **0.586** | **0.326** | 53 |
 | | | SwiftF0 notes, a single-note tracker | 0.291 | 0.142 | 0 |
 
 What this shows:
 
-- **On single lines, the transcriber M3 plans already beats Melodyne's first pass; today's
-  tracker does not.**
+- **On vocals, the transcriber M3 plans already beats Melodyne's first pass; today's tracker
+  does not.**
   - Vocals: onset F1 0.639 against 0.502 as whole keys, and 0.479 against 0.234 with note ends.
-  - Guitar solos: 0.786 against 0.713, and 0.612 against 0.486 with note ends.
-  - Today's YIN loses to Melodyne on both.
+    Today's YIN scores 0.424.
+  - Guitar solos lean the same way, provisionally: 0.786 against 0.713, and 0.612 against
+    0.486 with note ends. Melodyne ran its chord algorithm on them, though. Melodic exports will
+    settle it.
   - Melodyne finds the most guitar notes (recall 0.80 on solos), but it adds notes an octave
-    away (11 on three solos, 53 on two comps), and those cost it precision.
+    away (11 on three solos, 53 on two comps), and those cost it precision. On the solos that
+    may be the chord algorithm's doing.
 - **Chords are Melodyne's for now.** Polyphonic Decay scores 0.586 against 0.291 for a
   single-note tracker, as expected: polyphonic transcription is M4. This is the gap and its
   cause, as Phase 7's acceptance asks.
@@ -582,6 +587,10 @@ Reading Melodyne's export took three corrections, now in the scorer:
   64.511 BPM, half the first clip's 129. Only the `Untitled.tempo.mid` written beside each
   export held that tempo. Read at 120, every note came out at 0.538 times its real time, and
   every file scored about 0.1.
+  - Each export overwrites that file and keeps the one before as `.origN`, and each was
+    written within 5 ms of its notes file.
+  - The scorer pairs them by that moment, so a new document with another tempo needs no
+    renaming.
 - **Offset.** At the right tempo the onsets line up within about 10 ms, with no drift across
   any file. Searched over ±6 s, the offset locked onto a repeat in one comp's chord pattern,
   2.07 s off. It is now searched over ±0.3 s for Melodyne.

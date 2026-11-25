@@ -47,10 +47,10 @@ Engine (run from `engine/`):
     score transcribers with mir_eval, or build the audio pack the owner runs through Melodyne
     and NeuralNote. `score --pack-only --methods ...,swiftf0-midi,melodyne` compares with
     Melodyne on the same clips. Melodyne's notes file says 120 BPM, but its notes sit on the
-    tempo in the `<document>.tempo.mid` it writes beside it, which the scorer reads
-    (`melodyne_tempo`). The owner's exports go in `baseline-pack/midi/` as
-    `<clip>.melodyne.mid`, copied from the `<clip>.mid` Melodyne names them; the originals
-    are left as they are.
+    tempo in the `<document>.tempo.mid` it writes beside it. The scorer pairs each export with
+    the tempo file written at the same moment (`melodyne_tempo`). The owner's exports go in
+    `baseline-pack/midi/` as `<clip>.melodyne.mid`, copied with their times kept (`cp -p`)
+    from the `<clip>.mid` Melodyne names them; the originals are left as they are.
   - `python ../scripts/make_midi_import_tests.py`: the MIDI files that show how a DAW imports
     bends, MPE and tempo maps.
 - `python ../scripts/compare_builds.py run --out DIR MODEL...` in each environment, then
