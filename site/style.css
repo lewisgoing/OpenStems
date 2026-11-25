@@ -506,7 +506,12 @@ kbd { font-family: var(--mono); font-size: 10.5px; color: var(--ink); padding: 2
 .reqs b { display: block; color: var(--ink); font-weight: 500; font-size: 13px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.05em; }
 .steps-mac summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 8px; font-size: 14.5px; }
 .steps-mac summary::-webkit-details-marker { display: none; }
-.steps-mac summary::before { content: '+'; font-family: var(--mono); width: 18px; height: 18px; display: inline-grid; place-items: center; border: 1px solid var(--line-strong); border-radius: 50%; font-size: 12px; transition: transform 200ms var(--ease-out); }
+/* the plus is drawn, not typed: a glyph sits off its box's center, and shows it when turned */
+.steps-mac summary::before {
+  content: ''; width: 18px; height: 18px; flex: none; box-sizing: border-box; border: 1px solid var(--line-strong); border-radius: 50%;
+  background: linear-gradient(currentColor, currentColor) center / 8px 1.5px no-repeat, linear-gradient(currentColor, currentColor) center / 1.5px 8px no-repeat;
+  transition: transform 200ms var(--ease-out);
+}
 .steps-mac[open] summary::before { transform: rotate(45deg); }
 .steps-mac > div { padding-top: 12px; color: var(--muted); font-size: 14.5px; display: grid; gap: 10px; }
 .steps-mac ol { list-style: decimal; padding-left: 20px; display: grid; gap: 4px; }
@@ -535,7 +540,11 @@ code { font-family: var(--mono); font-size: 12.5px; color: var(--ink); }
 .release li code { font-size: 12px; color: var(--ink); background: var(--panel-2); padding: 1px 4px; border-radius: 4px; }
 .release details summary { cursor: pointer; list-style: none; color: var(--ink); font-size: 15px; display: inline-flex; align-items: center; gap: 8px; }
 .release details summary::-webkit-details-marker { display: none; }
-.release details summary::after { content: '+'; font-family: var(--mono); color: var(--muted); transition: transform 200ms var(--ease-out); }
+.release details summary::after {
+  content: ''; width: 9px; height: 9px; flex: none; color: var(--muted);
+  background: linear-gradient(currentColor, currentColor) center / 9px 1.5px no-repeat, linear-gradient(currentColor, currentColor) center / 1.5px 9px no-repeat;
+  transition: transform 200ms var(--ease-out);
+}
 .release details[open] summary::after { transform: rotate(45deg); }
 .release details[open] summary { margin-bottom: 12px; }
 .release details summary .mono { color: var(--dim); }
