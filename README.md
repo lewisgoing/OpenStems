@@ -17,6 +17,7 @@
 </p>
 
 <p align="center">
+  <a href="https://lewisgoing.github.io/OpenStems/">Website</a> ·
   <a href="#install">Install</a> ·
   <a href="#what-it-does">What it does</a> ·
   <a href="#recipes">Recipes</a> ·

@@ -53,6 +53,19 @@ Engine (run from `engine/`):
   edit that file by hand). A model's `memory_gb` comes from `MEMORY_GB` in that script,
   copied from the Peak VRAM column of `docs/benchmarks.md`
 
+Site (the landing page on GitHub Pages, `site/`, `docs/adr/0025-site.md`):
+
+- `node scripts/build-site.mjs [OUT]`: assemble the site into `_site/` (or OUT) with the
+  changelog, the icon and three README pictures, and the version from `app/package.json`
+  (what the page shows until GitHub answers); serve it with `python -m http.server -d OUT`
+  (the page fetches `CHANGELOG.md`, so `file://` does not work)
+- `.github/workflows/pages.yml` deploys it on a push to `main` that touches it, the
+  changelog or those pictures (a pull request only builds it). The support button is hidden
+  until `href` is set on `#support-link` in `site/index.html`. Its requirements, the
+  Mac's first-open steps and "Will it run?" (`MACHINES` in `site/main.js`, the README's
+  Memory table) copy the README's, and its Trim studio copies `rangeLabel`, `rangeLength`
+  and `mixLabel`: change both together
+
 App (run from `app/`):
 
 - `pnpm install`, `pnpm dev`: run the app with hot reload (starts the engine itself)
@@ -154,6 +167,7 @@ App (run from `app/`):
 - `app/`: Electron + React shell. `electron/` (main process, preload, engine launcher, first-run
   setup, tray), `src/` (React UI: `api/`, `components/`, `views/`, `audio/`, `state/`, `tray/`,
   `trimmer/`), `e2e/`
+- `site/`: the landing page (static, no build tool), deployed to GitHub Pages
 - `docs/adr/`: decision records; `docs/benchmarks.md`: speed and VRAM per model
 - `scripts/`: dev start, benchmarks
 
