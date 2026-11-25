@@ -42,6 +42,14 @@ def fake_late() -> dict[str, float]:
     return late
 
 
+def fake_empty() -> set[str]:
+    """Stems the FakeEngine leaves empty, from ``OPENSTEMS_FAKE_EMPTY`` (comma-separated
+    names): a hiss 60 dB under what the stem would hold, as a real model leaves in the
+    guitar stem of a song without a guitar."""
+    names = os.environ.get("OPENSTEMS_FAKE_EMPTY", "").split(",")
+    return {name.strip() for name in names if name.strip()}
+
+
 def fake_oom(model_id: str) -> str | None:
     """How a model should run out of memory, from ``OPENSTEMS_FAKE_OOM``.
 
@@ -133,6 +141,9 @@ class FakeLoadedModel:
         for name, seconds in fake_late().items():
             if name in out:
                 out[name][:, : round(seconds * _RATE)] = 0.0
+        for name in fake_empty():
+            if name in out:
+                out[name] *= np.float32(0.001)
         return out
 
     def unload(self) -> None:
@@ -145,7 +156,8 @@ class FakeEngine:
     ``OPENSTEMS_FAKE_DELAY`` (seconds per chunk) slows it down so queues can be observed.
     ``OPENSTEMS_FAKE_OOM`` makes chosen models run out of memory (`fake_oom`), so the
     low-memory path can be acted out without a GPU. ``OPENSTEMS_FAKE_LATE`` leaves chosen
-    stems silent at their start (`fake_late`). ``OPENSTEMS_FAKE_IMPORT_FAILS`` acts out a
+    stems silent at their start (`fake_late`) and ``OPENSTEMS_FAKE_EMPTY`` leaves chosen
+    stems empty (`fake_empty`). ``OPENSTEMS_FAKE_IMPORT_FAILS`` acts out a
     failed import of PyTorch that breaks the process (`fake_import_fails`).
     """
 

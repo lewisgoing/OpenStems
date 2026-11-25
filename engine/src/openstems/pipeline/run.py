@@ -39,6 +39,7 @@ from openstems.domain.stem import (
 from openstems.domain.tempo import tempo_notes
 from openstems.engines.base import CancelToken
 from openstems.engines.host import ModelHost
+from openstems.pipeline.levels import measure_peak
 
 PEAKS_DIR = ".peaks"
 SAMPLE_RATE = 44100
@@ -144,6 +145,7 @@ def stem_set_from_manifest(directory: Path, manifest: dict[str, Any]) -> StemSet
                 midi=raw.get("midi"),
                 offset=raw.get("offset", 0),
                 group=raw.get("group", ""),
+                peak=raw.get("peak"),
             )
         )
     return StemSet(directory=str(directory), manifest=manifest, stems=stems)
@@ -276,7 +278,11 @@ class Pipeline:
         del signals
 
         report("writing", 1.0 - _WRITE, "Writing stems")
+        # Measured here, before normalize: a stem of nothing but hiss is still empty once
+        # it has been made loud.
+        levels = {name: measure_peak(audio) for name, audio in outputs.items()}
         extras = self._post_process(track, mix, outputs, options, report, cancel)
+        extras["levels"] = levels
         notes = [*notes, *tempo_notes(options.tempo_sync, options.output_format, extras.get("bpm"))]
         stem_set = self._write(
             track,
@@ -552,6 +558,7 @@ class Pipeline:
                         midi=midi_name,
                         offset=int(extras.get("offsets", {}).get(out.name, 0)),
                         group=out.group,
+                        peak=extras.get("levels", {}).get(out.name),
                     )
                 )
                 report(

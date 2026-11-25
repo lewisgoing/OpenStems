@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_PREFS,
   type Rect,
@@ -158,6 +158,7 @@ vi.mock('@/api/engine', () => ({
 
 const stem = (track: string, name: string): StemFile => ({
   name,
+  empty: false,
   file: `${track} - ${name}.wav`,
   path: `D:\\out\\${track}\\full-song\\${track} - ${name}.wav`,
   peaks: `D:\\out\\${track}\\full-song\\.peaks\\${name}.json`,
@@ -960,6 +961,97 @@ describe('links in the quick-drop window', () => {
     links = [link({ state: 'downloading' })]
     render(quickDrop())
     expect(lastActivity()).toMatchObject({ active: 1 })
+  })
+})
+
+describe('empty stems in the quick-drop window', () => {
+  // A rap song through the six-stem recipe: one stem of the six holds anything.
+  const rap = (id = 'a', track = 'Song'): Job => {
+    const done = doneJob(id, track, 1)
+    return { ...done, stems: done.stems.map((s) => ({ ...s, empty: s.name !== 'vocals' })) }
+  }
+  const pills = () => screen.getAllByTestId('quick-stem')
+  const shown = settings as Record<string, unknown>
+  beforeEach(() => {
+    shown.hide_empty_stems = true
+  })
+  afterEach(() => {
+    delete shown.hide_empty_stems
+  })
+
+  it('lays out the stem with sound alone, and says how many are empty', () => {
+    jobs = [rap()]
+    render(quickDrop())
+    expect(pills().map((el) => el.textContent)).toEqual(['vocals'])
+    expect(screen.getByTestId('quick-empty')).toHaveTextContent('+5 empty')
+    expect(screen.getByTestId('quick-empty')).toHaveAttribute('aria-expanded', 'false')
+    // One stem: its handle says so and carries it alone, and there is nothing to mix.
+    expect(screen.getByTestId('quick-drag-all')).toHaveTextContent('1 stem')
+    expect(screen.getByTestId('quick-drag-all')).not.toHaveTextContent('stems')
+    fireEvent.dragStart(screen.getByTestId('quick-drag-all'))
+    expect(bridge.startDrag).toHaveBeenLastCalledWith([stem('Song', 'vocals').path])
+    expect(screen.queryByTestId('quick-mix')).not.toBeInTheDocument()
+  })
+
+  it('brings them back on a click, stepped back, and leaves them out again', async () => {
+    jobs = [rap()]
+    render(quickDrop())
+    await userEvent.click(screen.getByTestId('quick-empty'))
+    expect(pills()).toHaveLength(6)
+    expect(pills().map((el) => el.hasAttribute('data-empty'))).toEqual([false, true, true, true, true, true])
+    expect(screen.getByTestId('quick-empty')).toHaveTextContent('Hide empty')
+    expect(screen.getByTestId('quick-empty')).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByTestId('quick-drag-all')).toHaveTextContent('6 stems')
+    fireEvent.dragStart(screen.getByTestId('quick-drag-all'))
+    expect(bridge.startDrag.mock.calls.at(-1)?.[0]).toHaveLength(6)
+    // An empty stem is still a file: it drags as itself.
+    fireEvent.dragStart(pills()[3]!)
+    expect(bridge.startDrag).toHaveBeenLastCalledWith([stem('Song', 'guitar').path])
+    await userEvent.click(screen.getByTestId('quick-empty'))
+    expect(pills()).toHaveLength(1)
+  })
+
+  it('mixes the stems on show, and ends the mix when they change', async () => {
+    const done = doneJob('a', 'Song', 1)
+    jobs = [{ ...done, stems: done.stems.map((s) => ({ ...s, empty: ['guitar', 'piano'].includes(s.name) })) }]
+    render(quickDrop())
+    expect(pills()).toHaveLength(4)
+    await userEvent.click(screen.getByTestId('quick-mix'))
+    await userEvent.click(pills()[0]!)
+    // "No vocals" of the four on show: the two empty ones are not in the file.
+    const rest = ['drums', 'bass', 'other'].map((name) => stem('Song', name).path)
+    await waitFor(() => expect(createMix.mutateAsync).toHaveBeenCalledWith(rest))
+    await userEvent.click(screen.getByTestId('quick-empty'))
+    expect(screen.queryByTestId('mix-bar')).not.toBeInTheDocument()
+    expect(pills()).toHaveLength(6)
+  })
+
+  it('keeps each song to itself', async () => {
+    jobs = [rap('a', 'First'), { ...rap('b', 'Second'), finished_at: 2 }]
+    render(quickDrop())
+    await userEvent.click(screen.getByTestId('quick-empty')) // Second, the newest, is laid out
+    expect(pills()).toHaveLength(6)
+    fireEvent.click(rows()[1]!)
+    expect(pills().map((el) => el.textContent)).toEqual(['vocals'])
+    expect(within(rows()[0]!).getByTestId('quick-drag-all')).toHaveTextContent('6 stems')
+    expect(within(rows()[1]!).getByTestId('quick-drag-all')).toHaveTextContent('1 stem')
+  })
+
+  it('shows every stem with the setting off, the empty ones stepped back', () => {
+    shown.hide_empty_stems = false
+    jobs = [rap()]
+    render(quickDrop())
+    expect(pills()).toHaveLength(6)
+    expect(pills()[1]).toHaveAttribute('data-empty')
+    expect(screen.queryByTestId('quick-empty')).not.toBeInTheDocument()
+    expect(screen.getByTestId('quick-drag-all')).toHaveTextContent('6 stems')
+  })
+
+  it('has nothing to say about a song whose stems all hold something', () => {
+    jobs = [doneJob('a', 'Song', 1)]
+    render(quickDrop())
+    expect(pills()).toHaveLength(6)
+    expect(screen.queryByTestId('quick-empty')).not.toBeInTheDocument()
   })
 })
 

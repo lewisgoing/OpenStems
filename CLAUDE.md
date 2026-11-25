@@ -46,6 +46,8 @@ Engine (run from `engine/`):
   with the FakeEngine and synthetic beats
 - `uv run pytest tests/test_separate_selection.py`: a part of a song separated alone (the
   setting, `POST /v1/jobs/{id}/range`, the run), with the FakeEngine
+- `uv run pytest tests/test_empty_stems.py`: which stems are empty (the rule, the peak a run
+  measures, stems from before it, the setting), with the FakeEngine
 - `uv run openstems serve`: start the local API (prints a JSON line with port and token)
 - `uv run openstems openapi --out openapi.json`: export the schema after any API change, then
   `pnpm gen:api` in `app/` (a test fails if `engine/openapi.json` is stale)
@@ -99,6 +101,9 @@ App (run from `app/`):
   part gets; "Separate only the trimmed part"; Trim from the stems panel; a stem that
   enters late (`OPENSTEMS_FAKE_LATE=<stem>:<seconds>` leaves a FakeEngine stem silent at its
   start, so with Trim silence on its file begins later in the song)
+- `pnpm exec playwright test e2e/empty-stems.spec.ts`: stems with nothing in them left out of
+  the panel, the quick-drop window and the drag handles (`OPENSTEMS_FAKE_EMPTY=<stem>,<stem>`
+  leaves those FakeEngine stems a hiss). `EMPTY_SHOTS=<folder>` saves pictures of it
 - `pnpm e2e low-memory`: the CPU note and the marks of an 8 GB machine, with the FakeEngine
   (`OPENSTEMS_FAKE_OOM`, `OPENSTEMS_MEMORY_GB`)
 - `README_SHOTS=1 pnpm e2e -g "readme pictures"`: retake the README's pictures into
@@ -380,6 +385,21 @@ exactly). In the app `state/mix.ts` holds the plain functions (`stemSections`, `
 `groupsOf`) and `StemsPanel.tsx` the headings; a group's file is written when the pointer
 first reaches its handle. The 53-stem model is not chained into it on purpose: its stems
 overlap. `docs/adr/0017-every-stem.md`.
+
+Empty stems: a stem is `empty` when its peak stays more than 45 dB under the loudest stem
+of its set (`domain/levels.py`, `EMPTY_BELOW_DB`; the figures behind it are in the ADR). A
+run measures each stem's peak before normalize and keeps it in the manifest (`Stem.peak`);
+stems from before that are judged from their peaks files (`pipeline/levels.py`,
+`mark_empty`), index rows and saved jobs once at start (`Index.mark_empty_stems`,
+`_with_empty` in `api/jobs.py`). `StemFile.empty` carries the verdict. Every stem is
+written whatever it says, and the engine never reads the `hide_empty_stems` setting (on by
+default): it is the app's. In the app `lib/empty.ts` (`splitEmpty`) decides what a list
+shows: the stems panel (`hideEmpty`; a line under the list brings them back), the pills of
+the quick-drop window ("+N empty", per song) and the handles that drag every stem all leave
+empty stems out, and a song whose stems are all empty shows them all. What is left out is
+not decoded, played, mixed or dragged, and Trim from the panel opens on what is shown. With
+the setting off an empty stem is only dimmed (`data-empty`). The trimmer's own chips list
+every stem. `docs/adr/0027-empty-stems.md`.
 
 Tempo sync: with the `tempo_sync` setting on, `write_audio` appends an `acid` chunk with the
 detected tempo to WAV stems and mixes (`audio/write.py`, `tempo_chunk`), which FL Studio

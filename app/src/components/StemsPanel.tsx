@@ -4,6 +4,7 @@ import { type StemFile, type StemSet, fileUrl } from '@/api/client'
 import { useEngine } from '@/api/engine'
 import { useSetAnalysis } from '@/api/queries'
 import { type PlayerState, StemPlayer } from '@/audio/player'
+import { dragAllHint, splitEmpty } from '@/lib/empty'
 import { cn, formatTime, stemColor } from '@/lib/format'
 import { tempoKeyOf } from '@/lib/tempokey'
 import { modClick, modKey, words } from '@/platform'
@@ -23,6 +24,11 @@ export interface StemsPanelProps {
   subtitle: string
   directory: string
   stems: StemFile[]
+  /**
+   * The "Hide empty stems" setting: stems with nothing in them stay out of the list, of
+   * what plays and of Drag all, until the line under the list brings them back.
+   */
+  hideEmpty?: boolean
   analysis?: Record<string, unknown>
   /** What did not go as planned, such as a model that ran on the CPU. */
   notes?: string[]
@@ -99,8 +105,14 @@ function Clock({ player }: { player: StemPlayer }) {
   return <span ref={ref}>0:00</span>
 }
 
-export function StemsPanel({ title, source, subtitle, directory, stems, analysis, notes, onRetagged, onTrim, initialMix, frozen = false, onClose }: StemsPanelProps) {
+export function StemsPanel({ title, source, subtitle, directory, stems: every, hideEmpty = false, analysis, notes, onRetagged, onTrim, initialMix, frozen = false, onClose }: StemsPanelProps) {
   const setAnalysis = useSetAnalysis()
+  // The song's stems without the empty ones, unless they were asked for. Everything below
+  // works on what is shown: an empty stem is not decoded, played, mixed or dragged.
+  const [showEmpty, setShowEmpty] = useState(false)
+  const empty = useMemo(() => splitEmpty(every, hideEmpty).hidden, [every, hideEmpty])
+  const stems = useMemo(() => splitEmpty(every, hideEmpty && !showEmpty).shown, [every, hideEmpty, showEmpty])
+  const hidden = every.length - stems.length
   const { player, state, playPause } = useStemPlayer(stems)
   // Back from the trimmer, solo and mute are as they were left. Applied so that running it
   // again (React's development mode does) changes nothing.
@@ -208,7 +220,8 @@ export function StemsPanel({ title, source, subtitle, directory, stems, analysis
               size="sm"
               data-testid="panel-trim"
               onClick={(event) =>
-                onTrim(partial ? audibleNames : null, { instant: event.detail === 0, mix: { soloed: [...state.soloed], muted: [...state.muted] } })
+                // With empty stems left out, the trimmer opens on the ones shown, not on every stem.
+                onTrim(partial ? audibleNames : hidden > 0 ? names : null, { instant: event.detail === 0, mix: { soloed: [...state.soloed], muted: [...state.muted] } })
               }
             >
               <Scissors size={13} />
@@ -234,7 +247,7 @@ export function StemsPanel({ title, source, subtitle, directory, stems, analysis
             </div>
           </Tooltip>
         )}
-        <Tooltip label="Drag every stem into your DAW or a folder">
+        <Tooltip label={dragAllHint(stems.length, hidden)}>
           <div
             draggable
             role="button"
@@ -295,6 +308,25 @@ export function StemsPanel({ title, source, subtitle, directory, stems, analysis
             </ul>
           </li>
         ))}
+        {empty.length > 0 && (
+          // The stems with nothing in them, in one quiet line where they would have been.
+          // Shown or hidden at once: the list is what changes, and it is looked at.
+          <li className="mt-1 flex items-center gap-2 py-1 pr-1 pl-[27px] text-[12px] text-faint" data-testid="empty-stems">
+            <span className="min-w-0 flex-1 truncate" title={empty.map((stem) => stem.name).join(', ')}>
+              {empty.length} empty{showEmpty ? ' shown' : ''}: {empty.map((stem) => stem.name).join(', ')}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="flex-none"
+              aria-expanded={showEmpty}
+              aria-label={showEmpty ? 'Hide empty stems' : 'Show empty stems'}
+              onClick={() => setShowEmpty((shown) => !shown)}
+            >
+              {showEmpty ? 'Hide' : 'Show'}
+            </Button>
+          </li>
+        )}
       </ul>
 
       <footer className="truncate border-t border-line px-4 py-2 text-[12px] text-faint" title={directory}>
@@ -326,7 +358,7 @@ function StemRow({ stem, player, state, dragging, onDragging, getProgress, onSee
   const soloed = state.soloed.has(stem.name)
   const muted = state.muted.has(stem.name)
   return (
-    <li data-testid="stem-row" className={cn('group/row flex items-center gap-2 rounded-[8px] py-1.5 pr-2 pl-1', dragging && 'bg-raised')}>
+    <li data-testid="stem-row" data-empty={stem.empty || undefined} className={cn('group/row flex items-center gap-2 rounded-[8px] py-1.5 pr-2 pl-1', dragging && 'bg-raised')}>
       <div
         draggable
         role="button"
@@ -345,7 +377,7 @@ function StemRow({ stem, player, state, dragging, onDragging, getProgress, onSee
         <GripVertical size={13} className="flex-none text-faint" />
         <span className="h-2 w-2 flex-none rounded-full" style={{ background: color }} />
         {/* Under its group's heading a part goes by its short name: "lead", not "lead vocals". */}
-        <span className="truncate font-medium" title={stem.name}>
+        <span className={cn('truncate font-medium', stem.empty && 'text-muted')} title={stem.empty ? `${stem.name}: empty` : stem.name}>
           {partName(stem.name, stem.group)}
         </span>
       </div>

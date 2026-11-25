@@ -53,12 +53,6 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
             </Row>
           </Group>
 
-          <Group title="Getting started">
-            <Row label="Welcome" hint="Walk through the folders, the format and the recommended models again. Nothing changes until you pick something.">
-              <Button onClick={showWelcomeAgain}>Show the welcome again</Button>
-            </Row>
-          </Group>
-
           <Group title="Folders">
             <FolderRow label="Output folder" hint="One folder per track and recipe." value={settings.output_dir} onPick={() => pickFolder('output_dir')} />
             <FolderRow label="Models folder" hint="Downloaded weights. Uninstalling the app leaves it alone." value={settings.models_dir} onPick={() => pickFolder('models_dir')} />
@@ -136,6 +130,12 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
             </Row>
             <Row label="Sum to mix" hint="Fold the residual into 'other' so the stems sum back to the mix.">
               <Switch label="Sum to mix by default" checked={settings.sum_to_mix} onChange={(v) => save({ sum_to_mix: v })} />
+            </Row>
+            <Row
+              label="Hide empty stems"
+              hint="A song with no guitar still gets a guitar stem, with nothing in it. Such stems stay out of the lists and of what you drag; their files are written all the same."
+            >
+              <Switch label="Hide empty stems" checked={settings.hide_empty_stems} onChange={(v) => save({ hide_empty_stems: v })} />
             </Row>
           </Group>
 
@@ -220,6 +220,12 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
               <Button variant="ghost" onClick={() => system && void window.openstems.openFolder(system.logs_dir)}>
                 Open the logs folder
               </Button>
+            </Row>
+          </Group>
+
+          <Group title="Getting started">
+            <Row label="Welcome" hint="Walk through the folders, the format and the recommended models again. Nothing changes until you pick something.">
+              <Button onClick={showWelcomeAgain}>Show the welcome again</Button>
             </Row>
           </Group>
 
