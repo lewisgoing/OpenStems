@@ -70,6 +70,9 @@ export function HistoryView({ recipes, selected, onSelect, onRerun, onRename }: 
                     onRename={(name) => onRename(set, name)}
                     onError={toast.error}
                     hint="The stem folder and its files are renamed too. Empty it for the name of the file."
+                    // A click opens the song's stems beside the list, which can move the row:
+                    // only once they are open is a double click sure to land twice on the title.
+                    doubleClick={selected === set.directory}
                   />
                   <span className="flex-none text-[12px] text-faint">
                     {set.recipe_name} · {formatDate(set.created_at)}

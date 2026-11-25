@@ -219,7 +219,7 @@ in the trimmer, and renames it.
 in the queue and choose Rename, or double-click its title, and type over it. A song that
 waits is separated under its new name. For one that is already separated, the stem folder
 and the stems in it are renamed too, for every recipe it was run with: the pencil beside the
-title in the stems panel does it, or F2, or a double click in History. Empty the field to go
+title in the stems panel does it, or F2, in the queue and in History. Empty the field to go
 back to the file's name. The song's own file is never renamed. A project in a DAW that
 already uses the stems will need to find them again.
 

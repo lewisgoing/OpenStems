@@ -119,11 +119,15 @@ test('rename: a waiting song from its menu, then its stems on the disk from the 
   expect(existsSync(join(ctx.outputDir, 'Dusk_ Live'))).toBe(false)
   await expect(page.getByRole('alert')).toHaveCount(0)
 
-  // History has the new name; a double click on it there renames too. Emptied, the song goes
-  // by the name of its file again, on the disk as well.
+  // History has the new name. A click opens the song's stems, and then a double click on its
+  // title there renames too. Emptied, the song goes by the name of its file again, on the
+  // disk as well.
   await page.getByRole('button', { name: 'History' }).click()
   const past = page.getByTestId('history-row')
   await expect(past).toHaveCount(1)
+  await expect(past.getByTestId('drag-source')).toHaveText('Dawn')
+  await past.click()
+  await expect(page.getByLabel('Stems').getByRole('heading')).toHaveText('Dawn')
   await past.getByTestId('drag-source').dblclick()
   const pastField = past.getByLabel('Song name')
   await expect(pastField).toHaveValue('Dawn')
@@ -136,7 +140,6 @@ test('rename: a waiting song from its menu, then its stems on the disk from the 
   expect(existsSync(join(ctx.outputDir, 'Dawn'))).toBe(false)
   expect(manifest(third).stems.every((stem) => stem.file.startsWith('First Song - '))).toBe(true)
   // The panel that showed the song follows it to where its stems are now.
-  await past.click()
   await expect(page.getByLabel('Stems').getByRole('heading')).toHaveText('First Song')
   await expect(page.getByLabel('Stems').getByRole('button', { name: /^(Play|Pause)$/ }).first()).toBeEnabled()
 })

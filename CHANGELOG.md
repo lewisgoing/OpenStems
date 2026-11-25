@@ -7,7 +7,7 @@
   field where it stands, Enter saves, Escape puts back what was there. A song that waits is
   separated under its new name. For a song that is already separated, the stem folder and
   the stems in it are renamed too, for every recipe it was run with; the stems panel has a
-  small pencil beside the title and F2 for that, and History takes a double click. The name
+  small pencil beside the title and F2 for that, in the queue and in History. The name
   is the song's: every row of the same file follows, and the file queued again later keeps
   it. Empty the field to go back to the file's name. The song's own file is never renamed. A
   name that another song already has is refused, and so is a rename while the song is being

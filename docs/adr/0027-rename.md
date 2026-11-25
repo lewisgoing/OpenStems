@@ -63,11 +63,12 @@ the screen is the name on the disk.
   have opened it.
 - **Ways in.** "Rename" in a queue row's right-click menu, after Trim. A small pencil beside
   the stems panel's title, there on hover or focus, and F2 while the panel is open, as for a
-  file. A double click on a title, where a click does not move it: a waiting row, the row
-  whose stems are open, a row of History. A finished row whose stems are closed opens them
-  on the first click, which can reflow the list under the pointer, so the second click
+  file. A double click on a title, where a click does not move it: a waiting row, and in
+  the queue and History the row whose stems are open. A row whose stems are closed opens
+  them on the first click, which can reflow the list under the pointer, so the second click
   would land elsewhere: there a double click does nothing and the title's hint does not
-  offer it.
+  offer it. That was first seen in the queue on Windows and then in History on both CI
+  runners.
 - **The menu leaves the keyboard in the field.** A closing menu hands the focus back to its
   row, which would close the field again. An item that takes the focus itself says so
   (`takesFocus`), and the menu then leaves it alone (`finalFocus`).

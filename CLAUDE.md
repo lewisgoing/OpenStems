@@ -431,8 +431,8 @@ field in place (`.name-input`: margin takes back padding, so nothing moves; no m
 `useRename` in `api/queries.ts` saves. Ways in: Rename in the queue row's menu (an item
 with `takesFocus` keeps the closing menu from taking the focus back: `finalFocus` in
 `RowMenu.tsx`), the pencil and F2 in the stems panel, and a double click on a title where a
-click does not move it (`doubleClick`: not a finished row whose stems are closed, since the
-first click opens them and the list can reflow). The quick-drop window has none.
+click does not move it (`doubleClick`: not a row of the queue or History whose stems are
+closed, since the first click opens them and the list can reflow). The quick-drop window has none.
 `docs/adr/0027-rename.md`.
 
 Clips: a stretch of a song as a file of its own, to drag into a DAW. `POST /v1/clips`
