@@ -133,7 +133,18 @@ button.btn { appearance: none; background: transparent; color: var(--ink); font-
   content: ''; position: absolute; inset: 8% 6% -4%; z-index: -1; filter: blur(70px); opacity: 0.22;
   background: linear-gradient(90deg, var(--vocals), var(--drums), var(--bass), var(--piano));
 }
-.hero-shot img { display: block; width: 100%; height: auto; border: 1px solid var(--line-strong); border-radius: 14px; box-shadow: 0 40px 100px -40px rgb(0 0 0 / 0.95); }
+/* one window at a time; switching crossfades (a rare, chosen moment) */
+.shots-top { display: flex; align-items: center; justify-content: space-between; gap: 10px 16px; margin-bottom: 14px; flex-wrap: wrap; }
+.shots-top figcaption { color: var(--muted); font-size: 14px; }
+.shots {
+  position: relative; aspect-ratio: 1.6; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 14px;
+  background: radial-gradient(circle at 50% 60%, rgb(255 255 255 / 0.04), transparent 60%), var(--panel);
+  box-shadow: 0 40px 100px -40px rgb(0 0 0 / 0.95);
+}
+.shots img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; filter: blur(3px); transition: opacity 220ms ease, filter 220ms ease; }
+.shots img.on { opacity: 1; filter: none; }
+.shots img.tall { inset: 5% 0; height: 90%; }
+@media (prefers-reduced-motion: reduce) { .shots img { filter: none; } }
 .code { display: flex; align-items: center; gap: 12px; font-size: 15px; font-weight: 600; font-stretch: 112%; letter-spacing: 0.02em; }
 .code .rule { flex: 1; height: 1px; background: var(--line-strong); }
 .code .mono { color: var(--muted); }

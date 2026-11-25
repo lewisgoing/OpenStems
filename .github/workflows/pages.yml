@@ -1,6 +1,6 @@
 name: Site
 
-# The landing page on GitHub Pages: site/ plus the changelog, the icon and two README
+# The landing page on GitHub Pages: site/ plus the changelog, the icon and three README
 # pictures (scripts/build-site.mjs). A release's changelog reaches main before its tag, so a
 # push redeploys it; downloads are looked up in the browser. Pull requests only build it.
 
@@ -12,6 +12,7 @@ on:
       - CHANGELOG.md
       - docs/images/app.png
       - docs/images/drums.png
+      - docs/images/quick-drop.png
       - app/resources/icon.png
       - scripts/build-site.mjs
       - .github/workflows/pages.yml

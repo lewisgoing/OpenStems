@@ -65,8 +65,22 @@
     </div>
   </div>
   <figure class="hero-shot intro" style="--i:5">
-    <img src="images/app.png" width="2560" height="1600" fetchpriority="high" decoding="async"
-      alt="The OpenStems window: a queue of songs on the left and the stems of the chosen song as colored waveforms on the right">
+    <div class="shots-top">
+      <div class="seg" role="group" aria-label="Show a window">
+        <button type="button" class="press" aria-pressed="true" data-shot="0">Queue</button>
+        <button type="button" class="press" aria-pressed="false" data-shot="1">Studio</button>
+        <button type="button" class="press" aria-pressed="false" data-shot="2">Tray</button>
+      </div>
+      <figcaption id="shot-say">Songs separate in order, and their stems drag straight out.</figcaption>
+    </div>
+    <div class="shots">
+      <img class="on" src="images/app.png" width="2560" height="1600" fetchpriority="high" decoding="async"
+        alt="The OpenStems window: a queue of songs on the left and the stems of the chosen song as colored waveforms on the right">
+      <img src="images/studio.png" width="1440" height="868" decoding="async"
+        alt="The Trim studio: two bars of a drum stem chosen on the bar grid, ready to drag out as a clip">
+      <img class="tall" src="images/quick-drop.png" width="760" height="1000" decoding="async"
+        alt="The quick-drop window that opens from the tray: a drop area and the recent songs with their stems">
+    </div>
   </figure>
 </section>
 

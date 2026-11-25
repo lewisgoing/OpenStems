@@ -366,6 +366,26 @@ function setupChain() {
   io.observe(chain)
 }
 
+/** The hero's windows: Queue, Studio, Tray, one at a time. */
+const SHOT_SAY = [
+  'Songs separate in order, and their stems drag straight out.',
+  'Cut a part on the bar grid and drag it out as a clip.',
+  'Drop a song on the tray icon without opening the window.',
+]
+function setupShots() {
+  const buttons = [...document.querySelectorAll('[data-shot]')]
+  const imgs = [...document.querySelectorAll('.shots img')]
+  const say = document.getElementById('shot-say')
+  for (const b of buttons) {
+    b.addEventListener('click', () => {
+      const i = Number(b.dataset.shot)
+      buttons.forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+      imgs.forEach((img, j) => img.classList.toggle('on', j === i))
+      say.textContent = SHOT_SAY[i]
+    })
+  }
+}
+
 // every-stem's 13 outputs, in groups, with the color token each is drawn in
 const SUM_LANES = [
   [['lead', 'lead vocals', 'vocals'], ['backing', 'backing vocals', 'backing']],
@@ -898,6 +918,7 @@ drawWaves(STEMS)
 setupSupport()
 setupRun()
 setupChain()
+setupShots()
 setupSum(STEMS)
 setupTrim(STEMS)
 setupHow()
