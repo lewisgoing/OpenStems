@@ -46,6 +46,8 @@ Engine (run from `engine/`):
   with the FakeEngine and synthetic beats
 - `uv run pytest tests/test_separate_selection.py`: a part of a song separated alone (the
   setting, `POST /v1/jobs/{id}/range`, the run), with the FakeEngine
+- `uv run pytest tests/test_hidden_stems.py`: stems hidden or kept by hand (the manifest,
+  the route, a second separation, a rename), with the FakeEngine
 - `uv run pytest tests/test_rename.py`: a song's name by the user (the rule, a run under a
   name, stems renamed on the disk, both routes), with the FakeEngine
 - `uv run pytest tests/test_empty_stems.py`: which stems are empty (the rule, the peak a run
@@ -404,7 +406,15 @@ the quick-drop window ("+N empty", per song) and the handles that drag every ste
 empty stems out, and a song whose stems are all empty shows them all. What is left out is
 not decoded, played, mixed or dragged, and Trim from the panel opens on what is shown. With
 the setting off an empty stem is only dimmed (`data-empty`). The trimmer's own chips list
-every stem. `docs/adr/0027-empty-stems.md`.
+every stem. The user can also decide for one stem: `hidden` in the manifest's stem and in
+`StemFile` (true: left out whatever the setting; false: kept in though empty; absent: the
+rule and the setting decide). `POST /v1/stemsets/hidden` (`pipeline/levels.py`,
+`set_hidden`) keeps it in the manifest, so it stays after the panel is left, in both
+windows, through a rename, and through a second separation into the same folder
+(`_hidden_choices` in `pipeline/run.py`). `isLeftOut` is the one rule for every list, the
+History row included; `hideChoice` is what a row's Hide button stores, and `leftOutWord`
+says "hidden" once any left-out stem was hidden by hand. The quick-drop window has no Hide
+button. `docs/adr/0027-empty-stems.md`.
 
 Tempo sync: with the `tempo_sync` setting on, `write_audio` appends an `acid` chunk with the
 detected tempo to WAV stems and mixes (`audio/write.py`, `tempo_chunk`), which FL Studio
