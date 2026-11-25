@@ -1213,6 +1213,14 @@ div.recent-gutter {
   outline-offset: -2px;
   border-radius: 6px;
 }
+/* The length the part has now, like the option that is on. */
+.trim-join-btn[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  color: var(--color-accent-fg);
+}
+.input.trim-join-field.trim-bars-field {
+  width: 40px;
+}
 .trim-join-btn + .trim-join-btn,
 .trim-join-btn + .trim-join-field,
 .trim-join-field + .trim-join-btn {
@@ -1327,6 +1335,21 @@ div.recent-gutter {
 .trim-flag:focus-visible::after {
   outline: 2px solid color-mix(in srgb, var(--color-accent-fg) 70%, transparent);
   outline-offset: 1px;
+}
+/* Bar 1 is before the song's start: the flag waits at the edge, pointing to where it is, with
+   no pole (no bar line is there). */
+.trim-flag-pinned {
+  width: 26px;
+}
+.trim-flag-pinned .trim-flag-pole {
+  display: none;
+}
+.trim-flag-pinned .trim-flag-cloth {
+  gap: 1px;
+  padding-left: 3px;
+}
+.trim-flag-pinned::after {
+  width: 24px;
 }
 /* Bar 1 is off screen: a way back to it. */
 .trim-offscreen {
