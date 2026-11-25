@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.4 (2026-11-25)
 
 - **Rename a song.** A song no longer has to go by its file's name. Right-click it in the
   queue and choose Rename, or double-click its title, and type over it: the title becomes a
