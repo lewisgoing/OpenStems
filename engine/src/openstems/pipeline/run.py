@@ -6,10 +6,11 @@ import hashlib
 import json
 import os
 import shutil
+import sys
 import time
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from openstems.audio.write import extension, write_audio, write_peaks
 from openstems.catalog.catalog import Catalog
 from openstems.catalog.store import ModelStore
 from openstems.domain.errors import Cancelled, DomainError, OutOfMemory
+from openstems.domain.grid import SongPart, clean_selection, part_downbeat
 from openstems.domain.memory import CPU_NOTE
 from openstems.domain.model import ModelSpec
 from openstems.domain.naming import DEFAULT_TEMPLATE, render_name, safe_component
@@ -34,8 +36,10 @@ from openstems.domain.stem import (
     Track,
     cache_key,
 )
+from openstems.domain.tempo import tempo_notes
 from openstems.engines.base import CancelToken
 from openstems.engines.host import ModelHost
+from openstems.pipeline.levels import measure_peak
 
 PEAKS_DIR = ".peaks"
 SAMPLE_RATE = 44100
@@ -53,12 +57,21 @@ class RunOptions:
     normalize: bool = False
     detect_tempo_key: bool = False
     tempo_sync: bool = False
-    # The user's own tempo and key for this song, in place of what detection finds. Not
-    # part of the cache key: a cached result is re-tagged, not separated again.
+    # The user's own tempo, key and bar 1 (seconds into the song) for this song, in place
+    # of what detection finds. Not part of the cache key: a cached result is re-tagged, not
+    # separated again.
     bpm: float | None = None
     key: str | None = None
+    downbeat: float | None = None
+    # The user's own name for the song, in place of its file's: the stem folder and the
+    # stems are named by it. Not part of the cache key: the folder is where a result is
+    # looked for, so a song under another name is another folder.
+    name: str | None = None
     midi_stems: list[str] = field(default_factory=list)
     force: bool = False
+    # A part of the song to separate alone, as a song of its own: a job's `range` while the
+    # separate_selection setting is on (`Runtime.options`). None: the whole song.
+    part: SongPart | None = None
 
     def key_dict(self) -> dict[str, Any]:
         return {
@@ -71,6 +84,8 @@ class RunOptions:
             "midi": sorted(self.midi_stems),
             # Only when on, so the cache key of every earlier run stays what it was.
             **({"tempo_sync": True} if self.tempo_sync else {}),
+            # Only for a part, so every other run keeps its key: the frames separated.
+            **({"range": list(self.part.frames(SAMPLE_RATE))} if self.part else {}),
         }
 
 
@@ -134,6 +149,7 @@ def stem_set_from_manifest(directory: Path, manifest: dict[str, Any]) -> StemSet
                 midi=raw.get("midi"),
                 offset=raw.get("offset", 0),
                 group=raw.get("group", ""),
+                peak=raw.get("peak"),
             )
         )
     return StemSet(directory=str(directory), manifest=manifest, stems=stems)
@@ -187,10 +203,11 @@ class Pipeline:
 
     @staticmethod
     def _retagged(out_dir: Path, cached: StemSet, options: RunOptions) -> StemSet:
-        """A cached result with the tempo and key this run was given, if it was given any."""
+        """A cached result with the tempo, key and bar 1 this run was given, if any."""
         from openstems.pipeline.retag import set_analysis
 
-        changes = {k: v for k, v in (("bpm", options.bpm), ("key", options.key)) if v is not None}
+        given = (("bpm", options.bpm), ("key", options.key), ("downbeat", options.downbeat))
+        changes = {k: v for k, v in given if v is not None}
         if not changes:
             return cached
         return stem_set_from_manifest(out_dir, set_analysis(out_dir, changes)) or cached
@@ -217,7 +234,19 @@ class Pipeline:
         report("preparing", 0.0, "Hashing")
         recipe, settings, hashes = self.plan(recipe, options)
         digest, size = hash_file(source, cancel)
-        track = Track(path=str(source.resolve()), content_hash=digest, size=size)
+        part = options.part
+        track = Track(
+            path=str(source.resolve()),
+            content_hash=digest,
+            size=size,
+            part=part.label if part is not None else "",
+            title=options.name or "",
+        )
+        if part is not None and options.downbeat is not None:
+            # Bar 1 as the part has it, before the cache is looked at: a cached part takes it.
+            options = replace(
+                options, downbeat=part_downbeat(options.downbeat, part.start, options.bpm)
+            )
         key = self.key_for(digest, recipe, settings, hashes, options)
         out_dir = output_dir_for(Path(output_root), track.name, recipe.id)
 
@@ -239,6 +268,9 @@ class Pipeline:
             progress=lambda f: report("preparing", 0.01 + f * (_PREP - 0.01), "Decoding"),
             should_cancel=lambda: cancel.cancelled,
         )
+        if part is not None:
+            mix, part = _cut(mix, part)
+            options = replace(options, part=part)  # where it was cut, for the manifest
         samples = mix.shape[1]
 
         signals, provenance, notes = self._run_passes(recipe, settings, mix, report, cancel)
@@ -251,7 +283,12 @@ class Pipeline:
         del signals
 
         report("writing", 1.0 - _WRITE, "Writing stems")
+        # Measured here, before normalize: a stem of nothing but hiss is still empty once
+        # it has been made loud.
+        levels = {name: measure_peak(audio) for name, audio in outputs.items()}
         extras = self._post_process(track, mix, outputs, options, report, cancel)
+        extras["levels"] = levels
+        notes = [*notes, *tempo_notes(options.tempo_sync, options.output_format, extras.get("bpm"))]
         stem_set = self._write(
             track,
             info,
@@ -526,6 +563,7 @@ class Pipeline:
                         midi=midi_name,
                         offset=int(extras.get("offsets", {}).get(out.name, 0)),
                         group=out.group,
+                        peak=extras.get("levels", {}).get(out.name),
                     )
                 )
                 report(
@@ -551,10 +589,16 @@ class Pipeline:
                     "decoded_samples": samples,
                     "decoded_sample_rate": SAMPLE_RATE,
                     "duration": round(samples / SAMPLE_RATE, 6),
+                    # The part of the file these stems are, when only a part of it was
+                    # separated: their timeline starts at its start. The samples and the
+                    # duration above are the part's.
+                    **({"range": options.part.to_dict()} if options.part else {}),
                 },
                 "analysis": {
                     "bpm": extras.get("bpm"),
                     "key": extras.get("key"),
+                    # Where bar 1 starts, in seconds into the song: the beat grid's anchor.
+                    "downbeat": _seconds(extras.get("downbeat")),
                     # What detection found, when the user's figures replaced it.
                     **({"detected": extras["detected"]} if extras.get("detected") else {}),
                 },
@@ -589,7 +633,16 @@ _NO_MEMORY = (
 
 def _out_of_memory(exc: BaseException) -> bool:
     """Whether a load or a run failed for lack of memory, on any device."""
-    if isinstance(exc, (OutOfMemory, MemoryError)):
+    if isinstance(exc, OutOfMemory):
+        return True
+    # Without PyTorch loaded, what failed is its own import, or nothing of it ran: never a
+    # model short of memory, and never worth another try in this process. A failed import
+    # leaves half of PyTorch loaded, and importing it again (here, to ask) breaks every job
+    # after it with errors such as "module 'torch' has no attribute 'device'". The error
+    # goes out as it is and the worker lets the process end (`worker.process.run_job`).
+    if "torch" not in sys.modules:
+        return False
+    if isinstance(exc, MemoryError):
         return True
     # Imported here: the API process reads manifests through this module without torch.
     from openstems.engines.device import is_oom
@@ -601,6 +654,11 @@ def _out_of_memory(exc: BaseException) -> bool:
 
 def _runs_on_cpu(loaded: object) -> bool:
     return str(getattr(loaded, "device", "")).startswith("cpu")
+
+
+def _seconds(value: float | None) -> float | None:
+    """A time for the manifest, to a tenth of a millisecond."""
+    return None if value is None else round(float(value), 4)
 
 
 def _needed_stems(recipe: Recipe) -> dict[str, set[str]]:
@@ -617,6 +675,19 @@ def _needed_stems(recipe: Recipe) -> dict[str, set[str]]:
         if parts:
             needed.setdefault(parts[0], set()).add(parts[1])
     return needed
+
+
+def _cut(mix: np.ndarray, part: SongPart) -> tuple[np.ndarray, SongPart]:
+    """The part of a decoded song to separate alone, and where it was cut: kept inside the
+    song as it decoded, and cut sample-exact at the engine's rate from the frames a clip of
+    the same selection is cut from (`SongPart.frames`). A copy, so the whole song is freed."""
+    try:
+        start, end = clean_selection(part.start, part.end, mix.shape[1] / SAMPLE_RATE)
+    except DomainError:
+        raise DomainError(f"the part to separate ({part.label}) is not in the song") from None
+    cut = SongPart(start, end, part.label)
+    first, frames = cut.frames(SAMPLE_RATE)
+    return _fit_length(np.ascontiguousarray(mix[:, first : first + frames]), frames), cut
 
 
 def _fit_length(audio: np.ndarray, samples: int) -> np.ndarray:

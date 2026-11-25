@@ -3,10 +3,11 @@ import type { StemFile } from '@/api/client'
 import { useCreateMix } from '@/api/queries'
 
 /**
- * A mix in a few words: `no vocals`, `drums + bass`. The engine names the file by the same
- * rule (`mix_label` in `pipeline/mix.py`); keep the two alike.
+ * A mix in a few words: `no vocals`, `drums + bass`, `drums no kick`. The engine names the
+ * file by the same rule (`mix_label` in `pipeline/mix.py`); keep the two alike.
  */
 export function mixLabel(chosen: string[], every: string[], groups: Record<string, string> = {}): string {
+  const picked = chosen
   const count = chosen.length
   let leftOut = every.filter((name) => !chosen.includes(name))
   // A group that is all in, or all out, goes by its own name: the whole kit is "drums".
@@ -17,7 +18,15 @@ export function mixLabel(chosen: string[], every: string[], groups: Record<strin
   if (leftOut.length === 1) return `no ${leftOut[0]}`
   if (chosen.length <= 3) return chosen.join(' + ')
   if (leftOut.length <= 3) return `no ${leftOut.join(', ')}`
-  return `${count} stems`
+  return groupWithout(picked, every, groups) ?? `${count} stems`
+}
+
+/** "drums no kick": every stem chosen is a part of one group, and only a few of its parts are left out. */
+function groupWithout(picked: string[], every: string[], groups: Record<string, string>): string | null {
+  const group = groups[picked[0] ?? '']
+  if (!group || picked.some((name) => groups[name] !== group)) return null
+  const missing = every.filter((name) => groups[name] === group && !picked.includes(name))
+  return missing.length > 0 && missing.length <= 3 ? `${group} no ${missing.join(', ')}` : null
 }
 
 /** `names` with every group that is all there replaced by the group's name. */

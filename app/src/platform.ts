@@ -20,6 +20,8 @@ export interface PlatformWords {
   computer: string
   /** Where first-run setup puts the engine. */
   profile: string
+  /** What holds folders, for free space: "120 GB free on this drive". */
+  drive: string
 }
 
 const WINDOWS: PlatformWords = {
@@ -29,6 +31,7 @@ const WINDOWS: PlatformWords = {
   loginItem: 'Start with Windows',
   computer: 'PC',
   profile: 'your user profile',
+  drive: 'drive',
 }
 
 const MAC: PlatformWords = {
@@ -38,6 +41,7 @@ const MAC: PlatformWords = {
   loginItem: 'Open at login',
   computer: 'Mac',
   profile: 'your Library folder',
+  drive: 'disk',
 }
 
 export function words(): PlatformWords {
@@ -52,6 +56,27 @@ export function shortcut(key: string): string {
 /** A click with the modifier held: "Ctrl+click" on Windows, "⌘-click" on a Mac. */
 export function modClick(): string {
   return isMac() ? '⌘-click' : 'Ctrl+click'
+}
+
+/** The shortcut key by itself, to be held: "hold Ctrl and scroll", "hold ⌘ and scroll". */
+export function modName(): string {
+  return isMac() ? '⌘' : 'Ctrl'
+}
+
+/**
+ * The key held to place something off the grid, freely: Alt on Windows, Option on a Mac.
+ * Both arrive as `altKey`.
+ */
+export function freeKey(): string {
+  return isMac() ? 'Option' : 'Alt'
+}
+
+/**
+ * The key that goes to the start: Home, which a Mac's laptop keyboard has only as Fn with the
+ * left arrow. Both arrive as "Home".
+ */
+export function homeKey(): string {
+  return isMac() ? 'Home, or Fn+←' : 'Home'
 }
 
 /**

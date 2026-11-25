@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { type JobOptions, type Quality, type SettingsPatch, unwrap } from './client'
+import { type JobOptions, type Quality, type Schemas, type SettingsPatch, unwrap } from './client'
 import { useEngine } from './engine'
 
 export const keys = {
@@ -115,6 +115,35 @@ export function useCreateMix() {
   return useMutation({ mutationFn: (paths: string[]) => unwrap(api.POST('/v1/mixes', { body: { paths } })) })
 }
 
+/** A stretch of a song to write as files: of its own file (`source`), or of some of its stems. */
+export type NewClips = Schemas['CreateClips']
+
+/**
+ * Write a stretch of a song as files to drag into a DAW. Resolves with the files, written
+ * now or found from before; the engine names them.
+ */
+export function useCreateClips() {
+  const { api } = useEngine()
+  return useMutation({ mutationFn: async (body: NewClips) => (await unwrap(api.POST('/v1/clips', { body }))).clips })
+}
+
+/**
+ * A song's own file made playable before it is separated: a FLAC, its peaks, its length and
+ * the grid detection finds. The first time for a song it takes seconds (the engine decodes
+ * and analyses it), then it is found again; it never changes while the file does not.
+ */
+export function useSourcePreview(path: string | null) {
+  const { api } = useEngine()
+  return useQuery({
+    queryKey: ['source-preview', path],
+    enabled: Boolean(path),
+    staleTime: Number.POSITIVE_INFINITY,
+    // Its failures are sentences (the file is gone, it is not audio): asking again cannot help.
+    retry: false,
+    queryFn: () => unwrap(api.POST('/v1/sources/preview', { body: { path: path ?? '' } })),
+  })
+}
+
 export function useJobActions() {
   const { api } = useEngine()
   const queryClient = useQueryClient()
@@ -194,11 +223,11 @@ export function usePatchSettings() {
   })
 }
 
-/** The tempo and key of a song, typed by the user over what detection found. */
+/** The tempo, key and bar 1 of a song, set by the user over what detection found. */
 export function useSetAnalysis() {
   const { api } = useEngine()
   const queryClient = useQueryClient()
-  type Change = { bpm?: number | null; key?: string | null }
+  type Change = { bpm?: number | null; key?: string | null; downbeat?: number | null }
   return {
     /** A job: before it runs the figures are kept for the run, after it its stems are re-tagged. */
     job: useMutation({
@@ -216,6 +245,59 @@ export function useSetAnalysis() {
       },
     }),
   }
+}
+
+/**
+ * A song's name, by the user; null gives it its file's name back. The name is the song's:
+ * every row of the same file follows, and stems that are written are renamed on the disk,
+ * their folder and their files. Both resolve with the song as it is now.
+ */
+export function useRename() {
+  const { api } = useEngine()
+  const queryClient = useQueryClient()
+  type Job = Schemas['JobInfo']
+  type StemSet = Schemas['StemSetInfo']
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: keys.jobs })
+    void queryClient.invalidateQueries({ queryKey: ['stemsets'] })
+  }
+  return {
+    job: useMutation({
+      mutationFn: ({ id, name }: { id: string; name: string | null }) =>
+        unwrap(api.POST('/v1/jobs/{job_id}/name', { params: { path: { job_id: id } }, body: { name } })),
+      // The row shows the new name with the answer, before the list is fetched again.
+      onSuccess: (job) => {
+        queryClient.setQueryData<Job[]>(keys.jobs, (list) => list?.map((other) => (other.id === job.id ? job : other)))
+        refresh()
+      },
+    }),
+    /** Stems that are written, by their folder: the answer is where they are now. */
+    stemSet: useMutation({
+      mutationFn: ({ directory, name }: { directory: string; name: string | null }) =>
+        unwrap(api.POST('/v1/stemsets/name', { body: { directory, name } })),
+      onSuccess: (set, { directory }) => {
+        queryClient.setQueriesData<StemSet[]>({ queryKey: ['stemsets'] }, (list) =>
+          list?.map((other) => (other.directory === directory ? set : other)),
+        )
+        refresh()
+      },
+    }),
+  }
+}
+
+/** A part of a waiting song as the trimmer chose it, or null for the whole song. */
+export type NewJobRange = Schemas['JobRangeRequest'] | null
+
+/**
+ * The part of a waiting song to separate alone (while the separate_selection setting is on
+ * when it starts), or null to take it away. Resolves with the job, its range named by the engine.
+ */
+export function useSetJobRange() {
+  const { api } = useEngine()
+  return useMutation({
+    mutationFn: ({ id, range }: { id: string; range: NewJobRange }) =>
+      unwrap(api.POST('/v1/jobs/{job_id}/range', { params: { path: { job_id: id } }, body: { range } })),
+  })
 }
 
 export function useMaintenance() {

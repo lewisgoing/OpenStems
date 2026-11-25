@@ -11,6 +11,11 @@ JobStateName = Literal["queued", "preparing", "running", "writing", "done", "fai
 Quality = Literal["fast", "balanced", "best"]
 OutputFormat = Literal["wav32f", "wav24", "flac", "mp3"]
 Fit = Literal["fits", "tight", "no"]
+_DOWNBEAT = "Where bar 1 starts, in seconds, in place of the detected one."
+_PART = (
+    "The part of the song these stems are, when only a part of it was separated: their "
+    "timeline starts at the part's start, not at the song's. Null for the whole song."
+)
 
 
 class Health(BaseModel):
@@ -182,6 +187,19 @@ class ImportModel(BaseModel):
     )
 
 
+class JobRange(BaseModel):
+    """A part of a song, chosen in the trimmer while the song waits in the queue. With the
+    separate_selection setting on when the song runs, only that part is separated, as a
+    song of its own named "<song> (<label>)"."""
+
+    start: float = Field(description="Where the part starts, in seconds into the song.")
+    end: float = Field(description="Where it ends, in seconds into the song.")
+    label: str = Field(
+        description='The part named as a clip of it is: "bars 9-16", "9.3-11.2" or '
+        '"0m21.40s-0m33.10s". Named again whenever the tempo or bar 1 of the job changes.'
+    )
+
+
 class JobOptions(BaseModel):
     sum_to_mix: bool | None = None
     output_format: OutputFormat | None = None
@@ -196,6 +214,19 @@ class JobOptions(BaseModel):
     )
     key: str | None = Field(
         default=None, description="The song's key, such as Am, in place of the detected one."
+    )
+    downbeat: float | None = Field(default=None, description=_DOWNBEAT)
+    name: str | None = Field(
+        default=None,
+        description="The song's name, in place of its file's: its stem folder and stems "
+        "are named by it. Left out, a song the user named before keeps that name.",
+    )
+    range: JobRange | None = Field(
+        default=None,
+        description="The part of the song to separate alone. Set with "
+        "POST /v1/jobs/{job_id}/range once the song is in the queue: refused when a job "
+        "is created. Separated alone only when the separate_selection setting is on when "
+        "the song runs; otherwise the whole song is.",
     )
 
 
@@ -267,6 +298,101 @@ class MixInfo(BaseModel):
     sample_rate: int
 
 
+class ClipGrid(BaseModel):
+    """The beat grid a selection was made on. It names the clip ("bars 9-16"), and its
+    tempo is the one a tempo-synced clip is marked with. Taken as it is, not rounded."""
+
+    bpm: float = Field(description="20 to 999.")
+    downbeat: float = Field(
+        description="Where bar 1 starts, in seconds from the start of the song. "
+        "Negative when it starts before the file does."
+    )
+    beats_per_bar: int = Field(default=4, description="1 to 16.")
+
+
+class CreateClips(BaseModel):
+    paths: list[str] = Field(
+        description="One or more stem files of one song, or the song's own file alone."
+    )
+    start: float = Field(description="Where the clip starts, in seconds into the song.")
+    end: float = Field(description="Where it ends. Kept inside the song.")
+    together: bool = Field(
+        default=True,
+        description="Several stems as one file, their sum. False: one file per stem.",
+    )
+    grid: ClipGrid | None = Field(
+        default=None, description="Without a grid the clip is named by its times."
+    )
+    source: bool | None = Field(
+        default=None,
+        description="Whether the one path is the song's own file rather than a stem. "
+        "Left out: it is when it is the file of a song in the queue or the history. "
+        "A stem that was itself separated is both, so say which.",
+    )
+
+
+class JobRangeRequest(BaseModel):
+    """A part of a song as the trimmer chose it, to separate alone."""
+
+    start: float = Field(description="Where the part starts, in seconds into the song.")
+    end: float = Field(description="Where it ends. Kept inside the song.")
+    grid: ClipGrid | None = Field(
+        default=None,
+        description="The grid the part was chosen on, which names it. A job with no "
+        "tempo of its own keeps the grid's tempo and bar 1 (bar 1 alone when it has that "
+        "tempo), so its run lays the bars out where the name says. Left out: the tempo "
+        "and bar 1 the job was given, when it has both; else the part is named by its "
+        "times.",
+    )
+
+
+class SetJobRange(BaseModel):
+    """The part of a waiting song to separate alone: {"range": {"start", "end", "grid"}}
+    sets it, {"range": null} takes it away again. Its label is decided when it is set, and
+    again whenever the job's tempo or bar 1 changes."""
+
+    range: JobRangeRequest | None = Field(
+        description="The part, or null to separate the whole song.",
+    )
+
+
+class ClipInfo(BaseModel):
+    path: str
+    name: str
+    label: str = Field(description="The stem or mix in the clip's name; empty for the song.")
+    stems: list[str] = Field(description="The stems in the clip; none for the song.")
+    start: float = Field(description="Where the clip starts in the song, in seconds.")
+    end: float
+    samples: int
+    sample_rate: int
+
+
+class ClipList(BaseModel):
+    clips: list[ClipInfo]
+
+
+class SourcePreviewRequest(BaseModel):
+    path: str = Field(description="The file of a song in the queue or the history.")
+
+
+class SourceAnalysis(BaseModel):
+    bpm: float | None = None
+    key: str | None = None
+    downbeat: float | None = Field(
+        default=None, description="Where bar 1 starts, in seconds into the song."
+    )
+
+
+class SourcePreview(BaseModel):
+    """A song's own file as the app plays and draws it before separation."""
+
+    audio: str = Field(description="A 16-bit FLAC at 44.1 kHz, served by /v1/files.")
+    peaks: str = Field(description="Its peaks, served by /v1/peaks.")
+    duration: float
+    sample_rate: int
+    analysis: SourceAnalysis = Field(description="What detection finds in the file.")
+
+
 class StemFile(BaseModel):
     name: str
     file: str
@@ -278,12 +404,25 @@ class StemFile(BaseModel):
     group: str | None = Field(
         default=None, description="The larger stem this one is a part of, if any."
     )
+    start: float = Field(
+        default=0.0,
+        description="Seconds into the song where this file begins: later than 0 when its "
+        "leading silence was trimmed.",
+    )
+    empty: bool = Field(
+        default=False,
+        description="Nothing but what the model let through: its peak stays more than "
+        "45 dB under the loudest stem of the set. The file is written all the same. The "
+        "app leaves such stems out of its lists while the hide_empty_stems setting is on.",
+    )
 
 
 class JobInfo(BaseModel):
     id: str
     track_path: str
-    track_name: str
+    track_name: str = Field(
+        description="The song's name: the one the user gave it, or else its file's."
+    )
     recipe_id: str
     recipe_name: str
     quality: str
@@ -302,6 +441,7 @@ class JobInfo(BaseModel):
     )
     queue_position: int | None = None
     held: bool = Field(default=False, description="Queued, and waiting for the user's Start.")
+    part: JobRange | None = Field(default=None, description=_PART)
     created_at: float
     started_at: float | None = None
     finished_at: float | None = None
@@ -339,6 +479,8 @@ class SettingsModel(BaseModel):
     vram_budget_gb: float
     use_gpu: bool
     auto_start: bool
+    separate_selection: bool
+    hide_empty_stems: bool
 
 
 class SettingsPatch(BaseModel):
@@ -361,17 +503,33 @@ class SettingsPatch(BaseModel):
     vram_budget_gb: float | None = None
     use_gpu: bool | None = None
     auto_start: bool | None = None
+    separate_selection: bool | None = None
+    hide_empty_stems: bool | None = None
 
 
 class SetAnalysis(BaseModel):
-    """The tempo and key the user gives a song. A field left out is not changed; null
-    means the song has none (for a job that has not run yet: detect it)."""
+    """The tempo, key and bar 1 the user gives a song. A field left out is not changed;
+    null means the song has none (for a job that has not run yet: detect it)."""
 
     bpm: float | None = None
     key: str | None = None
+    downbeat: float | None = Field(default=None, description=_DOWNBEAT)
 
 
 class SetStemSetAnalysis(SetAnalysis):
+    directory: str
+
+
+class SetName(BaseModel):
+    """The name the user gives a song. null gives it its file's name back."""
+
+    name: str | None = Field(
+        description="Up to 120 characters. Characters a file name cannot hold are kept in "
+        "the name and replaced where it names a folder or a file."
+    )
+
+
+class SetStemSetName(SetName):
     directory: str
 
 
@@ -386,6 +544,7 @@ class StemSetInfo(BaseModel):
     analysis: dict[str, Any] = {}
     stems: list[StemFile]
     source_exists: bool = True
+    part: JobRange | None = Field(default=None, description=_PART)
 
 
 class StemSetList(BaseModel):

@@ -2,9 +2,9 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Model, Recipe, SystemInfo } from '@/api/client'
-import { SeedOffer } from '@/App'
 import { ToastProvider } from '@/components/toast'
 import { TooltipProvider } from '@/components/ui'
+import { Welcome } from '@/components/Welcome'
 import {
   type Machine,
   budgetHint,
@@ -39,8 +39,17 @@ vi.mock('@/api/queries', () => ({
   useModels: () => ({ data: { models, models_dir: 'D:\\models', installed_bytes: 0 } }),
   useModelActions: () => modelActions,
   useSystem: () => ({ data: system }),
-  useSettings: () => ({ data: { use_gpu: true } }),
+  useSettings: () => ({ data: { use_gpu: true, output_dir: 'D:\out', models_dir: 'D:\models', output_format: 'wav32f', auto_start: false, tempo_sync: false } }),
+  usePatchSettings: () => ({ mutate: vi.fn() }),
 }))
+
+/** The welcome, walked to its last step: the models to start with. */
+function modelsStep() {
+  render(tree(<Welcome models={models} onDownloaded={vi.fn()} />))
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+  return screen.getByRole('dialog')
+}
 
 const model = (patch: Partial<Model>): Model =>
   ({
@@ -254,12 +263,11 @@ describe('the recommended set', () => {
     )
   })
 
-  it('is what the first-run offer downloads, with the reason', () => {
+  it('is what the welcome downloads, with the reason', () => {
     models = [sw, leap, small]
     system = macSystem
     bridge.info.platform = 'darwin'
-    render(tree(<SeedOffer models={models} onStarted={vi.fn()} />))
-    const dialog = screen.getByRole('dialog')
+    const dialog = modelsStep()
     expect(dialog).toHaveTextContent("2 models, 2.5 GB in total. This set is chosen for this Mac's memory.")
     expect(within(dialog).queryByText('Leap Xe')).not.toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Download' }))
@@ -269,7 +277,7 @@ describe('the recommended set', () => {
   it('offers the usual set, in the usual words, where everything fits', () => {
     models = [sw, { ...leap, recommended: true, fit: 'fits' }]
     system = { ...cardSystem, memory_budget_gb: 15.9 }
-    render(tree(<SeedOffer models={models} onStarted={vi.fn()} />))
+    modelsStep()
     expect(screen.getByRole('dialog')).toHaveTextContent('They cover every standard recipe')
     expect(screen.getByRole('dialog')).not.toHaveTextContent('This set is chosen')
   })

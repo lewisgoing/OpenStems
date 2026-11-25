@@ -285,8 +285,35 @@ def create_app(token: str, service: Service | None = None) -> FastAPI:
         responses=errors,
     )
     def set_job_analysis(job_id: str, body: s.SetAnalysis, service: Svc) -> dict[str, Any]:
-        """Set a job's tempo and key by hand: before it runs, or on its finished stems."""
+        """Set a job's tempo, key and bar 1 by hand: before it runs, or on its finished
+        stems."""
         return service.set_job_analysis(job_id, body.model_dump(exclude_unset=True))
+
+    @app.post(
+        "/v1/jobs/{job_id}/name",
+        response_model=s.JobInfo,
+        dependencies=secured,
+        responses=errors,
+    )
+    def set_job_name(job_id: str, body: s.SetName, service: Svc) -> dict[str, Any]:
+        """Name a job's song, or give it its file's name back with null. Every job of the
+        same file follows. One that waits keeps the name for its run; stems that are
+        written are renamed on the disk, their folder and their files. Refused while the
+        song is being separated."""
+        return service.rename_job(job_id, body.name)
+
+    @app.post(
+        "/v1/jobs/{job_id}/range",
+        response_model=s.JobInfo,
+        dependencies=secured,
+        responses=errors,
+    )
+    def set_job_range(job_id: str, body: s.SetJobRange, service: Svc) -> dict[str, Any]:
+        """Choose the part of a waiting song to separate alone, or take it away again with
+        null. Only that part is separated when the separate_selection setting is on when
+        the song starts; otherwise the whole song is. Refused once the song has started."""
+        part = body.range.model_dump() if body.range is not None else None
+        return service.set_job_range(job_id, part)
 
     @app.delete(
         "/v1/jobs/{job_id}", response_model=s.Removed, dependencies=secured, responses=errors
@@ -333,6 +360,30 @@ def create_app(token: str, service: Service | None = None) -> FastAPI:
         """Write some of a song's stems as one file, next to them."""
         return service.mix(body.paths)
 
+    # -- clips ----------------------------------------------------------------
+
+    @app.post("/v1/clips", response_model=s.ClipList, dependencies=secured, responses=errors)
+    def create_clips(body: s.CreateClips, service: Svc) -> dict[str, Any]:
+        """Write a stretch of a song as files to drag into a DAW: of the song's own file,
+        or of its stems, summed into one file or one file each. A clip that is already
+        written is found again. A file of its name that is newer than the song's stems or
+        file is never written over: when it holds something else, the clip takes the name
+        with "(2)", "(3)" and so on."""
+        grid = body.grid.model_dump() if body.grid is not None else None
+        clips = service.clips(body.paths, body.start, body.end, body.together, grid, body.source)
+        return {"clips": clips}
+
+    @app.post(
+        "/v1/sources/preview",
+        response_model=s.SourcePreview,
+        dependencies=secured,
+        responses=errors,
+    )
+    def preview_source(body: s.SourcePreviewRequest, service: Svc) -> dict[str, Any]:
+        """A song's own file, ready to play and draw before it is separated, with the beat
+        grid detection finds. The first request for a song takes a few seconds."""
+        return service.source_preview(body.path)
+
     # -- settings -------------------------------------------------------------
 
     @app.get("/v1/settings", response_model=s.SettingsModel, dependencies=secured, responses=errors)
@@ -358,9 +409,21 @@ def create_app(token: str, service: Service | None = None) -> FastAPI:
         responses=errors,
     )
     def set_stem_set_analysis(body: s.SetStemSetAnalysis, service: Svc) -> dict[str, Any]:
-        """Set the tempo and key of a song's finished stems by hand."""
+        """Set the tempo, key and bar 1 of a song's finished stems by hand."""
         changes = body.model_dump(exclude_unset=True)
         return service.set_analysis(changes.pop("directory"), changes)
+
+    @app.post(
+        "/v1/stemsets/name",
+        response_model=s.StemSetInfo,
+        dependencies=secured,
+        responses=errors,
+    )
+    def set_stem_set_name(body: s.SetStemSetName, service: Svc) -> dict[str, Any]:
+        """Name the song of finished stems, or give it its file's name back with null.
+        Its folder and its stem files are renamed, for every recipe it was separated
+        with. Resolves with the stem set where it is now."""
+        return service.rename_stem_set(body.directory, body.name)
 
     @app.post(
         "/v1/stemsets/rebuild", response_model=s.Rebuilt, dependencies=secured, responses=errors

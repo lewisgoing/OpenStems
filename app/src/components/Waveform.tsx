@@ -152,7 +152,7 @@ export function Waveform({ peaksPath, color, getProgress, onSeek, dimmed, label,
         if (event.currentTarget.hasPointerCapture(event.pointerId)) seekFromPointer(event)
       }}
     >
-      <canvas ref={base} className="absolute inset-0 h-full w-full opacity-30" />
+      <canvas ref={base} className="wave-rest absolute inset-0 h-full w-full" />
       <canvas ref={played} className="absolute inset-0 h-full w-full" style={{ clipPath: 'inset(0 100% 0 0)' }} />
       <div ref={playhead} className="pointer-events-none absolute top-0 bottom-0 left-0 w-px bg-text/70" />
     </div>

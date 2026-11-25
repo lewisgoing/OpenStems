@@ -39,9 +39,10 @@ unproven, and "For whoever tests on a Mac" says how to find out.
   `PLAN.md`). Signing with one, and notarization, are wired to electron-builder's standard
   environment variables and happen only when those are set. Without them the app is signed
   ad hoc, which names nobody. See "Signing".
-- **A manual update without a Developer ID.** macOS installs an update only into an app
-  signed with a Developer ID. A build without one therefore says a new version exists and
-  opens the release page. ADR 0010 has the details.
+- **A manual update without a certificate.** macOS installs an update only into an app
+  signed with a certificate, so a build signed ad hoc says a new version exists and opens
+  the release page (ADR 0010). From 0.3.2 the build is signed with the project's own
+  certificate and updates itself; 0.3.2 installed 0.3.3 on the owner's M1 Max (ADR 0018).
 
 ## The loaders dropped MPS; OpenStems does not use that part
 
@@ -169,7 +170,8 @@ runs (as repository secrets for a CI job). Nothing else changes:
 
 With the first two the app is signed. With the last three as well it is notarized. A signed
 app updates itself through `electron-updater` as on Windows: the app asks `codesign` once at
-start whether it carries a Developer ID signature (`updater.macAppIsSigned`).
+start whether it carries a certificate's signature, a Developer ID or the project's own
+(`updater.macAppIsSigned`, `updatelogic.canInstallUpdates`; ADR 0018).
 
 A Mac release carries `OpenStems-<version>-arm64.dmg`, `OpenStems-<version>-arm64.zip`, their
 blockmaps and `latest-mac.yml`. The check of an app without a Developer ID reads
@@ -264,6 +266,9 @@ Setup failed once before that, at its first step, with "EACCES: permission denie
 root, a fault on the machine that stops any new app. `sudo chown` on the folder fixed it. Setup
 now explains that case and gives the command (`platform.explainSetupError`).
 
+Later, with 0.3.6: dragging a song's title out (its original file, the feature added in
+that version) worked on the same Mac. Reported without detail of which views or formats.
+
 Not recorded from that run: how long a separation takes, whether the STFT check passed
 natively or the CPU patch went in, the doctor's output, and the self-test with a model.
 
@@ -305,6 +310,20 @@ The rest has not been seen at all.
 - **The test suites on a Mac.** No test has run on macOS. The engine tests that start a
   worker process, and the end-to-end suite, are the likeliest to need attention there.
 
+- **Light mode** (ADR 0020): the window buttons, scrollbars and menus following the pick,
+  System following the Mac's appearance as it changes, and the quick-drop panel in light. Also the reverse: with the
+  pick on Dark (the default) on a light Mac, the Control-click menu of the menu bar item is
+  now drawn dark, and the template icon must still follow the light menu bar.
+- **The welcome and the row menus** (ADRs 0021, 0022): free space read with `statfs` on
+  APFS, the word "disk", Control-click opening the row menu, Show in Finder, and Escape in the
+  menu bar panel. Covered on Windows with the platform patched; the steps are below.
+- **The trimmer** (ADR 0023): nothing of it has been seen on a Mac. Option for placing
+  freely and ⌘ for adding a chip, ⌘ with the wheel and a trackpad pinch for zooming (the
+  pinch's speed is a guess), the toolbar's lines with SF Pro (they are chosen from measured
+  widths, so a wider font should only break them sooner), playback, the loop and the click
+  through the Mac's output, and clips dragged into a DAW and into Finder. Its words and keys
+  are covered on Windows with the platform patched; its ten steps are in ADR 0023.
+
 Not built: dropping files on the menu bar item itself. Queuing lives in the windows, and the
 quick-drop window is one click away.
 
@@ -335,6 +354,32 @@ In the installed app, the same program is at
    architectures.
 4. In the app: Settings > System > GPU self-test > Run, then Export diagnostics, and send the
    zip with the Mac's model and macOS version.
+
+Light mode: pick Light at the foot of the sidebar. The page, the three window buttons, the
+scrollbars and the right-click menus should all turn light, and the quick-drop panel under
+the menu bar too. Pick System, then switch the Mac between Light and Dark in System Settings >
+Appearance: the app should follow within a second, without a restart. Quit and reopen: the
+pick should still hold. Then pick Dark with the Mac set to Light: Control-click the menu bar
+item (its menu should be dark) and check that the icon in the menu bar is still drawn for a
+light bar.
+
+The welcome (ADR 0021): Settings > Getting started > "Show the welcome again". The two
+folders should show the free space of their disk (an APFS volume reports what is free to
+this user; compare with Finder's Get Info). Pick a folder on a nearly full volume or a small
+USB stick: the models folder should warn "Not enough room on this disk". Change the format
+and close with Escape: the format where files are dropped should be the one picked.
+
+The row menus (ADR 0022): with a finished song in the queue, Control-click it and
+right-click it, in the full window and in the panel under the menu bar. Both should open the
+menu at the pointer. "Show in Finder" should open Finder with the first stem selected, and
+"Show the original in Finder" the song's own file. In the panel, Escape should close the
+menu and leave the panel open; a second Escape puts the panel away.
+
+The trimmer (ADR 0023): its ten steps for the M1 Max are in that ADR, under "Mac". They
+cover the ⌘-click on a chip, Option for placing freely, zooming with ⌘ and the wheel or a
+pinch, the toolbar's lines, clips dragged into a DAW and into Finder, playback with the loop
+and the click, Escape, a waiting song's own file, "Separate only the trimmed part", and
+stems layered in their colors on the Retina screen.
 
 If the GPU misbehaves, Settings > System > "Use the GPU" off (or `OPENSTEMS_DEVICE=cpu`) runs
 everything on the CPU.

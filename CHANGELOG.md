@@ -1,6 +1,190 @@
 # Changelog
 
-## Unreleased
+## 0.4.4 (2026-11-25)
+
+- **Rename a song.** A song no longer has to go by its file's name. Right-click it in the
+  queue and choose Rename, or double-click its title, and type over it: the title becomes a
+  field where it stands, Enter saves, Escape puts back what was there. A song that waits is
+  separated under its new name. For a song that is already separated, the stem folder and
+  the stems in it are renamed too, for every recipe it was run with; the stems panel has a
+  small pencil beside the title and F2 for that, in the queue and in History. The name
+  is the song's: every row of the same file follows, and the file queued again later keeps
+  it. Empty the field to go back to the file's name. The song's own file is never renamed. A
+  name that another song already has is refused, and so is a rename while the song is being
+  separated. A project in a DAW that already uses the stems will need to find them again,
+  as after renaming a folder by hand. The same on Windows and a Mac, where it has not been
+  seen yet.
+
+## 0.4.3 (2026-11-25)
+
+- **Empty stems stay out of the way.** A song with no guitar still gets a guitar stem, with
+  nothing in it but a hiss. Such stems are now left out of the stems panel, of the pills in
+  the quick-drop window and of the handles that drag every stem, so the stems with sound are
+  what you see and what lands in your DAW. A line under the list ("4 empty: bass, guitar,
+  piano, other") and a "+4 empty" pill bring them back for that song, a little dimmed. Every
+  file is still written. A stem counts as empty when its loudest moment stays more than
+  45 dB under the loudest stem of the song. Songs separated before this version are judged
+  from their waveforms. "Hide empty stems" in Settings > Defaults, under Sum to mix, turns
+  it off. A song with one stem now reads "1 stem". The same on Windows and a Mac, where it
+  has not been seen yet.
+- **Settings.** "Show the welcome again" (Getting started) moved to the foot of Settings,
+  above About.
+- **The trimmer: bar 1, lengths and the loop.** Bar 1's flag dragged before the start of the
+  song used to be lost off the left of the ruler. Now it waits at the left edge and can be
+  dragged back in. The song's start takes hold of the flag when it is dragged close to it
+  (hold Alt, Option on a Mac, to place it freely), and 0:00 beside the bar 1 field, or a
+  double click on the flag, puts bar 1 at the start. Under Length, 4, 8, 16, 32 or 64 chooses
+  a part of that many bars from the bar the playhead is in, or makes the part chosen that
+  long; any other number of bars can be typed beside them and is kept for next time. A part
+  chosen where there was none is looped at once; turned off, the loop stays off. A new button
+  left of Play, and the Home key, take the playhead and the view back to 0:00, and a click at
+  the very start of the waveform puts the playhead at 0:00 where it used to go to the nearest
+  bar line. The same on Windows and a Mac, where it has not been seen yet.
+
+## 0.4.2 (2026-11-24)
+
+- **Search the queue and pick its order.** The queue has a search field and a menu for the
+  order of the list. The newest song is now first; the menu also has Oldest, Name and Run
+  order, and the pick is remembered. Search finds a song by its name or its recipe's, with
+  every word typed, whatever the case or the accents, and the count reads "2 of 14" while it
+  narrows the list. Ctrl+F (Cmd+F on a Mac) goes to the field; Escape empties it. Dragging a
+  waiting song to another place is in Run order, the order songs are separated in; "Move to
+  the top" and "Move to the bottom" in a row's right-click menu work in every order. The
+  quick-drop window is unchanged. The same on Windows and a Mac, where it has not been seen
+  yet.
+- **Links to the website.** Settings > About opens the website, the changelog, "Will it
+  run?" and the support page in the browser, and on a Mac so does the Help menu.
+
+## 0.4.1 (2026-11-24)
+
+- **"module 'torch' has no attribute 'device'" no longer sticks.** If PyTorch failed to load
+  in the separation process, that process failed every job after it with this message until
+  the app was quit. That most likely happens when Windows is short of memory, with a nearly
+  full system drive leaving its paging file no room. Now a job that fails unexpectedly gives
+  the next job a fresh process. The job shows the real error, and its details go to
+  `engine.log`. When Windows' paging file is full the job says so: close some programs or
+  free space on the system drive, then try again. The fresh process is the same on a Mac,
+  where it has not been seen; the paging-file message is Windows only.
+
+## 0.4.0 (2026-11-24)
+
+- **Trim a part of a song.** Trim, on a song in the queue (waiting or separated, also in its
+  right-click menu) or in the stems panel, opens the song in an editor across the window.
+  Choose what to trim: the original song (before it is separated, too), one stem, a group
+  such as Drums, or several stems as one mix with Ctrl+click (Cmd+click on a Mac). From the
+  stems panel it opens on what solo and mute leave audible (more than 8 stems open on the
+  song's own file). Several stems are drawn on top of one another, each in its own color, so
+  you can see where the drums drop out or the vocals come in. Back finds the queue or the
+  History as it was left, scrolled and searched. Drag across the waveform to
+  choose a part: it snaps to bars, beats, half or quarter beats, or goes where the pointer is
+  with Alt held (Option on a Mac). Drag its edges to change it and its middle to move it.
+  Then drag the clip out of the footer into a DAW or a folder, named by the part, such as
+  "Song - drums - bars 9-16.wav". "Every stem, this part" gives every stem cut to the part,
+  one file each. Clips are WAV, in a `Clips` folder beside the stems (beside the song's stem
+  folders for the original). The same bars cut again on a corrected grid go to a new file,
+  "(2)": a clip is replaced only once its song has been separated again.
+- **Fix the grid where detection got it wrong.** Halve or double the tempo, tap it, or type
+  it. Or drag bar 1's flag onto the first downbeat, then a later bar line onto its beat: that
+  sets the tempo exactly. Click plays a click on every beat, to hear whether the grid sits on
+  the music. The tempo is the song's, as when it is typed in the stems panel: file names, the
+  manifest and the tempo FL Studio reads follow. Where bar 1 starts is now detected with the
+  tempo and kept with it, also in a loop that starts with its first kick.
+- In the editor, Space plays, L loops the part and Play selection plays it once. Ctrl and the
+  scroll wheel zoom (Cmd and the wheel, or a pinch, on a Mac), F shows just the part and Z
+  the whole song. Esc clears the part, then goes back.
+- **Separate only the trimmed part.** A new setting under Settings > Queue, off by default.
+  With it on, the part chosen in the trimmer on a song that waits in the queue is all that
+  Start separates: faster, and its stems are as long as the part, in a folder of their own,
+  such as "Song (bars 9-16)". The trimmer's footer and the song's row say so, and a tempo
+  corrected in the row renames the part to match. Off, the whole song is separated, and the
+  part can be dragged from it afterwards.
+- A mix of a group with a few of its parts taken out is named after the group: the kit
+  without its kick is "drums no kick", where it was "6 stems". In the stems panel too.
+- On Windows and on a Mac alike (not seen on a Mac yet). `docs/adr/0023-trimmer.md`.
+- For the API: `POST /v1/clips` (a stretch of a song or its stems as a file),
+  `POST /v1/sources/preview` (a song's own file, playable before it is separated),
+  `downbeat` wherever the tempo is set, and `start` on every stem. `POST /v1/jobs/{id}/range`
+  gives a waiting song its part to separate alone, used while `separate_selection` is on;
+  `part` on jobs and stem sets says when only a part was separated.
+
+## 0.3.9 (2026-11-23)
+
+- **Clear finished lines up in the quick-drop window.** Its hover no longer sits on top of
+  the first song, and the button ends where the rows end, with or without a scrollbar.
+
+## 0.3.8 (2026-11-23)
+
+- **A welcome on the first start.** Three short steps after setup: where stems and models
+  go, with the free space on each drive (and a warning when the recommended models would
+  not fit); the format, with about how large a stem is in each; whether songs start as soon
+  as they are added, and tempo sync for FL Studio; then the recommended models. Every choice
+  is the setting itself, and Settings > Getting started shows the welcome again. Existing
+  installs do not see it. On Windows and on a Mac alike (not seen on a Mac yet).
+- **Right-click a song in the queue**, in the full window and the quick-drop window: Show
+  stems, Show in Explorer (Finder on a Mac), Show the original, Start now, Move to the top
+  or bottom, Cancel, Retry and Remove from the list, as the song's state allows. A song
+  being fetched from a link has Try again and Cancel. The quick-drop window can now remove a
+  song from the list too. Nothing in the menu deletes a file.
+
+## 0.3.7 (2026-11-23)
+
+- **A new version shows in the tray.** While an update waits, the tray icon (on a Mac, the
+  menu bar item) keeps its four bars and lifts a small dot over the fourth, blue on Windows,
+  and its tooltip names the version. It gives way to work in progress and to stems that are
+  ready, and stays until the update is installed. The button in the quick-drop window now
+  names the version too: "Update 0.3.8".
+- **The bar above the queue keeps "Sum to mix" with the other settings.** In a narrower
+  window the Paste link and Add files buttons stay beside the recipe, and quality, format and
+  "Sum to mix" share the line below; the switch moves to a line of its own only when there is
+  no room for it.
+- **No "+1 in the full app" in the quick-drop window.** A song with one stem more than fits
+  (every-stem's 13) shows them all: the pill that said one was hidden took the room the stem
+  itself needed. With all of them in view they can be mixed there too. Songs with many more
+  stems still send the rest to the full app.
+
+## 0.3.6 (2026-11-23)
+
+- **Drag the original song by its title.** The song's name in the stems panel, the queue,
+  History and the quick-drop window now drags the original file out, into a DAW or a
+  folder, like a stem. A song fetched from a link drags out in the format the site sent
+  (often `.webm` or `.m4a`), before or after it is separated, so OpenStems also works as a
+  song downloader. Letting go over OpenStems itself does not queue the song again. A title
+  whose file was moved or deleted stays plain text. On Windows and on a Mac alike; seen
+  working on the owner's M1 Max with 0.3.6.
+
+## 0.3.5 (2026-11-23)
+
+- **Tempo sync says when it cannot work.** FL Studio reads a sample's tempo from WAV files
+  only, so MP3 and FLAC stems never carried one, and nothing said so: with MP3 chosen, most
+  stems reached FL with no tempo. Now the format list marks MP3 and FLAC "No tempo" while
+  tempo sync is on, Settings says so under the switch, and a song written that way carries
+  a note saying why its stems have no tempo. A song in which no tempo was found says that
+  too, and the note goes once you type a tempo in. FL Studio also needs "Read sample tempo
+  information" on in its General settings; the hint names it. `docs/adr/0016-tempo-sync.md`.
+- **Full-length stems in FL Studio: use Fit to tempo.** FL Studio stretches a sample to the
+  project's tempo by itself only when it is about a minute long or less (measured: 60 seconds
+  stretch, 90 do not). A whole stem is longer, so FL reads its tempo but leaves it unstretched.
+  Open the clip's menu, choose Fit to tempo and pick the tempo marked "(embedded)": the stem
+  then follows the project. The tempo sync hint in Settings says so.
+
+## 0.3.4 (2026-11-23)
+
+- **Pasted links: yt-dlp 2026.11.23**, from 2026.10.26. Sites change how they serve audio,
+  and a newer yt-dlp is what keeps links working. Tried with a real YouTube link on Windows.
+- For the project, nothing changes in the app: a daily check opens an issue in the
+  repository when a newer yt-dlp is out, the usual sign that pasted links need an update
+  (`.github/workflows/links-check.yml`, `scripts/check_ytdlp.py`).
+
+## 0.3.3 (2026-11-23)
+
+- **Light mode.** Pick Light, Dark or System with the three icons at the foot of the
+  sidebar, or under Settings > Appearance. System follows the computer's setting as it
+  changes. The quick-drop window follows the same pick. Stem colors and waveforms get
+  deeper shades on a light page so each stays visible. The app stays dark until you pick
+  otherwise. On Windows and on a Mac alike (not seen on a Mac yet).
+  `docs/adr/0020-light-mode.md`.
+
+## 0.3.2 (2026-11-23)
 
 - **The tempo and key can be corrected.** A song that waits in the queue shows two small
   fields, "auto" until you type the tempo or the key yourself. Finished stems show the same
@@ -9,6 +193,12 @@
   follow. The audio is not rewritten and the song is not separated again. What detection
   found is kept in the manifest. `docs/adr/0019-edit-tempo-key.md`.
 - The stems panel shows the tempo to two decimals, not rounded to a whole number.
+- **A Mac app can update itself without an Apple Developer ID.** The Mac build can now be
+  signed with a certificate the project makes itself, and an app signed that way installs
+  new versions as on Windows. Seen on a CI Mac, where one build installed a newer one; not
+  yet on a Mac with a person at it, and no release has been signed this way yet. macOS
+  still asks before the first open. Apps on 0.3.0 and 0.3.1 take the first such release by
+  hand, once. `docs/adr/0018-mac-self-signed.md`.
 
 ## 0.3.1 (2026-11-23)
 

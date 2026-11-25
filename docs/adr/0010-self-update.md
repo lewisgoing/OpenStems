@@ -134,6 +134,10 @@ per-user NSIS installer; the first real update (0.2.0 to the next) is its first 
 
 ## On a Mac: a manual update for an unsigned build (added 2026-11-23)
 
+Later the same day: a build signed with a certificate the project makes itself updates
+itself, with no Developer ID. See ADR 0018. What follows still holds for an ad hoc build,
+and "Developer ID" below now reads "a Developer ID or the project's own certificate".
+
 ADR 0014 adds a Mac build, unsigned by default. macOS installs an update only into an app
 signed with a Developer ID, so an unsigned Mac app cannot replace itself. It does the part it
 can. **Neither path below has been run on a Mac by us.**

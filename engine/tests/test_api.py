@@ -206,11 +206,13 @@ def test_retry_reorder_remove_and_clear(
     jobs_manager.supervisor.start()
     assert jobs_manager.supervisor.ready.wait(30)
 
-    ids = [
-        client.post("/v1/jobs", json={"path": str(p), "recipe": "full-song"}).json()["id"]
-        for p in songs[:4]
-    ]
-    wait_for(client, lambda jobs: jobs[0]["state"] in ("preparing", "running"))
+    # Every job waits for Start, so nothing below races the worker: the fake engine can
+    # finish a job between two polls on a slow machine.
+    body = {"recipe": "full-song", "start": False}
+    ids = [client.post("/v1/jobs", json={**body, "path": str(p)}).json()["id"] for p in songs[:4]]
+    # The first one starts; it is handed to the worker before the answer comes back.
+    started = client.post(f"/v1/jobs/{ids[0]}/start").json()
+    assert started["state"] != "queued"
 
     # Reorder the three queued jobs: last one first.
     queued = ids[1:]
@@ -221,9 +223,10 @@ def test_retry_reorder_remove_and_clear(
     assert response.status_code == 200
     assert [j["id"] for j in response.json()["jobs"]] == [ids[0], *new_order]
 
-    # Cancel a queued job, then retry it: it goes to the back.
+    # Cancel a queued job, start the rest, then retry it: it goes to the back.
     assert client.post(f"/v1/jobs/{new_order[1]}/cancel").json()["state"] == "cancelled"
     assert client.post(f"/v1/jobs/{ids[0]}/retry").status_code == 400  # not failed/cancelled
+    assert client.post("/v1/jobs/start").status_code == 200
     assert client.post(f"/v1/jobs/{new_order[1]}/retry").json()["state"] == "queued"
 
     jobs = wait_for(client, all_terminal)
@@ -383,6 +386,37 @@ def test_history_lists_and_rebuilds_from_manifests(client: TestClient, songs) ->
     assert client.get("/v1/stemsets").json()["stem_sets"] == []
     assert client.post("/v1/stemsets/rebuild").json() == {"stem_sets": 2}
     assert len(client.get("/v1/stemsets").json()["stem_sets"]) == 2
+
+
+def test_a_job_that_breaks_the_worker_leaves_the_next_job_a_fresh_one(
+    fake_env: None, songs, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Seen on 0.4.0 (ADR 0024): after a failed import of PyTorch, most likely with Windows'
+    paging file full, the worker kept half of it loaded, and its jobs failed with "module
+    'torch' has no attribute 'device'" until the app was quit, the real error long gone.
+    Full-song's model acts that out here; the second job, with another model, must run in
+    a fresh worker."""
+    from openstems.worker.process import PAGING_FILE_NOTE
+
+    monkeypatch.setenv("OPENSTEMS_FAKE_IMPORT_FAILS", "bs-roformer-sw")
+    service = Service()
+    with TestClient(create_app(TOKEN, service), headers=AUTH) as c:
+        assert service.jobs.supervisor.ready.wait(30)
+        old_pid = service.jobs.supervisor.pid
+        first = c.post("/v1/jobs", json={"path": str(songs[0]), "recipe": "full-song"}).json()
+        second = c.post(
+            "/v1/jobs", json={"path": str(songs[1]), "recipe": "cleanup-dereverb"}
+        ).json()
+
+        jobs = {j["id"]: j for j in wait_for(c, all_terminal)}
+        assert jobs[first["id"]]["state"] == "failed"
+        assert jobs[first["id"]]["error"] == PAGING_FILE_NOTE  # what to do, not a DLL's name
+        assert jobs[second["id"]]["state"] == "done", jobs[second["id"]]["error"]
+        status = c.get("/v1/system").json()["worker"]
+        assert status["pid"] != old_pid and status["restarts"] == 0  # replaced, not crashed
+    # The traceback is kept in the engine's log: the job only says what to do.
+    logged = [r.getMessage() for r in caplog.records if r.name == "openstems.api.jobs"]
+    assert any("Traceback" in m and "WinError 1455" in m for m in logged), [m[:200] for m in logged]
 
 
 def test_jobs_survive_a_restart(fake_env: None, songs) -> None:

@@ -66,7 +66,7 @@ function useRestart(): { restart: () => void; restarting: boolean; dialog: React
 /**
  * The one thing the app says about a new version: a small button that takes it from
  * "available" through the download to the restart. It is absent while there is nothing new.
- * `compact` is for the quick-drop window, where the label is a single word.
+ * `compact` is for the quick-drop window, where the label is short: "Update 0.3.6".
  *
  * An app that cannot install the version itself (`manual`, an unsigned Mac app) has one
  * step: the button opens the download page and stays as it is.
@@ -100,11 +100,9 @@ export function UpdatePill({ compact, className }: { compact?: boolean; classNam
           ? percent
           : `Downloading ${percent}`
         : manual
-          ? compact
-            ? 'Get'
-            : `Get ${version}`
+          ? `Get ${version}`
           : compact
-            ? 'Update'
+            ? `Update ${version}`
             : `Update to ${version}`
   const hint = ready
     ? `Version ${version} is downloaded. Restarting installs it.`

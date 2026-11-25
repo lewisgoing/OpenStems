@@ -14,11 +14,17 @@ from openstems.worker.process import worker_main
 
 EventHandler = Callable[[tuple[Any, ...]], None]
 
+# How long a worker that ends by itself after a failed job gets to exit before it is killed.
+RETIRE_SECONDS = 10.0
+
 # Environment the worker needs to see even though it is a fresh interpreter.
 _ENV_KEYS = (
     "OPENSTEMS_ENGINE",
     "OPENSTEMS_FAKE_DELAY",
     "OPENSTEMS_FAKE_OOM",
+    "OPENSTEMS_FAKE_LATE",
+    "OPENSTEMS_FAKE_EMPTY",
+    "OPENSTEMS_FAKE_IMPORT_FAILS",
     "OPENSTEMS_MEMORY_GB",
     "OPENSTEMS_CONFIG_DIR",
     "OPENSTEMS_MODELS_DIR",
@@ -32,6 +38,7 @@ class WorkerSupervisor:
 
     ``on_event`` receives the worker's events on the pump thread. A worker that dies
     produces a ``("crashed",)`` event and is restarted, so a crash cannot take the API down.
+    One that ends itself after a job failed unexpectedly is replaced quietly (`_replace`).
     """
 
     def __init__(self, on_event: EventHandler) -> None:
@@ -139,6 +146,22 @@ class WorkerSupervisor:
             if event[0] == "ready":
                 self.ready.set()
             self._on_event(event)
+            if event[0] == "failed" and len(event) > 4 and event[4]:
+                self._replace()
+
+    def _replace(self) -> None:
+        """Start a fresh worker in place of one that ends by itself after a job that failed
+        with an unexpected error (`process.run_job`). Not a crash: nothing else is failed and
+        nothing is counted. The job manager holds the queue until the new one is ready."""
+        process = self._process
+        if process is not None:
+            process.join(RETIRE_SECONDS)
+            if process.is_alive():
+                process.kill()
+                process.join(2)
+        with self._lock:
+            if not self._stopping.is_set():
+                self._spawn()
 
     def _handle_crash(self) -> None:
         with self._lock:

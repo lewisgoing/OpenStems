@@ -1,26 +1,43 @@
 import { existsSync, statSync } from 'node:fs'
-import { extname } from 'node:path'
-import { BrowserWindow, Menu, app, clipboard, dialog, ipcMain, nativeImage, shell } from 'electron'
+import { statfs } from 'node:fs/promises'
+import { dirname, extname } from 'node:path'
+import { BrowserWindow, Menu, app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from 'electron'
 import type { ShellStatus } from './bridge'
 import { EngineProcess } from './engine'
 import { log } from './log'
 import { APP_NAME } from './platform'
 import { Prefs } from './prefs'
 import { EngineSetup } from './setup'
+import { existingAncestor, spaceOf } from './space'
 import { TrayController } from './tray'
-import { TRAFFIC_LIGHTS_INSET, TRAY_FLAG, isTrayActivity, macMenuTemplate, quitsOnWindowClose, startsHidden, windowChrome } from './traylogic'
+import {
+  TRAFFIC_LIGHTS_INSET,
+  TRAY_FLAG,
+  isThemePref,
+  isTrayActivity,
+  macMenuTemplate,
+  quitsOnWindowClose,
+  startsHidden,
+  windowChrome,
+} from './traylogic'
 import { Updater, fakeBackend, fakeManualBackend } from './updatelogic'
 import { updateBackend } from './updater'
 import { isVariant } from './variant'
-import { BACKGROUND, iconPath, loadRenderer, webPreferences } from './windows'
+import { background, currentTheme, iconPath, loadRenderer, recolor, webPreferences } from './windows'
 
-const DRAGGABLE = new Set(['.wav', '.flac', '.mp3', '.mid'])
+// What may be dragged out: stems, mixes and MIDI, and a song's original file, which is any
+// format the engine takes (`AUDIO_SUFFIXES` in engine/src/openstems/cli_inputs.py: change
+// both together). A fetched link keeps the site's format, often .webm or .m4a.
+const DRAGGABLE = new Set([
+  '.mid',
+  ...['.wav', '.mp3', '.flac', '.m4a', '.aac', '.ogg', '.opus', '.aif', '.aiff', '.wma'],
+  ...['.mp4', '.mov', '.mkv', '.webm', '.avi', '.m4v', '.wv', '.ape', '.alac', '.caf'],
+])
 
 process.env.OPENSTEMS_APP_VERSION = app.getVersion()
 
 const E2E = process.env.OPENSTEMS_E2E === '1'
 const MAC = process.platform === 'darwin'
-const REPOSITORY = 'https://github.com/lewisgoing/OpenStems'
 const engine = new EngineProcess()
 const setup = new EngineSetup()
 const prefs = new Prefs()
@@ -69,6 +86,8 @@ const e2eState = {
   notices: [] as string[],
   /** Stands in for the system clipboard, which tests must not read or change. */
   clipboard: '',
+  /** Stands in for the folder picker, which a test cannot drive: the folder it returns. */
+  pickFolder: null as string | null,
   tray: () => ({
     icon: tray.presentation.icon,
     tooltip: tray.presentation.tooltip,
@@ -103,10 +122,10 @@ function createWindow(): void {
     minWidth: 980,
     minHeight: 640,
     show: false,
-    backgroundColor: BACKGROUND,
+    backgroundColor: background(),
     title: 'OpenStems',
     icon: iconPath('icon.png'),
-    ...windowChrome(process.platform, BACKGROUND),
+    ...windowChrome(process.platform, currentTheme()),
     webPreferences: webPreferences(),
   })
   mainWindow = window
@@ -184,6 +203,7 @@ function shellStatus(): ShellStatus {
     closeToTray: prefs.value.closeToTray,
     checkForUpdates: prefs.value.checkForUpdates,
     notifyReady: prefs.value.notifyReady,
+    theme: prefs.value.theme,
     startAtLogin: startsAtLogin(),
     canStartAtLogin,
   }
@@ -235,13 +255,17 @@ function registerIpc(): void {
     return String(text).slice(0, 4096)
   })
 
+  // Says whether the file was there to show: an original moved away since is told, not ignored.
   ipcMain.handle('shell:reveal', (_event, path: string) => {
-    if (typeof path === 'string' && existsSync(path)) shell.showItemInFolder(path)
+    if (typeof path !== 'string' || !existsSync(path)) return false
+    shell.showItemInFolder(path)
+    return true
   })
   ipcMain.handle('shell:open-folder', async (_event, path: string) => {
     if (typeof path === 'string' && existsSync(path)) await shell.openPath(path)
   })
   ipcMain.handle('dialog:pick-folder', async (event, defaultPath?: string) => {
+    if (E2E && e2eState.pickFolder !== null) return e2eState.pickFolder
     const owner = BrowserWindow.fromWebContents(event.sender)
     if (!owner) return null
     const result = await dialog.showOpenDialog(owner, {
@@ -249,6 +273,16 @@ function registerIpc(): void {
       properties: ['openDirectory', 'createDirectory'],
     })
     return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+  ipcMain.handle('fs:space', async (_event, path: string) => {
+    if (typeof path !== 'string' || path.length === 0) return null
+    const folder = existingAncestor(path, existsSync, dirname)
+    if (!folder) return null
+    try {
+      return spaceOf(await statfs(folder))
+    } catch {
+      return null
+    }
   })
   ipcMain.handle('dialog:pick-file', async (event, options: { title: string; extensions: string[] }) => {
     const owner = BrowserWindow.fromWebContents(event.sender)
@@ -273,6 +307,10 @@ function registerIpc(): void {
     if (typeof changes.closeToTray === 'boolean') prefs.update({ closeToTray: changes.closeToTray })
     if (typeof changes.checkForUpdates === 'boolean') prefs.update({ checkForUpdates: changes.checkForUpdates })
     if (typeof changes.notifyReady === 'boolean') prefs.update({ notifyReady: changes.notifyReady })
+    if (isThemePref(changes.theme)) {
+      prefs.update({ theme: changes.theme })
+      nativeTheme.themeSource = changes.theme
+    }
     if (typeof changes.startAtLogin === 'boolean' && canStartAtLogin) setStartAtLogin(changes.startAtLogin)
     return shellStatus()
   })
@@ -300,11 +338,19 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   void app.whenReady().then(() => {
+    // Light or dark, before any window opens. Both pages follow it through
+    // `prefers-color-scheme`, and so do native menus and dialogs; what Electron paints itself
+    // is repainted here when the pick or, with `system`, the system's theme changes.
+    nativeTheme.themeSource = prefs.value.theme
+    nativeTheme.on('updated', () => {
+      recolor(mainWindow, true)
+      recolor(tray.popup, false)
+    })
     // Windows has no menu bar in the window. On a Mac the menu holds the standard shortcuts.
     Menu.setApplicationMenu(
       MAC
         ? Menu.buildFromTemplate(
-            macMenuTemplate({ name: APP_NAME, settings: showSettings, help: () => void shell.openExternal(REPOSITORY) }),
+            macMenuTemplate({ name: APP_NAME, settings: showSettings, open: (url) => void shell.openExternal(url) }),
           )
         : null,
     )
@@ -324,7 +370,10 @@ if (!app.requestSingleInstanceLock()) {
       }
       send('setup:status', status)
     })
-    updater.onStatus((status) => send('update:status', status))
+    updater.onStatus((status) => {
+      send('update:status', status)
+      tray.setUpdate(status)
+    })
     updater.schedule(() => prefs.value.checkForUpdates)
     tray.create()
     // Started in the tray, the app shows no window, unless first-run setup needs the user.

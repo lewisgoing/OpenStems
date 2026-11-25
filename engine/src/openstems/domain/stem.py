@@ -7,6 +7,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from openstems.domain.naming import MAX_COMPONENT
+
 MANIFEST_NAME = "manifest.json"
 MANIFEST_SCHEMA = 1
 
@@ -18,12 +20,23 @@ class Track:
     path: str
     content_hash: str
     size: int
+    # A part of the song separated alone, named as a clip of it is ("bars 9-16"). Its stems
+    # are a song of their own, "<track> (<part>)", so they never mix with the whole song's.
+    part: str = ""
+    # The name the user gave the song, in place of its file's. The file keeps its own.
+    title: str = ""
 
     @property
     def name(self) -> str:
         import os
 
-        return os.path.splitext(os.path.basename(self.path))[0]
+        name = self.title or os.path.splitext(os.path.basename(self.path))[0]
+        if not self.part:
+            return name
+        # A name too long for a folder is cut in the song's name, never in the part's, or
+        # two parts of the song would share a folder.
+        tail = f" ({self.part})"
+        return name[: max(0, MAX_COMPONENT - len(tail))].rstrip() + tail
 
 
 @dataclass(frozen=True)
@@ -42,6 +55,9 @@ class Stem:
     midi: str | None = None
     offset: int = 0  # samples trimmed from the start (0 unless silence trim is on)
     group: str = ""  # the larger stem this one is a part of, if any
+    # The largest sample of the stem as it was separated, before normalize. None in a
+    # manifest from before it was measured. It decides whether the stem is empty.
+    peak: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -57,6 +73,7 @@ class Stem:
             "models": list(self.models),
             "settings": self.settings,
             **({"group": self.group} if self.group else {}),
+            **({"peak": self.peak} if self.peak is not None else {}),
         }
 
 

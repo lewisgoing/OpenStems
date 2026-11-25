@@ -1,8 +1,9 @@
+import { existsSync, readFileSync } from 'node:fs'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_PREFS,
   type Rect,
@@ -20,21 +21,27 @@ import {
   startsHidden,
   taskbarEdge,
   trayIconFile,
+  trayUpdateOf,
   trayClickAction,
   trayMenuTemplate,
   trayPresentation,
   windowChrome,
+  titleBarOverlay,
+  WINDOW_COLORS,
+  THEME_PREFS,
+  isThemePref,
 } from '../../electron/traylogic'
 import type { Job, Link, Model, Recipe, StemFile, SystemInfo } from '@/api/client'
 import { ToastProvider } from '@/components/toast'
 import { TooltipProvider } from '@/components/ui'
 import { SelectionProvider } from '@/state/selection'
-import TrayApp, { QuickDrop, activityOf } from '@/tray/TrayApp'
+import TrayApp, { QuickDrop, activityOf, pillCount } from '@/tray/TrayApp'
 import { TraySettings } from '@/views/SettingsView'
 import { bridge } from './setup'
 
 const createJobs = { mutate: vi.fn() }
 const setAnalysis = { job: { mutateAsync: vi.fn() }, stemSet: { mutateAsync: vi.fn() } }
+const rename = { job: { mutateAsync: vi.fn(async (_change: { id: string; name: string | null }) => undefined) }, stemSet: { mutateAsync: vi.fn(async (_change: { directory: string; name: string | null }) => undefined) } }
 const actions = {
   startAll: { mutate: vi.fn() },
   start: { mutate: vi.fn() },
@@ -77,6 +84,7 @@ vi.mock('@/api/queries', () => ({
   useJobs: () => ({ data: jobs }),
   useJobActions: () => actions,
   useSetAnalysis: () => setAnalysis,
+  useRename: () => rename,
   useLinks: () => ({ data: links }),
   useLinkActions: () => linkActions,
   useCreateMix: () => createMix,
@@ -152,11 +160,13 @@ vi.mock('@/api/engine', () => ({
 
 const stem = (track: string, name: string): StemFile => ({
   name,
+  empty: false,
   file: `${track} - ${name}.wav`,
   path: `D:\\out\\${track}\\full-song\\${track} - ${name}.wav`,
   peaks: `D:\\out\\${track}\\full-song\\.peaks\\${name}.json`,
   samples: 88200,
   sample_rate: 44100,
+  start: 0,
 })
 const SIX = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other']
 
@@ -339,11 +349,11 @@ describe('the quick-drop window position on a Mac', () => {
 
 describe('what differs between Windows and a Mac', () => {
   it('keeps the frame of the full window on Windows, and puts the three buttons in the title bar on a Mac', () => {
-    expect(windowChrome('win32', '#0c0d0f')).toEqual({
+    expect(windowChrome('win32', 'dark')).toEqual({
       titleBarStyle: 'hidden',
       titleBarOverlay: { color: '#0c0d0f', symbolColor: '#8b8f98', height: 40 },
     })
-    const chrome = windowChrome('darwin', '#0c0d0f')
+    const chrome = windowChrome('darwin', 'dark')
     expect(chrome).toEqual({ titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 12 } })
     expect(chrome).not.toHaveProperty('titleBarOverlay')
     // A button's frame is 16 points high: centered in the title bar.
@@ -352,22 +362,47 @@ describe('what differs between Windows and a Mac', () => {
     expect(TRAFFIC_LIGHTS.x + 3 * 14 + 2 * 6).toBeLessThan(TRAFFIC_LIGHTS_INSET)
   })
 
+  it('paints the Windows title bar buttons for the theme, and leaves a Mac its own', () => {
+    expect(windowChrome('win32', 'light').titleBarOverlay).toEqual({ color: '#f7f8f9', symbolColor: '#5b616b', height: 40 })
+    expect(titleBarOverlay('dark')).toEqual({ color: WINDOW_COLORS.dark.background, symbolColor: WINDOW_COLORS.dark.symbol, height: 40 })
+    expect(windowChrome('darwin', 'light')).toEqual(windowChrome('darwin', 'dark'))
+  })
+
+  it('matches the window background and title bar buttons to the page, in both themes', () => {
+    const css = readFileSync('src/styles.css', 'utf8') // vitest runs from app/
+    const block = (selector: string) => css.slice(css.indexOf(selector), css.indexOf('}', css.indexOf(selector)))
+    const token = (text: string, name: string) => new RegExp(`--color-${name}:\\s*(#[0-9a-f]{6});`).exec(text)?.[1]
+    const dark = block('@theme {')
+    const light = block(":root[data-theme='light'] {")
+    expect(token(dark, 'bg')).toBe(WINDOW_COLORS.dark.background)
+    expect(token(dark, 'muted')).toBe(WINDOW_COLORS.dark.symbol)
+    expect(token(light, 'bg')).toBe(WINDOW_COLORS.light.background)
+    expect(token(light, 'muted')).toBe(WINDOW_COLORS.light.symbol)
+  })
+
   it('makes the quick-drop window a tool window on Windows and a panel on a Mac', () => {
     expect(popupChrome('win32')).toEqual({ skipTaskbar: true, type: 'toolbar' })
     expect(popupChrome('darwin')).toEqual({ type: 'panel', hiddenInMissionControl: true })
   })
 
   it('uses .ico files on Windows and template images on a Mac', () => {
-    expect((['idle', 'busy', 'ready'] as const).map((icon) => trayIconFile(icon, 'win32'))).toEqual([
+    expect((['idle', 'busy', 'ready', 'update'] as const).map((icon) => trayIconFile(icon, 'win32'))).toEqual([
       'tray.ico',
       'tray-busy.ico',
       'tray-ready.ico',
+      'tray-update.ico',
     ])
-    expect((['idle', 'busy', 'ready'] as const).map((icon) => trayIconFile(icon, 'darwin'))).toEqual([
+    expect((['idle', 'busy', 'ready', 'update'] as const).map((icon) => trayIconFile(icon, 'darwin'))).toEqual([
       'trayTemplate.png',
       'tray-busyTemplate.png',
       'tray-readyTemplate.png',
+      'tray-updateTemplate.png',
     ])
+    // Every file named here exists, with the @2x picture a Mac asks for beside its template.
+    for (const icon of ['idle', 'busy', 'ready', 'update'] as const) {
+      expect(existsSync(`resources/${trayIconFile(icon, 'win32')}`)).toBe(true)
+      expect(existsSync(`resources/${trayIconFile(icon, 'darwin').replace('.png', '@2x.png')}`)).toBe(true)
+    }
   })
 
   it('quits with the window on Windows unless the app stays in the tray, and never on a Mac', () => {
@@ -413,7 +448,7 @@ describe('what differs between Windows and a Mac', () => {
   })
 
   it('gives a Mac the menu its standard shortcuts live in', () => {
-    const host = { name: 'OpenStems', settings: vi.fn(), help: vi.fn() }
+    const host = { name: 'OpenStems', settings: vi.fn(), open: vi.fn() }
     const menu = macMenuTemplate(host)
     const submenu = (index: number) => menu[index]?.submenu as { role?: string; label?: string; accelerator?: string; click?: () => void }[]
     const roles = (index: number) => submenu(index).flatMap((item) => (item.role ? [item.role] : []))
@@ -431,10 +466,16 @@ describe('what differs between Windows and a Mac', () => {
     expect(settings?.accelerator).toBe('Command+,')
     settings?.click?.()
     expect(host.settings).toHaveBeenCalledOnce()
-    const help = submenu(4)[0]
-    expect(help?.label).toBe('OpenStems on GitHub')
-    help?.click?.()
-    expect(host.help).toHaveBeenCalledOnce()
+    // Help opens the website first, and the code last.
+    const help = submenu(4).filter((item) => item.label)
+    expect(help.map((item) => item.label)).toEqual(['OpenStems Website', "What's New", 'Support OpenStems', 'OpenStems on GitHub'])
+    for (const item of help) item.click?.()
+    expect(host.open.mock.calls.map((call) => call[0])).toEqual([
+      'https://lewisgoing.github.io/OpenStems/',
+      'https://lewisgoing.github.io/OpenStems/#changelog',
+      'https://lewisgoing.github.io/OpenStems/#support',
+      'https://github.com/lewisgoing/OpenStems',
+    ])
   })
 })
 
@@ -445,6 +486,7 @@ describe('the tray icon', () => {
 
   it('is idle with nothing going on', () => {
     expect(trayPresentation(null, null)).toEqual({ icon: 'idle', tooltip: 'OpenStems' })
+    expect(trayPresentation(null, null, null).icon).toBe('idle')
     expect(trayPresentation({ active: 0, current: null, done: null }, null).icon).toBe('idle')
   })
 
@@ -520,6 +562,34 @@ describe('the tray icon', () => {
   })
 })
 
+describe('a new version on the tray icon', () => {
+  it('marks the icon while a version waits, from the offer to the restart', () => {
+    expect(trayUpdateOf(null)).toBeNull()
+    expect(trayUpdateOf({ state: 'idle' })).toBeNull()
+    expect(trayUpdateOf({ state: 'checking', version: '0.3.6' })).toBeNull()
+    expect(trayUpdateOf({ state: 'available', version: '0.3.6' })).toEqual({ version: '0.3.6', ready: false })
+    expect(trayUpdateOf({ state: 'downloading', version: '0.3.6' })).toEqual({ version: '0.3.6', ready: false })
+    expect(trayUpdateOf({ state: 'ready', version: '0.3.6' })).toEqual({ version: '0.3.6', ready: true })
+    // An app that cannot install it itself (an unsigned Mac app) only offers the page.
+    expect(trayUpdateOf({ state: 'ready', version: '0.3.6', manual: true })?.ready).toBe(false)
+
+    const offer = { version: '0.3.6', ready: false }
+    expect(trayPresentation(null, null, offer)).toEqual({ icon: 'update', tooltip: 'OpenStems: version 0.3.6 is available' })
+    expect(trayPresentation(null, null, { ...offer, ready: true }).tooltip).toBe(
+      'OpenStems: version 0.3.6 is downloaded: restart to install it',
+    )
+  })
+
+  it('gives way to work in progress and to stems that are waiting', () => {
+    const offer = { version: '0.3.6', ready: false }
+    const done = { id: 'j1', name: 'First Song', stems: 6 }
+    expect(trayPresentation({ active: 1, current: { name: 'First Song', progress: 0.5 }, done: null }, null, offer).icon).toBe('busy')
+    expect(trayPresentation({ active: 0, current: null, done }, null, offer).icon).toBe('ready')
+    // Once those stems are seen, the version is what the icon has left to say.
+    expect(trayPresentation({ active: 0, current: null, done }, 'j1', offer).icon).toBe('update')
+  })
+})
+
 describe('the shell preferences', () => {
   it('default to staying in the tray', () => {
     expect(parsePrefs(null)).toEqual(DEFAULT_PREFS)
@@ -534,8 +604,18 @@ describe('the shell preferences', () => {
       trayNoticeShown: true,
       checkForUpdates: true,
       notifyReady: false,
+      theme: 'dark',
     })
     expect(parsePrefs('{"closeToTray": "no", "extra": 1}')).toEqual(DEFAULT_PREFS)
+  })
+
+  it('stay dark until the user picks a theme, and keep only a theme they could pick', () => {
+    expect(DEFAULT_PREFS.theme).toBe('dark')
+    expect(parsePrefs('{"theme": "light"}').theme).toBe('light')
+    expect(parsePrefs('{"theme": "system"}').theme).toBe('system')
+    expect(parsePrefs('{"theme": "sepia"}').theme).toBe('dark')
+    expect(parsePrefs('{"theme": true}').theme).toBe('dark')
+    expect(THEME_PREFS.every(isThemePref)).toBe(true)
   })
 })
 
@@ -582,6 +662,13 @@ describe('the quick-drop window', () => {
     expect(bridge.startDrag.mock.calls.at(-1)?.[0]).toHaveLength(6)
     // A drag is not a click: nothing starts playing.
     expect(audition.toggle).not.toHaveBeenCalled()
+  })
+
+  it('drags the original song by its title: a fetched link becomes a file', () => {
+    jobs = [{ ...doneJob('a', 'First', 10), track_path: 'D:/out/_links/First.webm' }]
+    render(quickDrop())
+    fireEvent.dragStart(screen.getByRole('button', { name: 'Drag the original file of First' }))
+    expect(bridge.startDrag).toHaveBeenLastCalledWith(['D:/out/_links/First.webm'])
   })
 
   it('plays a stem when its pill is clicked, by pointer or keyboard, and shows which one plays', () => {
@@ -633,6 +720,18 @@ describe('the quick-drop window', () => {
     expect(bridge.showMain).toHaveBeenCalled()
   })
 
+  it('shows a thirteenth stem rather than a pill saying one is hidden', () => {
+    // A "+1" pill would take the room the stem itself needs (every-stem writes 13).
+    expect([12, 13, 14, 53].map(pillCount)).toEqual([12, 13, 12, 12])
+    const thirteen = Array.from({ length: 13 }, (_, i) => `stem ${i + 1}`)
+    jobs = [doneJob('a', 'First', 10, thirteen)]
+    render(quickDrop())
+    expect(screen.getAllByTestId('quick-stem')).toHaveLength(13)
+    expect(screen.queryByRole('button', { name: /in the full app/ })).not.toBeInTheDocument()
+    // All of them can be seen, so they can be mixed here too.
+    expect(screen.getByRole('button', { name: /Mix/ })).toBeInTheDocument()
+  })
+
   it('cancels a running job, retries a failed one and clears the finished ones', () => {
     jobs = [job({ id: 'a', state: 'failed', error: 'Out of memory' }), job({ id: 'b', state: 'running', progress: 0.2 })]
     render(quickDrop())
@@ -658,6 +757,26 @@ describe('the quick-drop window', () => {
     expect(actions.startAll.mutate).toHaveBeenCalledTimes(2)
     fireEvent.keyDown(window, { key: 'Enter' })
     expect(actions.startAll.mutate).toHaveBeenCalledTimes(2)
+  })
+
+  it('says a waiting song separates only its part while the setting is on, as the full window does', () => {
+    const part = { range: { start: 2.5, end: 4.5, label: 'bar 2' } }
+    jobs = [job({ id: 'a', track_name: 'One', held: true, options: part }), job({ id: 'b', track_name: 'Two', held: true })]
+    const shown = settings as Record<string, unknown>
+    shown.separate_selection = true
+    try {
+      const view = render(quickDrop())
+      expect(rows()[1]).toHaveTextContent('Ready to start, bar 2 only')
+      expect(rows()[0]).toHaveTextContent('Ready to start')
+      expect(rows()[0]).not.toHaveTextContent('only')
+      view.unmount()
+      // Off: the whole song is separated, whatever part it was given.
+      shown.separate_selection = false
+      render(quickDrop())
+      expect(rows()[1]).not.toHaveTextContent('only')
+    } finally {
+      delete shown.separate_selection
+    }
   })
 
   it('has no Start button when nothing waits', () => {
@@ -844,6 +963,97 @@ describe('links in the quick-drop window', () => {
     links = [link({ state: 'downloading' })]
     render(quickDrop())
     expect(lastActivity()).toMatchObject({ active: 1 })
+  })
+})
+
+describe('empty stems in the quick-drop window', () => {
+  // A rap song through the six-stem recipe: one stem of the six holds anything.
+  const rap = (id = 'a', track = 'Song'): Job => {
+    const done = doneJob(id, track, 1)
+    return { ...done, stems: done.stems.map((s) => ({ ...s, empty: s.name !== 'vocals' })) }
+  }
+  const pills = () => screen.getAllByTestId('quick-stem')
+  const shown = settings as Record<string, unknown>
+  beforeEach(() => {
+    shown.hide_empty_stems = true
+  })
+  afterEach(() => {
+    delete shown.hide_empty_stems
+  })
+
+  it('lays out the stem with sound alone, and says how many are empty', () => {
+    jobs = [rap()]
+    render(quickDrop())
+    expect(pills().map((el) => el.textContent)).toEqual(['vocals'])
+    expect(screen.getByTestId('quick-empty')).toHaveTextContent('+5 empty')
+    expect(screen.getByTestId('quick-empty')).toHaveAttribute('aria-expanded', 'false')
+    // One stem: its handle says so and carries it alone, and there is nothing to mix.
+    expect(screen.getByTestId('quick-drag-all')).toHaveTextContent('1 stem')
+    expect(screen.getByTestId('quick-drag-all')).not.toHaveTextContent('stems')
+    fireEvent.dragStart(screen.getByTestId('quick-drag-all'))
+    expect(bridge.startDrag).toHaveBeenLastCalledWith([stem('Song', 'vocals').path])
+    expect(screen.queryByTestId('quick-mix')).not.toBeInTheDocument()
+  })
+
+  it('brings them back on a click, stepped back, and leaves them out again', async () => {
+    jobs = [rap()]
+    render(quickDrop())
+    await userEvent.click(screen.getByTestId('quick-empty'))
+    expect(pills()).toHaveLength(6)
+    expect(pills().map((el) => el.hasAttribute('data-empty'))).toEqual([false, true, true, true, true, true])
+    expect(screen.getByTestId('quick-empty')).toHaveTextContent('Hide empty')
+    expect(screen.getByTestId('quick-empty')).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByTestId('quick-drag-all')).toHaveTextContent('6 stems')
+    fireEvent.dragStart(screen.getByTestId('quick-drag-all'))
+    expect(bridge.startDrag.mock.calls.at(-1)?.[0]).toHaveLength(6)
+    // An empty stem is still a file: it drags as itself.
+    fireEvent.dragStart(pills()[3]!)
+    expect(bridge.startDrag).toHaveBeenLastCalledWith([stem('Song', 'guitar').path])
+    await userEvent.click(screen.getByTestId('quick-empty'))
+    expect(pills()).toHaveLength(1)
+  })
+
+  it('mixes the stems on show, and ends the mix when they change', async () => {
+    const done = doneJob('a', 'Song', 1)
+    jobs = [{ ...done, stems: done.stems.map((s) => ({ ...s, empty: ['guitar', 'piano'].includes(s.name) })) }]
+    render(quickDrop())
+    expect(pills()).toHaveLength(4)
+    await userEvent.click(screen.getByTestId('quick-mix'))
+    await userEvent.click(pills()[0]!)
+    // "No vocals" of the four on show: the two empty ones are not in the file.
+    const rest = ['drums', 'bass', 'other'].map((name) => stem('Song', name).path)
+    await waitFor(() => expect(createMix.mutateAsync).toHaveBeenCalledWith(rest))
+    await userEvent.click(screen.getByTestId('quick-empty'))
+    expect(screen.queryByTestId('mix-bar')).not.toBeInTheDocument()
+    expect(pills()).toHaveLength(6)
+  })
+
+  it('keeps each song to itself', async () => {
+    jobs = [rap('a', 'First'), { ...rap('b', 'Second'), finished_at: 2 }]
+    render(quickDrop())
+    await userEvent.click(screen.getByTestId('quick-empty')) // Second, the newest, is laid out
+    expect(pills()).toHaveLength(6)
+    fireEvent.click(rows()[1]!)
+    expect(pills().map((el) => el.textContent)).toEqual(['vocals'])
+    expect(within(rows()[0]!).getByTestId('quick-drag-all')).toHaveTextContent('6 stems')
+    expect(within(rows()[1]!).getByTestId('quick-drag-all')).toHaveTextContent('1 stem')
+  })
+
+  it('shows every stem with the setting off, the empty ones stepped back', () => {
+    shown.hide_empty_stems = false
+    jobs = [rap()]
+    render(quickDrop())
+    expect(pills()).toHaveLength(6)
+    expect(pills()[1]).toHaveAttribute('data-empty')
+    expect(screen.queryByTestId('quick-empty')).not.toBeInTheDocument()
+    expect(screen.getByTestId('quick-drag-all')).toHaveTextContent('6 stems')
+  })
+
+  it('has nothing to say about a song whose stems all hold something', () => {
+    jobs = [doneJob('a', 'Song', 1)]
+    render(quickDrop())
+    expect(pills()).toHaveLength(6)
+    expect(screen.queryByTestId('quick-empty')).not.toBeInTheDocument()
   })
 })
 
@@ -1050,6 +1260,7 @@ describe('the tray settings', () => {
       closeToTray: true,
       checkForUpdates: true,
       notifyReady: true,
+      theme: 'dark',
       startAtLogin: false,
       canStartAtLogin: false,
     })

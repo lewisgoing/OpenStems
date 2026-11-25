@@ -17,6 +17,7 @@
 </p>
 
 <p align="center">
+  <a href="https://lewisgoing.github.io/OpenStems/">Website</a> ·
   <a href="#install">Install</a> ·
   <a href="#what-it-does">What it does</a> ·
   <a href="#recipes">Recipes</a> ·
@@ -56,7 +57,10 @@ anyway"). It needs no administrator rights and adds a Start menu entry.
 
 **First launch.** The app looks at the graphics card, sets up its Python environment for it
 (it downloads Python and PyTorch, about 3 GB, into your user profile), checks the GPU, and
-offers to download the recommended models (3.4 GB). After that, drop a file on the window.
+then welcomes you in three short steps: where stems and models go (with the free space on
+each drive), the format stems are saved in (with about how large each is), and the
+recommended models (3.4 GB). Settings > Getting started shows the welcome again. After that,
+drop a file on the window.
 On a machine with little memory the app offers lighter models in place of the ones that
 would not fit: see [Memory](#memory).
 
@@ -91,7 +95,8 @@ playback that starts every stem together. Space plays and pauses. Each track's t
 are detected and shown with its stems.
 
 Drag one stem, or "Drag all", straight into your DAW or a folder. Reveal in Explorer opens the
-folder.
+folder. Drag the song's title (in the stems panel, the queue, History or the quick-drop
+window) and the original file goes out the same way.
 
 ### A drum track, split into its kit
 
@@ -111,14 +116,55 @@ the song without its vocals. Mixes are kept in a `Mixes` folder beside the stems
   <img src="docs/images/mix.png" width="900" alt="The stems panel with vocals muted and a Drag mix handle next to Drag all">
 </p>
 
+### Trimming a part of a song
+
+Trim, on a song in the queue (waiting or separated) or in the stems panel, opens the song in
+an editor across the window, to take a few bars out as a file of their own.
+
+1. **Choose what to trim** with the chips at the top: Original (the song itself, also before
+   it is separated), a stem, or a group such as Drums. Ctrl+click (Cmd+click on a Mac) adds
+   stems, to trim them as one mix. Several stems are drawn on top of one another, each in its
+   own color, so you can see where the drums drop out or the vocals come in. From the stems
+   panel, the editor opens on what solo and mute leave audible.
+2. **Check the grid.** Turn on Click for a click on every beat. If the grid is off, use Half
+   or Double, type the tempo or tap it (T). For an exact tempo, drag bar 1's flag (the 1 in
+   the ruler) onto the first downbeat, then drag a later bar line onto its beat. The tempo you
+   set is the song's: file names, the manifest and the tempo FL Studio reads follow. The
+   song's start takes hold of the flag when it is dragged close to it, and 0:00 beside the
+   bar 1 field, or a double click on the flag, puts bar 1 there. A flag dragged before the
+   start waits at the left edge of the ruler, to be dragged back in.
+3. **Drag across the waveform** to choose a part. It snaps to bars; pick Beat, 1/2, 1/4 or
+   Off under Snap, or hold Alt (Option on a Mac) to place it freely. Drag its edges to change
+   it and its middle to move it. A double click takes one bar. Under Length, 4, 8, 16, 32 or
+   64 gives a part of that many bars from the bar the playhead is in, or makes the part you
+   have that long; type any other number of bars in the field beside them, and it is kept for
+   next time. A part chosen where there was none is looped; L or Loop turns that off, and it
+   stays off for the parts after it. The button left of Play, or Home, takes the playhead
+   and the view back to 0:00.
+4. **Drag the clip out** of the footer into your DAW or a folder. It shows the name of the
+   file it gives, such as "Song - drums - bars 9-16.wav". "Every stem, this part" gives every
+   stem cut to the part, one file each. Clips are WAV, in a `Clips` folder beside the stems,
+   or beside the song's stem folders for the original.
+
+A part chosen on a song that waits in the queue gives a clip of the original. With "Separate
+only the trimmed part" on in Settings > Queue (off by default), it is also all that Start
+separates: faster, and the stems are as long as the part. The song's row says so.
+
+Space plays, L loops the part, F shows just the part and Z the whole song. Ctrl and the scroll
+wheel zoom (Cmd and the wheel, or a pinch, on a Mac). Esc clears the part, then goes back. On
+a Mac it works the same way, but it has not been seen there yet.
+
 ### A song from a link
 
 Paste a link to a song (Ctrl+V, or Paste link), or drag one in from a browser. OpenStems
 fetches the audio from YouTube, SoundCloud, Bandcamp and many other sites and queues it like a
 file. Playlists and live streams are refused. Fetch only what you have the right to use.
+The fetched song itself drags out by its title, in the format the site sent, separated or
+not.
 
 The fetcher is yt-dlp. Sites change, so a fetch that stops working usually needs a newer
-OpenStems ([`docs/adr/0013-links-and-mixes.md`](docs/adr/0013-links-and-mixes.md)).
+OpenStems ([`docs/adr/0013-links-and-mixes.md`](docs/adr/0013-links-and-mixes.md)). A daily
+check in this repository opens an issue when a newer yt-dlp is out.
 
 ### Quick drop, from the tray
 
@@ -140,6 +186,10 @@ menu bar, and a few things differ: see [macOS](#macos).
 
 - **Songs wait for Start.** What you drop is queued; press Start (or Ctrl+Enter) to run it.
   Settings > Queue can make songs start by themselves instead.
+- **Search the queue and pick its order.** The newest song is first. The menu beside the
+  search has Oldest, Name and Run order as well, and remembers the pick. Search (Ctrl+F)
+  finds a song by its name or its recipe's. To change when a waiting song runs, drag it in
+  Run order, or use "Move to the top" and "Move to the bottom" in its right-click menu.
 - **Pick the format** (WAV, FLAC or MP3) next to the quality, in either window.
 - **Paste a link** with Ctrl+V or the link button, and the song is fetched and queued.
 - **The icon tells you what is going on**: a ring while a song is being separated, a dot when
@@ -160,7 +210,18 @@ History lists past separations: search, drag the stems again, or run the same tr
 another recipe. Models shows what is installed, sizes and licenses, with download and delete.
 If a recipe needs a model that is not installed, the app offers to download it and queues your
 files when it is ready. Settings holds the output and models folders, the output format and
-the naming template.
+the naming template. A right-click on a song in the queue shows its stems or its original
+file in Explorer (Finder on a Mac), starts, moves, cancels or retries it, or takes it off the
+list, in the full window and the quick-drop window. In the full window it also opens the song
+in the trimmer, and renames it.
+
+**Rename a song.** A song goes by its file's name until you give it another: right-click it
+in the queue and choose Rename, or double-click its title, and type over it. A song that
+waits is separated under its new name. For one that is already separated, the stem folder
+and the stems in it are renamed too, for every recipe it was run with: the pencil beside the
+title in the stems panel does it, or F2, in the queue and in History. Empty the field to go
+back to the file's name. The song's own file is never renamed. A project in a DAW that
+already uses the stems will need to find them again.
 
 <table>
   <tr>
@@ -181,10 +242,18 @@ the naming template.
 - **Correct the tempo and key.** Detection is sometimes wrong (half or double the tempo,
   the relative major). Type your own over it: on a song waiting in the queue, where the
   fields say "auto", or on finished stems in the stems panel. File names, the manifest and
-  the tempo FL Studio reads follow, without separating the song again.
+  the tempo FL Studio reads follow, without separating the song again. The trimmer sets the
+  same tempo, and where bar 1 starts.
+- **Trim a few bars.** A part of the song, a stem, a group or a mix, cut on a beat grid you
+  can correct and dragged out as a WAV of its own: see
+  [Trimming a part of a song](#trimming-a-part-of-a-song).
 - **Tempo-synced stems for FL Studio.** With "Tempo-sync for FL Studio" on in Settings, WAV
-  stems and mixes carry the detected tempo, and FL Studio stretches them to your project's
-  tempo when you drop them in. WAV only, and as accurate as the detected tempo.
+  stems and mixes carry the detected tempo, and FL Studio can stretch them to your project's
+  tempo. FL does that by itself only for samples up to about a minute long, so for a
+  full-length stem open the clip's menu, choose **Fit to tempo** and pick the tempo marked
+  "(embedded)". WAV only: FL Studio reads tempo from WAV files alone, so MP3 and FLAC stems
+  carry none, and the app says so on the format list and on the song. FL's "Read sample tempo
+  information" (General settings) must be on. As accurate as the detected tempo.
 - **Watch folder.** New files that appear in a folder are queued with the default recipe and
   quality once they have finished copying.
 - **Stem to MIDI.** A draggable `.mid` next to vocal, bass and melody stems ("Write MIDI" in
@@ -192,7 +261,10 @@ the naming template.
 - **Trim silence and normalize**, per stem. Both are off by default, because trimmed stems no
   longer line up at bar 1 and normalized stems no longer sit at their level in the mix.
 - **Keyboard.** Ctrl+1 to Ctrl+4 switch between Queue, History, Models and Settings; Ctrl+V
-  pastes a link; Ctrl+Enter starts the queue; Space plays and pauses.
+  pastes a link; Ctrl+Enter starts the queue; Ctrl+F searches it; Space plays and pauses.
+- **Light or dark.** The three icons at the foot of the sidebar pick Light, Dark or System,
+  which follows the computer's setting. Dark until you pick otherwise. Also under Settings >
+  Appearance.
 
 ### Updates
 
@@ -203,8 +275,10 @@ while jobs are running. Settings > Updates can check on request and can turn the
 check off. After an update the app brings its Python environment up to date by itself, in a
 few seconds.
 
-On a Mac this needs an app signed with an Apple Developer ID. The Mac build has none yet, so
-there the button opens the release page and you install the new version yourself.
+On a Mac the app updates itself the same way from 0.3.2 on, the first version signed with the
+project's own certificate: on an M1 Max, 0.3.2 installed 0.3.3 by itself. The builds up to
+0.3.1 cannot: there the button opens the release page and you install the new version
+yourself, once.
 
 How a release is published: [`docs/adr/0010-self-update.md`](docs/adr/0010-self-update.md).
 
@@ -309,15 +383,17 @@ on a Mac, with uv, git, Node 22 and pnpm installed: `cd app && pnpm install && p
 writes the dmg to `app/release/`. Open the dmg and drag OpenStems to Applications.
 
 **First launch.** As on Windows, the app sets up its Python environment (about 350 MB, since
-PyTorch for the Mac is much smaller), checks the GPU, and offers the recommended models.
+PyTorch for the Mac is much smaller), checks the GPU, and opens the same welcome: folders,
+format, the recommended models. Not seen on a Mac yet.
 There is one engine build on a Mac and nothing to choose.
 
 <details>
 <summary><strong>Opening it the first time</strong> (macOS blocks it on a double click)</summary>
 <br>
 
-The app is not signed with an Apple Developer ID and not notarized (its signature is ad hoc,
-which names nobody), so macOS will not open it on a double click.
+The app is not signed with an Apple Developer ID and not notarized (the project signs it
+with a certificate of its own, which Apple does not know), so macOS will not open it on a
+double click.
 
 1. Double-click OpenStems. macOS says it could not verify the app. Click Done.
 2. Open the Apple menu > System Settings, and click Privacy & Security in the sidebar.
@@ -350,7 +426,8 @@ this repository's releases or built yourself.
 - Closing the window never quits: the app stays in the Dock and the menu bar. Quit with Cmd+Q.
   Settings is also in the OpenStems menu (Cmd+comma).
 - Shortcuts use Cmd where this page says Ctrl: Cmd+V pastes a link, Cmd+1 to Cmd+4 switch
-  views, Cmd+Enter starts the queue.
+  views, Cmd+Enter starts the queue, Cmd+F searches it (not seen on a Mac yet). In the trimmer Option places a part freely where Windows
+  uses Alt, and a trackpad pinch zooms as well as Cmd and the wheel (not seen on a Mac yet).
 - Settings has "Menu bar" where Windows has "Tray", with "Open at login" in place of "Start
   with Windows" and no "Keep running in the tray" switch.
 - Every model runs at full precision. On NVIDIA cards most run at half precision, so expect a
@@ -361,9 +438,10 @@ this repository's releases or built yourself.
   [Memory](#memory).
 - **Notifications** are the system's. macOS shows them only for an app with a valid
   signature, which is one reason the build is signed ad hoc. Not yet seen on a Mac.
-- **Updates are manual while the app has no Developer ID.** The app says when a new version
-  is out, and its button ("Get 0.3.0") opens the release page; download the new dmg and
-  replace the app.
+- **Updates.** A build signed with the project's own certificate updates itself, as on
+  Windows. The builds up to 0.3.1 are signed ad hoc and cannot: the app says when a new
+  version is out, and its button ("Get 0.3.2") opens the release page; download the new dmg
+  and replace the app. That is needed once. `docs/adr/0018-mac-self-signed.md`.
 - Folders: settings, models and the Python environment are in
   `~/Library/Application Support/OpenStems`, logs in `~/Library/Logs/OpenStems`, and stems in
   `~/Music/OpenStems`. The window's own small preferences are in
@@ -467,12 +545,13 @@ prints one JSON line with both. Everything the CLI does is there, with live prog
 
 | Area | Routes |
 | --- | --- |
-| Jobs | `POST /v1/jobs`, `POST /v1/jobs/batch`, `GET /v1/jobs`, `POST /v1/jobs/{id}/cancel`, `.../retry`, `POST /v1/jobs/reorder`, `DELETE /v1/jobs/{id}`, `POST /v1/jobs/clear-finished` |
+| Jobs | `POST /v1/jobs`, `POST /v1/jobs/batch`, `GET /v1/jobs`, `POST /v1/jobs/{id}/cancel`, `.../retry`, `POST /v1/jobs/reorder`, `DELETE /v1/jobs/{id}`, `POST /v1/jobs/clear-finished`, `POST /v1/jobs/{id}/analysis` (tempo, key and bar 1 by hand), `.../range` (the part of a waiting song to separate alone), `.../name` (the song's name, in place of its file's) |
 | Tracks and recipes | `POST /v1/tracks` (register paths, probe metadata), `GET /v1/recipes` |
 | Links and mixes | `POST /v1/links` (fetch a song from a web address, then queue it), `GET /v1/links`, `POST /v1/links/{id}/retry`, `DELETE /v1/links/{id}`, `POST /v1/mixes` (some stems as one file) |
+| Clips and previews | `POST /v1/clips` (a stretch of a song's own file or of its stems, as WAV files), `POST /v1/sources/preview` (a song's own file to play and draw before it is separated, with its tempo and bar 1) |
 | Models | `GET /v1/models`, `POST /v1/models/{id}/pull`, `.../cancel`, `.../verify`, `DELETE /v1/models/{id}`, `POST /v1/models/import` |
 | Settings and system | `GET` and `PATCH /v1/settings`, `GET /v1/system`, `GET /v1/health`, `POST /v1/diagnostics` |
-| Files and history | `GET /v1/files?path=` (range requests), `GET /v1/peaks?path=`, `GET /v1/stemsets?q=`, `POST /v1/stemsets/rebuild` |
+| Files and history | `GET /v1/files?path=` (range requests), `GET /v1/peaks?path=`, `GET /v1/stemsets?q=`, `POST /v1/stemsets/rebuild`, `POST /v1/stemsets/analysis` (tempo, key and bar 1 of written stems), `POST /v1/stemsets/name` (rename a song's written stems, folder and files) |
 | Events | `WS /v1/events`: job and download progress, in order |
 
 One GPU worker process runs the queue, keeps the last model warm, and is restarted if it dies.

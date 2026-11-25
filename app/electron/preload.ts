@@ -24,6 +24,7 @@ const bridge: OpenStemsBridge = {
   revealInExplorer: (path) => ipcRenderer.invoke('shell:reveal', path),
   openFolder: (path) => ipcRenderer.invoke('shell:open-folder', path),
   pickFolder: (defaultPath) => ipcRenderer.invoke('dialog:pick-folder', defaultPath),
+  folderSpace: (path) => ipcRenderer.invoke('fs:space', path),
   pickFile: (options) => ipcRenderer.invoke('dialog:pick-file', options),
   showMain: () => ipcRenderer.invoke('main:show'),
   hidePopup: (viaKeyboard) => ipcRenderer.send('popup:hide', viaKeyboard === true),
@@ -39,6 +40,7 @@ const bridge: OpenStemsBridge = {
     version: process.env.OPENSTEMS_APP_VERSION ?? '0.0.0',
     platform: process.platform,
     e2e: process.env.OPENSTEMS_E2E === '1',
+    welcome: process.env.OPENSTEMS_E2E === '1' && process.env.OPENSTEMS_E2E_WELCOME === '1',
   },
 }
 

@@ -56,6 +56,8 @@ export interface ShellStatus {
   checkForUpdates: boolean
   /** A system notification when songs finish while the app is out of sight. */
   notifyReady: boolean
+  /** Light, dark, or whatever the system uses (`system`, which follows it live). */
+  theme: 'system' | 'light' | 'dark'
   /** The app starts at login, in the tray, with no window. */
   startAtLogin: boolean
   /** False in development: only an installed app can register itself to start at login. */
@@ -124,9 +126,12 @@ export interface OpenStemsBridge {
   startDrag(paths: string[]): void
   /** The text on the clipboard, for pasting a link with a button. */
   clipboardText(): Promise<string>
-  revealInExplorer(path: string): Promise<void>
+  /** Show a file in Explorer or Finder. False when it is not there. */
+  revealInExplorer(path: string): Promise<boolean>
   openFolder(path: string): Promise<void>
   pickFolder(defaultPath?: string): Promise<string | null>
+  /** Free space on the drive a folder is (or will be) on. Null when it cannot be told. */
+  folderSpace(path: string): Promise<import('./space').FolderSpace | null>
   pickFile(options: { title: string; extensions: string[] }): Promise<string | null>
   /** Bring the full app to the front, opening its window if it was closed to the tray. */
   showMain(): Promise<void>
@@ -135,7 +140,7 @@ export interface OpenStemsBridge {
   /** The quick-drop window tells the tray icon what the queue is doing. */
   reportActivity(activity: import('./traylogic').TrayActivity): void
   shellStatus(): Promise<ShellStatus>
-  setShell(patch: Partial<Pick<ShellStatus, 'closeToTray' | 'startAtLogin' | 'checkForUpdates' | 'notifyReady'>>): Promise<ShellStatus>
+  setShell(patch: Partial<Pick<ShellStatus, 'closeToTray' | 'startAtLogin' | 'checkForUpdates' | 'notifyReady' | 'theme'>>): Promise<ShellStatus>
   /** Self-update. */
   updates(): Promise<UpdateStatus>
   onUpdateStatus(listener: (status: UpdateStatus) => void): () => void
@@ -146,7 +151,8 @@ export interface OpenStemsBridge {
    * says how many, unless `force` is set.
    */
   installUpdate(force?: boolean): Promise<{ started: boolean; activeJobs: number }>
-  info: { version: string; platform: string; e2e: boolean }
+  /** `welcome`: end-to-end tests only (`OPENSTEMS_E2E_WELCOME=1`), show the welcome although the FakeEngine has every model. */
+  info: { version: string; platform: string; e2e: boolean; welcome?: boolean }
 }
 
 declare global {

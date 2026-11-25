@@ -41,8 +41,11 @@ def mix_label(chosen: list[str], every: list[str], groups: Mapping[str, str] | N
     """The mix in a few words, for its file name: ``no vocals``, ``drums + bass``.
 
     ``groups`` maps a stem to the larger stem it is a part of. A group that is all in, or
-    all out, goes by its own name: every part of the kit together is ``drums``.
+    all out, goes by its own name: every part of the kit together is ``drums``. Parts of
+    one group with a few of its parts left out go by the group too: ``drums no kick``.
+    The app names a mix by the same rule (``mixLabel`` in ``app/src/state/mix.ts``).
     """
+    picked = chosen
     count = len(chosen)
     left_out = [name for name in every if name not in chosen]
     if groups:
@@ -58,7 +61,17 @@ def mix_label(chosen: list[str], every: list[str], groups: Mapping[str, str] | N
         return " + ".join(chosen)
     if len(left_out) <= 3:
         return "no " + ", ".join(left_out)
-    return f"{count} stems"
+    return _group_without(picked, every, groups or {}) or f"{count} stems"
+
+
+def _group_without(picked: list[str], every: list[str], groups: Mapping[str, str]) -> str | None:
+    """``drums no kick``: when every one of ``picked`` is a part of one group and only a
+    few of that group's parts are left out. None otherwise."""
+    group = groups.get(picked[0]) if picked else None
+    if not group or any(groups.get(name) != group for name in picked):
+        return None
+    missing = [name for name in every if groups.get(name) == group and name not in picked]
+    return f"{group} no {', '.join(missing)}" if 0 < len(missing) <= 3 else None
 
 
 def render_mix(directory: Path, files: list[str]) -> dict[str, Any]:

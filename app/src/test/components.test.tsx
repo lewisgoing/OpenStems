@@ -2,16 +2,21 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Job, Link, Model, Recipe, StemFile, SystemInfo } from '@/api/client'
+import { DropOverlay } from '@/components/DropOverlay'
 import { StemsPanel } from '@/components/StemsPanel'
 import { ToastProvider, useToast } from '@/components/toast'
 import { CommitInput, ProgressBar, Segmented, TooltipProvider } from '@/components/ui'
+import { dragAllHint, splitEmpty, stemCount } from '@/lib/empty'
+import { dragSource } from '@/lib/sourcedrag'
 import { SelectionProvider } from '@/state/selection'
+import { SORT_KEY, loadSort, matchesSearch, searchTerms, sortQueue } from '@/lib/queuesort'
 import { QueueView } from '@/views/QueueView'
 import { bridge } from './setup'
 
 const setAnalysis = { job: { mutateAsync: vi.fn() }, stemSet: { mutateAsync: vi.fn() } }
+const rename = { job: { mutateAsync: vi.fn(async (_change: { id: string; name: string | null }) => undefined) }, stemSet: { mutateAsync: vi.fn(async (_change: { directory: string; name: string | null }) => undefined) } }
 const actions = {
   startAll: { mutate: vi.fn() },
   start: { mutate: vi.fn() },
@@ -44,11 +49,12 @@ vi.mock('@/api/queries', () => ({
   useJobs: () => ({ data: jobs }),
   useJobActions: () => actions,
   useSetAnalysis: () => setAnalysis,
+  useRename: () => rename,
   useLinks: () => ({ data: links }),
   useLinkActions: () => linkActions,
   useCreateMix: () => createMix,
   useSystem: () => ({ data: system }),
-  useSettings: () => ({ data: { output_format: 'wav32f' } }),
+  useSettings: () => ({ data: engineSettings }),
   usePatchSettings: () => ({ mutate: vi.fn() }),
 }))
 vi.mock('@/api/engine', () => ({
@@ -59,13 +65,18 @@ vi.mock('@/components/Waveform', () => ({
   useSharedGain: () => 1,
 }))
 
+/** What the engine's settings are read as. A test may add to it and must take it back. */
+const engineSettings: Record<string, unknown> = { output_format: 'wav32f' }
+
 const stem = (name: string): StemFile => ({
   name,
+  empty: false,
   file: `Song - ${name}.wav`,
   path: `D:\\out\\Song\\full-song\\Song - ${name}.wav`,
   peaks: `D:\\out\\Song\\full-song\\.peaks\\${name}.json`,
   samples: 88200,
   sample_rate: 44100,
+  start: 0,
 })
 
 const job = (patch: Partial<Job>): Job => ({
@@ -119,6 +130,8 @@ beforeEach(() => {
 })
 
 describe('QueueView', () => {
+  // These are about the rows, not their order: the list is pinned to the order songs run in.
+  beforeEach(() => localStorage.setItem(SORT_KEY, 'run'))
   const view = (onSelect = vi.fn(), onAddFiles = vi.fn()) =>
     wrap(
       <QueueView recipes={[]} models={[]} selectedJob={null} onSelect={onSelect} onAddFiles={onAddFiles} onPasteLink={onPasteLink} />,
@@ -193,6 +206,18 @@ describe('QueueView', () => {
     expect(bridge.startDrag).toHaveBeenCalledWith(stems.map((s) => s.path))
     await userEvent.click(screen.getByTestId('job-row'))
     expect(onSelect).toHaveBeenCalledWith(done)
+  })
+
+  it('drags the original song by its title, before and after separation', async () => {
+    const onSelect = vi.fn()
+    jobs = [job({ id: 'q', track_path: 'D:/out/_links/Song.m4a' })]
+    view(onSelect)
+    const title = screen.getByRole('button', { name: 'Drag the original file of Song' })
+    fireEvent.dragStart(title)
+    expect(bridge.startDrag).toHaveBeenLastCalledWith(['D:/out/_links/Song.m4a'])
+    // A click on the title still opens the job.
+    await userEvent.click(title)
+    expect(onSelect).toHaveBeenCalled()
   })
 
   it('shows a song that waits for Start, and starts all of them or one', () => {
@@ -319,6 +344,183 @@ describe('QueueView', () => {
   })
 })
 
+const onDrop = vi.fn()
+function dropFiles(...names: string[]): void {
+  const files = names.map((name) => new File(['x'], name))
+  const event = new Event('drop', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'], files } })
+  act(() => {
+    window.dispatchEvent(event)
+  })
+}
+
+describe('the order and search of the queue, as plain functions', () => {
+  const rows = [
+    { name: 'beta 10', created_at: 1 },
+    { name: 'Alpha', created_at: 3 },
+    { name: 'beta 9', created_at: 2 },
+  ]
+  const names = (sort: Parameters<typeof sortQueue>[1]) => sortQueue(rows, sort).map((row) => row.name)
+
+  it('puts the newest first, the oldest first, by name, or leaves the order songs run in', () => {
+    expect(names('newest')).toEqual(['Alpha', 'beta 9', 'beta 10'])
+    expect(names('oldest')).toEqual(['beta 10', 'beta 9', 'Alpha'])
+    // Case does not count, and 9 comes before 10.
+    expect(names('name')).toEqual(['Alpha', 'beta 9', 'beta 10'])
+    expect(names('run')).toEqual(['beta 10', 'Alpha', 'beta 9'])
+    expect(rows.map((row) => row.name)).toEqual(['beta 10', 'Alpha', 'beta 9'])
+  })
+
+  it('counts the later of two songs added in the same instant as the newer', () => {
+    const same = [
+      { name: 'a', created_at: 5 },
+      { name: 'b', created_at: 5 },
+    ]
+    expect(sortQueue(same, 'newest').map((row) => row.name)).toEqual(['b', 'a'])
+    expect(sortQueue(same, 'oldest').map((row) => row.name)).toEqual(['a', 'b'])
+  })
+
+  it('finds every word of a search, in any order, whatever the case or the accents', () => {
+    expect(matchesSearch(searchTerms(''), 'Song')).toBe(true)
+    expect(matchesSearch(searchTerms('  '), 'Song')).toBe(true)
+    expect(matchesSearch(searchTerms('drive NIGHT'), 'Night Drive', 'Full song')).toBe(true)
+    expect(matchesSearch(searchTerms('night full'), 'Night Drive', 'Full song')).toBe(true)
+    expect(matchesSearch(searchTerms('night vocals'), 'Night Drive', 'Full song')).toBe(false)
+    expect(matchesSearch(searchTerms('beyonce'), 'Beyoncé - Halo')).toBe(true)
+    expect(matchesSearch(searchTerms('x'), null, undefined)).toBe(false)
+  })
+
+  it('starts on the newest first and keeps a pick, ignoring one it does not know', () => {
+    expect(loadSort()).toBe('newest')
+    localStorage.setItem(SORT_KEY, 'name')
+    expect(loadSort()).toBe('name')
+    localStorage.setItem(SORT_KEY, 'sideways')
+    expect(loadSort()).toBe('newest')
+  })
+})
+
+describe('QueueView: order and search', () => {
+  const view = () =>
+    wrap(<QueueView recipes={[]} models={[]} selectedJob={null} onSelect={vi.fn()} onAddFiles={vi.fn()} onPasteLink={vi.fn()} />)
+  const titles = () => screen.getAllByTestId(/^(job|link)-row$/).map((row) => row.querySelector('.font-medium')?.textContent)
+  const three = () => [
+    job({ id: 'a', track_name: 'Cello', created_at: 10, state: 'done' }),
+    job({ id: 'b', track_name: 'Bells', created_at: 20, queue_position: 0 }),
+    job({ id: 'c', track_name: 'Anthem', created_at: 30, queue_position: 1, recipe_name: 'Drum kit' }),
+  ]
+  const pick = async (name: string) => {
+    await userEvent.click(screen.getByRole('combobox', { name: 'Sort the queue' }))
+    await userEvent.click(await screen.findByRole('option', { name: new RegExp(`^${name}`) }))
+  }
+
+  it('shows the newest song first unless another order is picked, and remembers the pick', async () => {
+    jobs = three()
+    links = [link({ name: 'Night Drive', state: 'downloading', created_at: 40 })]
+    const first = view()
+    // The song still being fetched was added last, so it leads.
+    expect(titles()).toEqual(['Night Drive', 'Anthem', 'Bells', 'Cello'])
+    expect(screen.getByRole('combobox', { name: 'Sort the queue' })).toHaveTextContent('Newest')
+
+    await pick('Oldest')
+    expect(titles()).toEqual(['Cello', 'Bells', 'Anthem', 'Night Drive'])
+    await pick('Name')
+    expect(titles()).toEqual(['Anthem', 'Bells', 'Cello', 'Night Drive'])
+    expect(localStorage.getItem(SORT_KEY)).toBe('name')
+
+    first.unmount()
+    view()
+    expect(titles()).toEqual(['Anthem', 'Bells', 'Cello', 'Night Drive'])
+  })
+
+  it('lets a waiting song be dragged only in the order songs run in', async () => {
+    jobs = three()
+    view()
+    expect(screen.queryByRole('button', { name: 'Reorder Bells' })).not.toBeInTheDocument()
+    await pick('Run order')
+    expect(titles()).toEqual(['Cello', 'Bells', 'Anthem'])
+    expect(screen.getByRole('button', { name: 'Reorder Bells' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reorder Anthem' })).toBeInTheDocument()
+    // The menu's moves are about the order songs run in, and stay in every order.
+    await pick('Newest')
+    fireEvent.contextMenu(screen.getAllByTestId('job-row')[0]!)
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Move to the top' }))
+    expect(actions.reorder.mutate).toHaveBeenCalledWith(['c', 'b'], expect.anything())
+  })
+
+  it('narrows the list to what the search finds, by song or recipe, and says how many', async () => {
+    jobs = three()
+    links = [link({ name: 'Night Drive', state: 'downloading', created_at: 40 })]
+    view()
+    const search = screen.getByRole('textbox', { name: 'Search the queue' })
+    expect(screen.getByTestId('queue-count')).toHaveTextContent(/^4$/)
+
+    await userEvent.type(search, 'LL')
+    expect(titles()).toEqual(['Bells', 'Cello'])
+    expect(screen.getByTestId('queue-count')).toHaveTextContent('2 of 4')
+
+    await userEvent.clear(search)
+    await userEvent.type(search, 'drum kit')
+    expect(titles()).toEqual(['Anthem'])
+
+    // A song being fetched is found by its name or its address.
+    await userEvent.clear(search)
+    await userEvent.type(search, 'youtube')
+    expect(titles()).toEqual(['Night Drive'])
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear the search' }))
+    expect(search).toHaveValue('')
+    expect(search).toHaveFocus()
+    expect(titles()).toHaveLength(4)
+  })
+
+  it('says when nothing matches, and Escape empties the search and then leaves it', async () => {
+    jobs = three()
+    view()
+    const search = screen.getByRole('textbox', { name: 'Search the queue' })
+    await userEvent.type(search, 'zzz')
+    expect(screen.getByTestId('queue-no-match')).toHaveTextContent('Nothing in the queue matches "zzz".')
+    expect(screen.queryByTestId('job-row')).not.toBeInTheDocument()
+    // The queue is not empty: the drop hint stays away and Start and Clear stay.
+    expect(screen.queryByRole('heading', { name: 'Drop audio or video here' })).not.toBeInTheDocument()
+
+    await userEvent.keyboard('{Escape}')
+    expect(search).toHaveValue('')
+    expect(search).toHaveFocus()
+    expect(screen.getAllByTestId('job-row')).toHaveLength(3)
+    await userEvent.keyboard('{Escape}')
+    expect(search).not.toHaveFocus()
+  })
+
+  it('goes to the search on Ctrl+F, not while the trimmer covers the queue', () => {
+    jobs = three()
+    const shown = view()
+    const search = screen.getByRole('textbox', { name: 'Search the queue' })
+    fireEvent.keyDown(window, { key: 'f', ctrlKey: true })
+    expect(search).toHaveFocus()
+    search.blur()
+    shown.unmount()
+
+    wrap(<QueueView recipes={[]} models={[]} selectedJob={null} onSelect={vi.fn()} onAddFiles={vi.fn()} onPasteLink={vi.fn()} covered />)
+    fireEvent.keyDown(window, { key: 'f', ctrlKey: true })
+    expect(screen.getByRole('textbox', { name: 'Search the queue' })).not.toHaveFocus()
+  })
+
+  it('brings a new song in, and not one that a search brings back', async () => {
+    jobs = three()
+    view()
+    const search = screen.getByRole('textbox', { name: 'Search the queue' })
+    expect(screen.getAllByTestId('job-row')[0]).toHaveClass('row-enter')
+    await userEvent.type(search, 'anthem')
+    await userEvent.clear(search)
+    const rows = screen.getAllByTestId('job-row')
+    expect(rows).toHaveLength(3)
+    // Anthem never left; the two the search hid are back without the entrance.
+    expect(rows[0]).toHaveClass('row-enter')
+    expect(rows[1]).not.toHaveClass('row-enter')
+    expect(rows[2]).not.toHaveClass('row-enter')
+  })
+})
+
 describe('StemsPanel', () => {
   const stems = ['vocals', 'drums', 'bass'].map(stem)
   const panel = () =>
@@ -349,6 +551,34 @@ describe('StemsPanel', () => {
     expect(bridge.startDrag).toHaveBeenLastCalledWith([stems[1]!.path])
     fireEvent.dragStart(screen.getByRole('button', { name: 'Drag all stems' }))
     expect(bridge.startDrag).toHaveBeenLastCalledWith(stems.map((s) => s.path))
+  })
+
+  it('drags the original song by its title, and keeps a plain title without one', () => {
+    wrap(<StemsPanel title="Song" source={'C:/in/Song.webm'} subtitle="Full song" directory="D:/out" stems={stems} onClose={vi.fn()} />)
+    const title = screen.getByRole('button', { name: 'Drag the original file of Song' })
+    expect(title.closest('h2')).toHaveTextContent('Song')
+    fireEvent.dragStart(title)
+    expect(bridge.startDrag).toHaveBeenLastCalledWith(['C:/in/Song.webm'])
+    cleanup()
+    panel()
+    expect(screen.queryByTestId('drag-source')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Song' })).toBeInTheDocument()
+  })
+
+  it('does not queue the original again when its drag is let go over the window', () => {
+    render(<DropOverlay onDrop={onDrop} label="Full song" />)
+    dragSource({ preventDefault: vi.fn() }, 'C:/in/Song.mp3')
+    dropFiles('Song.mp3')
+    expect(onDrop).not.toHaveBeenCalled()
+    // Once that drag is over, the same file dropped from outside is a song to separate.
+    dropFiles('Song.mp3')
+    expect(onDrop).toHaveBeenCalledTimes(1)
+    dragSource({ preventDefault: vi.fn() }, 'C:/in/Song.mp3')
+    act(() => {
+      window.dispatchEvent(new MouseEvent('pointermove', { buttons: 0 }))
+    })
+    dropFiles('Song.mp3')
+    expect(onDrop).toHaveBeenCalledTimes(2)
   })
 
   it('toggles solo and mute per stem', async () => {
@@ -549,5 +779,232 @@ describe('toasts', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('renaming a song', () => {
+  beforeEach(() => localStorage.setItem(SORT_KEY, 'run'))
+  const queue = (selected: string | null = null) =>
+    wrap(<QueueView recipes={[]} models={[]} selectedJob={selected} onSelect={vi.fn()} onAddFiles={vi.fn()} onPasteLink={vi.fn()} />)
+  const stems = ['vocals', 'drums'].map(stem)
+
+  it('from the menu of a waiting row: the title becomes a field, and Enter saves the name for its run', async () => {
+    jobs = [job({ id: 'w', track_name: 'y2mate - Song' })]
+    queue()
+    const row = screen.getByTestId('job-row')
+    fireEvent.contextMenu(row)
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }))
+    const field = await within(row).findByLabelText<HTMLInputElement>('Song name')
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field.value).toBe('y2mate - Song')
+    expect(field).toHaveAttribute('title', expect.stringContaining('will go by this name'))
+    await userEvent.keyboard('Night Drive{Enter}')
+    expect(rename.job.mutateAsync).toHaveBeenCalledExactlyOnceWith({ id: 'w', name: 'Night Drive' })
+    expect(within(row).queryByLabelText('Song name')).not.toBeInTheDocument()
+    expect(row).toHaveTextContent('Night Drive')
+  })
+
+  it('by a double click on the title of a finished row whose stems are open, which says its files are renamed too', async () => {
+    jobs = [job({ id: 'd', state: 'done', stems, output_dir: 'D:\\out\\Song\\full-song' })]
+    // Not while its stems are closed: the first click opens them, and the row may move.
+    queue()
+    await userEvent.dblClick(within(screen.getByTestId('job-row')).getByTestId('drag-source'))
+    expect(screen.queryByLabelText('Song name')).not.toBeInTheDocument()
+    cleanup()
+    queue('d')
+    const row = screen.getByTestId('job-row')
+    await userEvent.dblClick(within(row).getByTestId('drag-source'))
+    const field = within(row).getByLabelText('Song name')
+    expect(field).toHaveAttribute('title', expect.stringContaining('stem folder and its files are renamed'))
+    await userEvent.keyboard('Dusk{Enter}')
+    expect(rename.job.mutateAsync).toHaveBeenCalledExactlyOnceWith({ id: 'd', name: 'Dusk' })
+  })
+
+  it('one field at a time: opening another row closes the first, saving what was typed', async () => {
+    jobs = [job({ id: 'a', track_name: 'First' }), job({ id: 'b', track_name: 'Second' })]
+    queue()
+    const [first, second] = screen.getAllByTestId('job-row')
+    await userEvent.dblClick(within(first!).getByTestId('drag-source'))
+    await userEvent.keyboard('One')
+    await userEvent.dblClick(within(second!).getByTestId('drag-source'))
+    expect(rename.job.mutateAsync).toHaveBeenCalledExactlyOnceWith({ id: 'a', name: 'One' })
+    expect(screen.getAllByLabelText('Song name')).toHaveLength(1)
+    expect(within(second!).getByLabelText('Song name')).toHaveFocus()
+  })
+
+  it('not while the song is being separated: no item, and a double click does nothing', async () => {
+    jobs = [job({ id: 'r', state: 'running', progress: 0.4 })]
+    queue()
+    const row = screen.getByTestId('job-row')
+    await userEvent.dblClick(within(row).getByTestId('drag-source'))
+    expect(screen.queryByLabelText('Song name')).not.toBeInTheDocument()
+    fireEvent.contextMenu(row)
+    await screen.findByRole('menuitem', { name: 'Cancel' })
+    expect(screen.queryByRole('menuitem', { name: 'Rename' })).not.toBeInTheDocument()
+  })
+
+  it('says why when the engine refuses, and shows the old name again', async () => {
+    rename.job.mutateAsync.mockRejectedValueOnce(new Error('this song is being separated: rename it when it is done'))
+    jobs = [job({ id: 'w' })]
+    queue()
+    const row = screen.getByTestId('job-row')
+    await userEvent.dblClick(within(row).getByTestId('drag-source'))
+    await userEvent.keyboard('Dusk{Enter}')
+    expect(await screen.findByText('this song is being separated: rename it when it is done')).toBeInTheDocument()
+    expect(within(row).getByTestId('drag-source')).toHaveTextContent('Song')
+  })
+
+  describe('in the stems panel', () => {
+    const panel = (onRename: ((name: string | null) => Promise<unknown>) | undefined = vi.fn(async () => undefined)) => {
+      wrap(<StemsPanel title="Song" source="C:/in/Song.mp3" subtitle="Full song" directory="D:\\out\\Song\\full-song" stems={stems} onRename={onRename} onClose={vi.fn()} />)
+      return onRename
+    }
+
+    it('the pencil beside the title opens the field, and goes while it is open', async () => {
+      const onRename = panel()
+      await userEvent.click(screen.getByRole('button', { name: 'Rename' }))
+      const field = screen.getByLabelText('Song name')
+      expect(field).toHaveFocus()
+      expect(field.closest('h2')).not.toBeNull()
+      expect(screen.queryByRole('button', { name: 'Rename' })).not.toBeInTheDocument()
+      await userEvent.keyboard('Night Drive{Enter}')
+      expect(onRename).toHaveBeenCalledExactlyOnceWith('Night Drive')
+      expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument()
+    })
+
+    it('F2 opens it as it does for a file, and Space typed into the name does not play', async () => {
+      const onRename = panel()
+      await userEvent.keyboard('{F2}')
+      expect(screen.getByLabelText('Song name')).toHaveFocus()
+      await userEvent.keyboard('Night Drive{Enter}')
+      expect(onRename).toHaveBeenCalledExactlyOnceWith('Night Drive')
+      expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
+    })
+
+    it('has no pencil and no F2 where the song cannot be renamed', async () => {
+      wrap(<StemsPanel title="Song" subtitle="Full song" directory="D:\\out" stems={stems} onClose={vi.fn()} />)
+      expect(screen.queryByRole('button', { name: 'Rename' })).not.toBeInTheDocument()
+      await userEvent.keyboard('{F2}')
+      expect(screen.queryByLabelText('Song name')).not.toBeInTheDocument()
+    })
+  })
+})
+
+describe('empty stems, as plain functions', () => {
+  const of = (...empty: boolean[]) => empty.map((value, index) => ({ name: `s${index}`, empty: value }))
+
+  it('leaves the empty ones out while hiding is on, in the stems own order', () => {
+    const stems = of(false, true, false, true)
+    expect(splitEmpty(stems, true)).toEqual({ shown: [stems[0], stems[2]], hidden: [stems[1], stems[3]] })
+    // Off, and with nothing empty, the list is the very same one: nothing re-renders for it.
+    expect(splitEmpty(stems, false).shown).toBe(stems)
+    expect(splitEmpty(of(false, false), true).shown).toHaveLength(2)
+    expect(splitEmpty<{ name: string; empty?: boolean }>([{ name: 'old' }], true)).toEqual({ shown: [{ name: 'old' }], hidden: [] })
+  })
+
+  it('shows every stem of a song that has nothing in any', () => {
+    const silent = of(true, true)
+    expect(splitEmpty(silent, true)).toEqual({ shown: silent, hidden: [] })
+    expect(splitEmpty([], true)).toEqual({ shown: [], hidden: [] })
+  })
+
+  it('counts stems and says what a drag carries', () => {
+    expect([0, 1, 2, 13].map(stemCount)).toEqual(['0 stems', '1 stem', '2 stems', '13 stems'])
+    expect(dragAllHint(6, 0)).toBe('Drag every stem into your DAW or a folder')
+    expect(dragAllHint(1, 5)).toBe('Drag the one stem with sound into your DAW or a folder. 5 empty ones stay behind')
+    expect(dragAllHint(5, 1)).toBe('Drag the 5 stems with sound into your DAW or a folder. 1 empty one stays behind')
+  })
+})
+
+describe('StemsPanel: empty stems', () => {
+  // A rap song through the six-stem recipe: only the vocals and the drums hold anything.
+  const stems = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'].map((name) => ({
+    ...stem(name),
+    empty: !['vocals', 'drums'].includes(name),
+  }))
+  const onTrim = vi.fn()
+  const panel = (hideEmpty: boolean) =>
+    wrap(<StemsPanel title="Song" subtitle="Full song" directory="D:\out\Song\full-song" stems={stems} hideEmpty={hideEmpty} onTrim={onTrim} onClose={vi.fn()} />)
+  const names = () => screen.getAllByTestId('waveform').map((el) => el.textContent)
+
+  it('lists only the stems with sound, and names the rest in one line', () => {
+    panel(true)
+    expect(names()).toEqual(['vocals', 'drums'])
+    const line = screen.getByTestId('empty-stems')
+    expect(line).toHaveTextContent('4 empty: bass, guitar, piano, other')
+    expect(within(line).getByRole('button', { name: 'Show empty stems' })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('drags, mixes and trims what is shown', async () => {
+    panel(true)
+    fireEvent.dragStart(screen.getByRole('button', { name: 'Drag all stems' }))
+    expect(bridge.startDrag).toHaveBeenLastCalledWith([stems[0]!.path, stems[1]!.path])
+    // Trim opens on the two with sound, not on six.
+    await userEvent.click(screen.getByTestId('panel-trim'))
+    expect(onTrim).toHaveBeenLastCalledWith(['vocals', 'drums'], expect.anything())
+    // Of two stems, one muted leaves the other: its own file, and no mix to write.
+    await userEvent.click(screen.getByRole('button', { name: 'Mute vocals' }))
+    fireEvent.dragStart(screen.getByTestId('drag-mix'))
+    expect(bridge.startDrag).toHaveBeenLastCalledWith([stems[1]!.path])
+    expect(createMix.mutateAsync).not.toHaveBeenCalled()
+  })
+
+  it('brings the empty stems back where they belong, marked, and puts them away again', async () => {
+    panel(true)
+    await userEvent.click(screen.getByRole('button', { name: 'Show empty stems' }))
+    expect(names()).toEqual(['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'])
+    const rows = screen.getAllByTestId('stem-row')
+    expect(rows.map((row) => row.hasAttribute('data-empty'))).toEqual([false, false, true, true, true, true])
+    expect(screen.getByTestId('empty-stems')).toHaveTextContent('4 empty shown: bass, guitar, piano, other')
+    fireEvent.dragStart(screen.getByRole('button', { name: 'Drag all stems' }))
+    expect(bridge.startDrag.mock.calls.at(-1)?.[0]).toHaveLength(6)
+    await userEvent.click(screen.getByTestId('panel-trim'))
+    expect(onTrim).toHaveBeenLastCalledWith(null, expect.anything())
+    await userEvent.click(screen.getByRole('button', { name: 'Hide empty stems' }))
+    expect(names()).toEqual(['vocals', 'drums'])
+  })
+
+  it('shows every stem with the setting off, and has no line about it', () => {
+    panel(false)
+    expect(names()).toHaveLength(6)
+    expect(screen.queryByTestId('empty-stems')).not.toBeInTheDocument()
+    // Still told apart: an empty stem's name steps back.
+    expect(screen.getAllByTestId('stem-row')[3]).toHaveAttribute('data-empty')
+  })
+
+  it('has nothing to hide in a song whose stems all hold something', () => {
+    wrap(<StemsPanel title="Song" subtitle="Full song" directory="D:\out" stems={['vocals', 'drums'].map(stem)} hideEmpty onClose={vi.fn()} />)
+    expect(names()).toEqual(['vocals', 'drums'])
+    expect(screen.queryByTestId('empty-stems')).not.toBeInTheDocument()
+  })
+})
+
+describe('QueueView: empty stems', () => {
+  beforeEach(() => localStorage.setItem(SORT_KEY, 'run'))
+  afterEach(() => {
+    delete engineSettings.hide_empty_stems
+  })
+  const stems = ['vocals', 'drums', 'bass'].map((name) => ({ ...stem(name), empty: name !== 'vocals' }))
+  const view = () =>
+    wrap(<QueueView recipes={[]} models={[]} selectedJob={null} onSelect={vi.fn()} onAddFiles={vi.fn()} onPasteLink={vi.fn()} />)
+
+  it('counts and drags the stems with sound while hiding is on', () => {
+    jobs = [job({ state: 'done', progress: 1, stems })]
+    engineSettings.hide_empty_stems = true
+    view()
+    const handle = screen.getByRole('button', { name: 'Drag all stems of Song' })
+    expect(handle).toHaveTextContent('1 stem')
+    expect(handle).not.toHaveTextContent('stems')
+    fireEvent.dragStart(handle)
+    expect(bridge.startDrag).toHaveBeenLastCalledWith([stems[0]!.path])
+  })
+
+  it('counts and drags them all with it off', () => {
+    jobs = [job({ state: 'done', progress: 1, stems })]
+    view()
+    const handle = screen.getByRole('button', { name: 'Drag all stems of Song' })
+    expect(handle).toHaveTextContent('3 stems')
+    fireEvent.dragStart(handle)
+    expect(bridge.startDrag.mock.calls.at(-1)?.[0]).toHaveLength(3)
   })
 })

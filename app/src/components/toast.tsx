@@ -55,7 +55,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div className="pointer-events-none fixed right-4 bottom-4 z-[70] flex flex-col items-end gap-2" aria-live="polite">
+      {/* Raised by `--toast-lift` where a screen keeps controls at the window's foot: the
+          trimmer's footer, whose handles a toast would cover. */}
+      <div
+        className="pointer-events-none fixed right-4 z-[70] flex flex-col items-end gap-2"
+        style={{ bottom: 'calc(1rem + var(--toast-lift, 0px))' }}
+        aria-live="polite"
+      >
         {toasts.map((toast) => (
           <ToastView key={toast.id} toast={toast} onDismiss={dismiss} />
         ))}
@@ -99,7 +105,7 @@ function ToastView({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: num
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
       className={cn(
-        'toast pointer-events-auto flex max-w-[min(420px,calc(100vw-32px))] items-center gap-3 rounded-[10px] border bg-raised px-3.5 py-2.5 shadow-[0_10px_30px_rgb(0_0_0/0.5)]',
+        'toast pointer-events-auto flex max-w-[min(420px,calc(100vw-32px))] items-center gap-3 rounded-[10px] border bg-raised px-3.5 py-2.5 shadow-[var(--shadow-toast)]',
         toast.kind === 'error' ? 'border-danger/40' : 'border-line-strong',
       )}
     >

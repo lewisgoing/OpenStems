@@ -65,6 +65,22 @@ test('stems preview with solo and mute, and drag out as real files', async () =>
   for (const path of (await lastDrag(ctx.app)) ?? []) expect(existsSync(path)).toBe(true)
 })
 
+test('the title drags the original file out, in its own format', async () => {
+  // An MP4: the main process lets a song's original through in any format the engine takes.
+  await addFiles('Video Clip.mp4')
+  await doneJobs().click()
+  const panel = ctx.page.getByRole('complementary', { name: 'Stems' })
+  await panel.getByTestId('drag-source').dispatchEvent('dragstart')
+  await expect.poll(() => lastDrag(ctx.app)).toEqual([join(ctx.fixtures, 'Video Clip.mp4')])
+
+  // The queue row's title as well.
+  await ctx.app.evaluate(() => {
+    ;(globalThis as unknown as { __openstemsE2E: { lastDrag: string[] | null } }).__openstemsE2E.lastDrag = null
+  })
+  await jobs().getByTestId('drag-source').dispatchEvent('dragstart')
+  await expect.poll(() => lastDrag(ctx.app)).toEqual([join(ctx.fixtures, 'Video Clip.mp4')])
+})
+
 test('paths with spaces and non-ASCII characters work end to end', async () => {
   await addFiles(join('ünï cödé 日本語', 'Señor Ω – 夜の曲.wav'))
   await expect(doneJobs()).toContainText('Señor Ω – 夜の曲')
@@ -90,7 +106,36 @@ test('recipe, quality, queue controls and the other views', async () => {
   // The same file again comes back from the cache.
   await addFiles('First Song.mp3')
   await expect(jobs()).toHaveCount(3)
+  // The newest song is first.
+  await expect(jobs().first().getByTestId('job-status')).toHaveText('Done, from the cache')
+
+  // Another order, kept for the next time the queue is shown.
+  const sort = ctx.page.getByRole('combobox', { name: 'Sort the queue' })
+  await expect(sort).toContainText('Newest')
+  await sort.click()
+  await ctx.page.getByRole('option', { name: /^Oldest/ }).click()
   await expect(jobs().last().getByTestId('job-status')).toHaveText('Done, from the cache')
+  await expect(jobs().first()).toContainText('First Song')
+  await ctx.page.getByRole('button', { name: 'History' }).click()
+  await ctx.page.getByRole('button', { name: 'Queue', exact: true }).click()
+  await expect(sort).toContainText('Oldest')
+  await sort.click()
+  await ctx.page.getByRole('option', { name: /^Newest/ }).click()
+  await expect(jobs().first().getByTestId('job-status')).toHaveText('Done, from the cache')
+
+  // Search narrows the list and says how many it left; Ctrl+F goes to it, Escape empties it.
+  const search = ctx.page.getByRole('textbox', { name: 'Search the queue' })
+  await ctx.page.keyboard.press('ControlOrMeta+f')
+  await expect(search).toBeFocused()
+  await ctx.page.keyboard.type('second')
+  await expect(jobs()).toHaveCount(1)
+  await expect(jobs().first()).toContainText('Second Song')
+  await expect(ctx.page.getByTestId('queue-count')).toHaveText('1 of 3')
+  await search.fill('no such song')
+  await expect(ctx.page.getByTestId('queue-no-match')).toContainText('Nothing in the queue matches "no such song".')
+  await ctx.page.keyboard.press('Escape')
+  await expect(search).toHaveValue('')
+  await expect(jobs()).toHaveCount(3)
 
   // Remove one job, then clear the rest.
   await jobs().first().hover()
@@ -118,6 +163,14 @@ test('recipe, quality, queue controls and the other views', async () => {
   await ctx.page.getByRole('button', { name: 'Queue' }).click()
   await ctx.page.getByRole('button', { name: 'Settings' }).click()
   await expect(ctx.page.getByRole('switch', { name: 'Sum to mix by default' })).toBeChecked()
+
+  // About: the links out to the website. Checked, never clicked: a click opens the real browser.
+  const website = ctx.page.getByRole('link', { name: 'Open the website' })
+  await website.scrollIntoViewIfNeeded()
+  await expect(website).toHaveAttribute('href', 'https://lewisgoing.github.io/OpenStems/')
+  await expect(website).toHaveAttribute('target', '_blank')
+  await expect(ctx.page.getByRole('link', { name: 'Read the changelog' })).toHaveAttribute('href', /\/OpenStems\/#changelog$/)
+  await expect(ctx.page.getByRole('link', { name: 'Support', exact: true })).toHaveAttribute('href', /\/OpenStems\/#support$/)
 })
 
 test('a running job can be cancelled and retried', async () => {

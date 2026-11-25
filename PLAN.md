@@ -333,7 +333,7 @@ Acceptance:
 Goal: install and run without a terminal.
 
 - Build a Windows installer for the app.
-- On first run, create the Python environment with uv, run the doctor check, and offer to download the seed models.
+- On first run, create the Python environment with uv, run the doctor check, and offer to download the seed models. (Widened into a welcome of three steps: folders, format, models. ADR 0021.)
 - Add an app icon, a Start menu entry, a logs folder and an Export diagnostics action.
 
 Acceptance:

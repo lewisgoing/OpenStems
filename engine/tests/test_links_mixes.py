@@ -3,6 +3,7 @@ fetches, and yt-dlp itself is only checked for being there."""
 
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -131,7 +132,11 @@ def test_the_fetcher_and_its_javascript_runtime_are_installed() -> None:
     from openstems.links import _deno
 
     assert yt_dlp.YoutubeDL
-    assert __version__ == "2026.10.26"
+    # The version pinned in pyproject.toml is the one installed (scripts/check_ytdlp.py
+    # moves the pin; `uv lock` and `uv sync` follow).
+    pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text("utf-8")
+    pinned = re.search(r'"yt-dlp\[[^\]]*\]==([^"]+)"', pyproject)
+    assert pinned and __version__ == pinned.group(1)
     deno = _deno()
     assert deno and Path(deno).is_file()
 
@@ -253,6 +258,15 @@ def test_a_mix_is_named_for_what_is_in_it() -> None:
         == "no backing vocals, piano, other"
     )
     assert mix_label(every, every, groups) == "mix"
+    # Parts of one group with a few of its parts left out go by the group (every-stem's kit).
+    drums = ["kick", "snare", "toms", "hh", "ride", "crash", "other drums"]
+    deep = ["lead vocals", "backing vocals", *drums, "bass", "guitar", "piano", "other"]
+    deep_groups = {k: v for k, v in groups.items() if v != "drums"} | dict.fromkeys(drums, "drums")
+    assert mix_label(drums[1:], deep, deep_groups) == "drums no kick"
+    assert mix_label(drums[2:], deep, deep_groups) == "drums no kick, snare"
+    assert mix_label(drums[3:], deep, deep_groups) == "drums no kick, snare, toms"
+    assert mix_label(drums[4:], deep, deep_groups) == "ride + crash + other drums"
+    assert mix_label([*drums[1:], "lead vocals"], deep, deep_groups) == "7 stems"
 
 
 def done_job(client: TestClient, songs: list[Path], **options: Any) -> dict[str, Any]:
@@ -316,3 +330,12 @@ def test_bad_mix_requests(client: TestClient, songs: list[Path], tmp_path: Path)
     stray.write_bytes(Path(stems[0]["path"]).read_bytes())
     not_a_stem = client.post("/v1/mixes", json={"paths": [stems[0]["path"], str(stray)]})
     assert not_a_stem.status_code == 400 and "not a stem" in not_a_stem.json()["detail"]
+    # A stem taken out of its folder is named: asking again cannot bring it back.
+    gone = Path(stems[1]["path"])
+    gone.unlink()
+    missing = client.post("/v1/mixes", json={"paths": [stems[0]["path"], str(gone)]})
+    assert missing.status_code == 400
+    assert (
+        missing.json()["detail"]
+        == f"{gone.name} is no longer in its folder: separate the song again"
+    )

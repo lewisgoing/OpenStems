@@ -4,6 +4,7 @@
  * differs between Windows and a Mac (the window's frame, the menus, when the app quits).
  */
 import type { BrowserWindowConstructorOptions, MenuItemConstructorOptions } from 'electron'
+import { REPOSITORY, siteLink } from './links'
 
 export interface Rect {
   x: number
@@ -143,7 +144,22 @@ export interface TrayActivity {
   done: { id: string; name: string; stems: number } | null
 }
 
-export type TrayIcon = 'idle' | 'busy' | 'ready'
+export type TrayIcon = 'idle' | 'busy' | 'ready' | 'update'
+
+/**
+ * A newer version the app knows about, for the icon: `ready` once it is downloaded and a
+ * restart installs it. Null while there is nothing new.
+ */
+export interface TrayUpdate {
+  version: string
+  ready: boolean
+}
+
+/** What the icon needs to know of self-update (`UpdateStatus` from the updater). */
+export function trayUpdateOf(status: { state: string; version?: string; manual?: boolean } | null): TrayUpdate | null {
+  if (!status?.version || !['available', 'downloading', 'ready'].includes(status.state)) return null
+  return { version: status.version, ready: status.state === 'ready' && !status.manual }
+}
 
 export interface TrayPresentation {
   icon: TrayIcon
@@ -173,9 +189,15 @@ export function isTrayActivity(value: unknown): value is TrayActivity {
 
 /**
  * The icon and tooltip for the current activity. Work in progress wins over finished work:
- * `ready` shows only once the queue is empty, and only until the result has been seen.
+ * `ready` shows only once the queue is empty, and only until the result has been seen. A
+ * new version is the least urgent of all: it marks the icon only when nothing else
+ * does, and stays until it is installed.
  */
-export function trayPresentation(activity: TrayActivity | null, seenDone: string | null): TrayPresentation {
+export function trayPresentation(
+  activity: TrayActivity | null,
+  seenDone: string | null,
+  update: TrayUpdate | null = null,
+): TrayPresentation {
   if (activity && activity.active > 0) {
     const waiting = activity.active - (activity.current ? 1 : 0)
     const more = waiting > 0 ? ` (${waiting} waiting)` : ''
@@ -188,6 +210,10 @@ export function trayPresentation(activity: TrayActivity | null, seenDone: string
     const { name, stems } = activity.done
     const count = `${stems} ${stems === 1 ? 'stem' : 'stems'}`
     return { icon: 'ready', tooltip: `${APP_NAME}: ${shorten(name, 70)} is ready, ${count}`.slice(0, TOOLTIP_MAX) }
+  }
+  if (update) {
+    const what = update.ready ? `${update.version} is downloaded: restart to install it` : `${update.version} is available`
+    return { icon: 'update', tooltip: `${APP_NAME}: version ${what}` }
   }
   return { icon: 'idle', tooltip: APP_NAME }
 }
@@ -204,6 +230,8 @@ export interface ShellPrefs {
   checkForUpdates: boolean
   /** Raise a notification when songs finish while the app is out of sight. */
   notifyReady: boolean
+  /** Light, dark, or whatever the system uses. */
+  theme: ThemePref
 }
 
 export const DEFAULT_PREFS: ShellPrefs = {
@@ -211,6 +239,8 @@ export const DEFAULT_PREFS: ShellPrefs = {
   trayNoticeShown: false,
   checkForUpdates: true,
   notifyReady: true,
+  // Dark until the user picks otherwise: the app looked like this before there was a choice.
+  theme: 'dark',
 }
 
 /**
@@ -232,13 +262,45 @@ export function parsePrefs(text: string | null | undefined): ShellPrefs {
   } catch {
     // No file yet, or not JSON.
   }
-  const flag = (key: keyof ShellPrefs) => (typeof stored[key] === 'boolean' ? (stored[key] as boolean) : DEFAULT_PREFS[key])
+  type Flag = Exclude<keyof ShellPrefs, 'theme'>
+  const flag = (key: Flag): boolean => (typeof stored[key] === 'boolean' ? (stored[key] as boolean) : DEFAULT_PREFS[key])
   return {
     closeToTray: flag('closeToTray'),
     trayNoticeShown: flag('trayNoticeShown'),
     checkForUpdates: flag('checkForUpdates'),
     notifyReady: flag('notifyReady'),
+    theme: isThemePref(stored.theme) ? stored.theme : DEFAULT_PREFS.theme,
   }
+}
+
+/* ---- light and dark ---------------------------------------------------------------- */
+
+/** What the user picked. `system` follows the operating system, live. */
+export type ThemePref = 'system' | 'light' | 'dark'
+/** What the windows show. */
+export type Theme = 'light' | 'dark'
+
+export const THEME_PREFS: readonly ThemePref[] = ['system', 'light', 'dark']
+
+export function isThemePref(value: unknown): value is ThemePref {
+  return typeof value === 'string' && (THEME_PREFS as readonly string[]).includes(value)
+}
+
+/**
+ * The colors Electron paints before the page does, per theme: the window's background (so
+ * no dark frame flashes before a light page, or the other way round) and, on Windows, the
+ * minimize, maximize and close buttons drawn over the title bar. They match `--color-bg`
+ * and `--color-muted` in `src/styles.css`: change both together.
+ */
+export const WINDOW_COLORS: Record<Theme, { background: string; symbol: string }> = {
+  dark: { background: '#0c0d0f', symbol: '#8b8f98' },
+  light: { background: '#f7f8f9', symbol: '#5b616b' },
+}
+
+/** The Windows title bar buttons for a theme. A Mac draws its own window buttons. */
+export function titleBarOverlay(theme: Theme): { color: string; symbolColor: string; height: number } {
+  const colors = WINDOW_COLORS[theme]
+  return { color: colors.background, symbolColor: colors.symbol, height: TITLE_BAR_HEIGHT }
 }
 
 /** The flag a launch at login carries: start in the tray, without a window. */
@@ -270,10 +332,10 @@ export const TRAFFIC_LIGHTS_INSET = 80
  */
 export function windowChrome(
   platform: Platform,
-  background: string,
+  theme: Theme,
 ): Pick<BrowserWindowConstructorOptions, 'titleBarStyle' | 'titleBarOverlay' | 'trafficLightPosition'> {
   if (mac(platform)) return { titleBarStyle: 'hidden', trafficLightPosition: TRAFFIC_LIGHTS }
-  return { titleBarStyle: 'hidden', titleBarOverlay: { color: background, symbolColor: '#8b8f98', height: TITLE_BAR_HEIGHT } }
+  return { titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlay(theme) }
 }
 
 /**
@@ -351,7 +413,7 @@ export function trayMenuTemplate(
  * Cmd+W, no Cmd+M and no Hide, since on a Mac those shortcuts are menu items. Windows has
  * no menu bar in the window and gets no menu.
  */
-export function macMenuTemplate(host: { name: string; settings: () => void; help: () => void }): MenuItemConstructorOptions[] {
+export function macMenuTemplate(host: { name: string; settings: () => void; open: (url: string) => void }): MenuItemConstructorOptions[] {
   // The three items that carry the app's name are labelled here. Left to Electron they
   // would read `app.name`, which is the package's name ("openstems-app"), not the app's.
   return [
@@ -385,6 +447,17 @@ export function macMenuTemplate(host: { name: string; settings: () => void; help
       ],
     },
     { role: 'windowMenu' },
-    { role: 'help', submenu: [{ label: `${host.name} on GitHub`, click: host.help }] },
+    {
+      // Help lands on the page written for people; the code is the last item. The same
+      // addresses are under Settings > About, which Windows has too.
+      role: 'help',
+      submenu: [
+        { label: `${host.name} Website`, click: () => host.open(siteLink()) },
+        { label: "What's New", click: () => host.open(siteLink('changelog')) },
+        { label: `Support ${host.name}`, click: () => host.open(siteLink('support')) },
+        { type: 'separator' },
+        { label: `${host.name} on GitHub`, click: () => host.open(REPOSITORY) },
+      ],
+    },
   ]
 }

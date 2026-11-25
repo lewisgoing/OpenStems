@@ -4,6 +4,30 @@
  */
 
 export interface paths {
+    "/v1/clips": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Clips
+         * @description Write a stretch of a song as files to drag into a DAW: of the song's own file,
+         *     or of its stems, summed into one file or one file each. A clip that is already
+         *     written is found again. A file of its name that is newer than the song's stems or
+         *     file is never written over: when it holds something else, the clip takes the name
+         *     with "(2)", "(3)" and so on.
+         */
+        post: operations["create_clips"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/diagnostics": {
         parameters: {
             query?: never;
@@ -176,7 +200,8 @@ export interface paths {
         put?: never;
         /**
          * Set Job Analysis
-         * @description Set a job's tempo and key by hand: before it runs, or on its finished stems.
+         * @description Set a job's tempo, key and bar 1 by hand: before it runs, or on its finished
+         *     stems.
          */
         post: operations["set_job_analysis"];
         delete?: never;
@@ -196,6 +221,51 @@ export interface paths {
         put?: never;
         /** Cancel Job */
         post: operations["cancel_job"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/{job_id}/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Job Name
+         * @description Name a job's song, or give it its file's name back with null. Every job of the
+         *     same file follows. One that waits keeps the name for its run; stems that are
+         *     written are renamed on the disk, their folder and their files. Refused while the
+         *     song is being separated.
+         */
+        post: operations["set_job_name"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/{job_id}/range": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Job Range
+         * @description Choose the part of a waiting song to separate alone, or take it away again with
+         *     null. Only that part is separated when the separate_selection setting is on when
+         *     the song starts; otherwise the whole song is. Refused once the song has started.
+         */
+        post: operations["set_job_range"];
         delete?: never;
         options?: never;
         head?: never;
@@ -497,6 +567,27 @@ export interface paths {
         patch: operations["patch_settings"];
         trace?: never;
     };
+    "/v1/sources/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Source
+         * @description A song's own file, ready to play and draw before it is separated, with the beat
+         *     grid detection finds. The first request for a song takes a few seconds.
+         */
+        post: operations["preview_source"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/stemsets": {
         parameters: {
             query?: never;
@@ -525,9 +616,31 @@ export interface paths {
         put?: never;
         /**
          * Set Stem Set Analysis
-         * @description Set the tempo and key of a song's finished stems by hand.
+         * @description Set the tempo, key and bar 1 of a song's finished stems by hand.
          */
         post: operations["set_stem_set_analysis"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/stemsets/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Stem Set Name
+         * @description Name the song of finished stems, or give it its file's name back with null.
+         *     Its folder and its stem files are renamed, for every recipe it was separated
+         *     with. Resolves with the stem set where it is now.
+         */
+        post: operations["set_stem_set_name"];
         delete?: never;
         options?: never;
         head?: never;
@@ -589,6 +702,62 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * ClipGrid
+         * @description The beat grid a selection was made on. It names the clip ("bars 9-16"), and its
+         *     tempo is the one a tempo-synced clip is marked with. Taken as it is, not rounded.
+         */
+        ClipGrid: {
+            /**
+             * Beats Per Bar
+             * @description 1 to 16.
+             * @default 4
+             */
+            beats_per_bar: number;
+            /**
+             * Bpm
+             * @description 20 to 999.
+             */
+            bpm: number;
+            /**
+             * Downbeat
+             * @description Where bar 1 starts, in seconds from the start of the song. Negative when it starts before the file does.
+             */
+            downbeat: number;
+        };
+        /** ClipInfo */
+        ClipInfo: {
+            /** End */
+            end: number;
+            /**
+             * Label
+             * @description The stem or mix in the clip's name; empty for the song.
+             */
+            label: string;
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /** Sample Rate */
+            sample_rate: number;
+            /** Samples */
+            samples: number;
+            /**
+             * Start
+             * @description Where the clip starts in the song, in seconds.
+             */
+            start: number;
+            /**
+             * Stems
+             * @description The stems in the clip; none for the song.
+             */
+            stems: string[];
+        };
+        /** ClipList */
+        ClipList: {
+            /** Clips */
+            clips: components["schemas"]["ClipInfo"][];
+        };
         /** CreateBatch */
         CreateBatch: {
             /** Model */
@@ -606,6 +775,37 @@ export interface components {
              * @description Start as soon as the GPU is free, or wait for Start. Default: the auto_start setting.
              */
             start?: boolean | null;
+        };
+        /** CreateClips */
+        CreateClips: {
+            /**
+             * End
+             * @description Where it ends. Kept inside the song.
+             */
+            end: number;
+            /** @description Without a grid the clip is named by its times. */
+            grid?: components["schemas"]["ClipGrid"] | null;
+            /**
+             * Paths
+             * @description One or more stem files of one song, or the song's own file alone.
+             */
+            paths: string[];
+            /**
+             * Source
+             * @description Whether the one path is the song's own file rather than a stem. Left out: it is when it is the file of a song in the queue or the history. A stem that was itself separated is both, so say which.
+             */
+            source?: boolean | null;
+            /**
+             * Start
+             * @description Where the clip starts, in seconds into the song.
+             */
+            start: number;
+            /**
+             * Together
+             * @description Several stems as one file, their sum. False: one file per stem.
+             * @default true
+             */
+            together: boolean;
         };
         /** CreateJob */
         CreateJob: {
@@ -766,6 +966,8 @@ export interface components {
             };
             /** Output Dir */
             output_dir?: string | null;
+            /** @description The part of the song these stems are, when only a part of it was separated: their timeline starts at the part's start, not at the song's. Null for the whole song. */
+            part?: components["schemas"]["JobRange"] | null;
             /** Progress */
             progress: number;
             /** Quality */
@@ -788,7 +990,10 @@ export interface components {
              * @default []
              */
             stems: components["schemas"]["StemFile"][];
-            /** Track Name */
+            /**
+             * Track Name
+             * @description The song's name: the one the user gave it, or else its file's.
+             */
             track_name: string;
             /** Track Path */
             track_path: string;
@@ -805,6 +1010,11 @@ export interface components {
              * @description The song's tempo, in place of the detected one.
              */
             bpm?: number | null;
+            /**
+             * Downbeat
+             * @description Where bar 1 starts, in seconds, in place of the detected one.
+             */
+            downbeat?: number | null;
             /** Force */
             force?: boolean | null;
             /**
@@ -816,6 +1026,11 @@ export interface components {
             match_source_rate?: boolean | null;
             /** Midi Stems */
             midi_stems?: string[] | null;
+            /**
+             * Name
+             * @description The song's name, in place of its file's: its stem folder and stems are named by it. Left out, a song the user named before keeps that name.
+             */
+            name?: string | null;
             /** Normalize */
             normalize?: boolean | null;
             /** Output Format */
@@ -825,10 +1040,53 @@ export interface components {
              * @description Subset of output stems.
              */
             outputs?: string[] | null;
+            /** @description The part of the song to separate alone. Set with POST /v1/jobs/{job_id}/range once the song is in the queue: refused when a job is created. Separated alone only when the separate_selection setting is on when the song runs; otherwise the whole song is. */
+            range?: components["schemas"]["JobRange"] | null;
             /** Sum To Mix */
             sum_to_mix?: boolean | null;
             /** Trim Silence */
             trim_silence?: boolean | null;
+        };
+        /**
+         * JobRange
+         * @description A part of a song, chosen in the trimmer while the song waits in the queue. With the
+         *     separate_selection setting on when the song runs, only that part is separated, as a
+         *     song of its own named "<song> (<label>)".
+         */
+        JobRange: {
+            /**
+             * End
+             * @description Where it ends, in seconds into the song.
+             */
+            end: number;
+            /**
+             * Label
+             * @description The part named as a clip of it is: "bars 9-16", "9.3-11.2" or "0m21.40s-0m33.10s". Named again whenever the tempo or bar 1 of the job changes.
+             */
+            label: string;
+            /**
+             * Start
+             * @description Where the part starts, in seconds into the song.
+             */
+            start: number;
+        };
+        /**
+         * JobRangeRequest
+         * @description A part of a song as the trimmer chose it, to separate alone.
+         */
+        JobRangeRequest: {
+            /**
+             * End
+             * @description Where it ends. Kept inside the song.
+             */
+            end: number;
+            /** @description The grid the part was chosen on, which names it. A job with no tempo of its own keeps the grid's tempo and bar 1 (bar 1 alone when it has that tempo), so its run lays the bars out where the name says. Left out: the tempo and bar 1 the job was given, when it has both; else the part is named by its times. */
+            grid?: components["schemas"]["ClipGrid"] | null;
+            /**
+             * Start
+             * @description Where the part starts, in seconds into the song.
+             */
+            start: number;
         };
         /**
          * LinkInfo
@@ -1149,14 +1407,40 @@ export interface components {
         };
         /**
          * SetAnalysis
-         * @description The tempo and key the user gives a song. A field left out is not changed; null
-         *     means the song has none (for a job that has not run yet: detect it).
+         * @description The tempo, key and bar 1 the user gives a song. A field left out is not changed;
+         *     null means the song has none (for a job that has not run yet: detect it).
          */
         SetAnalysis: {
             /** Bpm */
             bpm?: number | null;
+            /**
+             * Downbeat
+             * @description Where bar 1 starts, in seconds, in place of the detected one.
+             */
+            downbeat?: number | null;
             /** Key */
             key?: string | null;
+        };
+        /**
+         * SetJobRange
+         * @description The part of a waiting song to separate alone: {"range": {"start", "end", "grid"}}
+         *     sets it, {"range": null} takes it away again. Its label is decided when it is set, and
+         *     again whenever the job's tempo or bar 1 changes.
+         */
+        SetJobRange: {
+            /** @description The part, or null to separate the whole song. */
+            range: components["schemas"]["JobRangeRequest"] | null;
+        };
+        /**
+         * SetName
+         * @description The name the user gives a song. null gives it its file's name back.
+         */
+        SetName: {
+            /**
+             * Name
+             * @description Up to 120 characters. Characters a file name cannot hold are kept in the name and replaced where it names a folder or a file.
+             */
+            name: string | null;
         };
         /** SetStemSetAnalysis */
         SetStemSetAnalysis: {
@@ -1164,8 +1448,23 @@ export interface components {
             bpm?: number | null;
             /** Directory */
             directory: string;
+            /**
+             * Downbeat
+             * @description Where bar 1 starts, in seconds, in place of the detected one.
+             */
+            downbeat?: number | null;
             /** Key */
             key?: string | null;
+        };
+        /** SetStemSetName */
+        SetStemSetName: {
+            /** Directory */
+            directory: string;
+            /**
+             * Name
+             * @description Up to 120 characters. Characters a file name cannot hold are kept in the name and replaced where it names a folder or a file.
+             */
+            name: string | null;
         };
         /** SettingsModel */
         SettingsModel: {
@@ -1182,6 +1481,8 @@ export interface components {
             default_recipe: string;
             /** Detect Tempo Key */
             detect_tempo_key: boolean;
+            /** Hide Empty Stems */
+            hide_empty_stems: boolean;
             /** Match Source Rate */
             match_source_rate: boolean;
             /** Models Dir */
@@ -1197,6 +1498,8 @@ export interface components {
              * @enum {string}
              */
             output_format: "wav32f" | "wav24" | "flac" | "mp3";
+            /** Separate Selection */
+            separate_selection: boolean;
             /** Sum To Mix */
             sum_to_mix: boolean;
             /** Tempo Sync */
@@ -1226,6 +1529,8 @@ export interface components {
             default_recipe?: string | null;
             /** Detect Tempo Key */
             detect_tempo_key?: boolean | null;
+            /** Hide Empty Stems */
+            hide_empty_stems?: boolean | null;
             /** Match Source Rate */
             match_source_rate?: boolean | null;
             /** Models Dir */
@@ -1238,6 +1543,8 @@ export interface components {
             output_dir?: string | null;
             /** Output Format */
             output_format?: ("wav32f" | "wav24" | "flac" | "mp3") | null;
+            /** Separate Selection */
+            separate_selection?: boolean | null;
             /** Sum To Mix */
             sum_to_mix?: boolean | null;
             /** Tempo Sync */
@@ -1255,8 +1562,56 @@ export interface components {
             /** Write Midi */
             write_midi?: boolean | null;
         };
+        /** SourceAnalysis */
+        SourceAnalysis: {
+            /** Bpm */
+            bpm?: number | null;
+            /**
+             * Downbeat
+             * @description Where bar 1 starts, in seconds into the song.
+             */
+            downbeat?: number | null;
+            /** Key */
+            key?: string | null;
+        };
+        /**
+         * SourcePreview
+         * @description A song's own file as the app plays and draws it before separation.
+         */
+        SourcePreview: {
+            /** @description What detection finds in the file. */
+            analysis: components["schemas"]["SourceAnalysis"];
+            /**
+             * Audio
+             * @description A 16-bit FLAC at 44.1 kHz, served by /v1/files.
+             */
+            audio: string;
+            /** Duration */
+            duration: number;
+            /**
+             * Peaks
+             * @description Its peaks, served by /v1/peaks.
+             */
+            peaks: string;
+            /** Sample Rate */
+            sample_rate: number;
+        };
+        /** SourcePreviewRequest */
+        SourcePreviewRequest: {
+            /**
+             * Path
+             * @description The file of a song in the queue or the history.
+             */
+            path: string;
+        };
         /** StemFile */
         StemFile: {
+            /**
+             * Empty
+             * @description Nothing but what the model let through: its peak stays more than 45 dB under the loudest stem of the set. The file is written all the same. The app leaves such stems out of its lists while the hide_empty_stems setting is on.
+             * @default false
+             */
+            empty: boolean;
             /** File */
             file: string;
             /**
@@ -1276,6 +1631,12 @@ export interface components {
             sample_rate?: number | null;
             /** Samples */
             samples?: number | null;
+            /**
+             * Start
+             * @description Seconds into the song where this file begins: later than 0 when its leading silence was trimmed.
+             * @default 0
+             */
+            start: number;
         };
         /** StemSetInfo */
         StemSetInfo: {
@@ -1290,6 +1651,8 @@ export interface components {
             created_at: string;
             /** Directory */
             directory: string;
+            /** @description The part of the song these stems are, when only a part of it was separated: their timeline starts at the part's start, not at the song's. Null for the whole song. */
+            part?: components["schemas"]["JobRange"] | null;
             /** Recipe Id */
             recipe_id: string;
             /** Recipe Name */
@@ -1476,6 +1839,66 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    create_clips: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateClips"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClipList"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     export_diagnostics: {
         parameters: {
             query?: never;
@@ -2190,6 +2613,130 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobInfo"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_job_name: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetName"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobInfo"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_job_range: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetJobRange"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -3280,6 +3827,66 @@ export interface operations {
             };
         };
     };
+    preview_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourcePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourcePreview"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_stem_sets: {
         parameters: {
             query?: {
@@ -3348,6 +3955,66 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SetStemSetAnalysis"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemSetInfo"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_stem_set_name: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetStemSetName"];
             };
         };
         responses: {

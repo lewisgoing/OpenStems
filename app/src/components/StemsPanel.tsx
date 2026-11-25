@@ -1,30 +1,63 @@
-import { Blend, FolderOpen, GripVertical, Layers, Music2, Pause, Play, X } from 'lucide-react'
+import { Blend, FolderOpen, GripVertical, Layers, Music2, Pause, Pencil, Play, Scissors, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { type StemFile, type StemSet, fileUrl } from '@/api/client'
 import { useEngine } from '@/api/engine'
 import { useSetAnalysis } from '@/api/queries'
 import { type PlayerState, StemPlayer } from '@/audio/player'
+import { dragAllHint, splitEmpty } from '@/lib/empty'
 import { cn, formatTime, stemColor } from '@/lib/format'
 import { tempoKeyOf } from '@/lib/tempokey'
 import { modClick, modKey, words } from '@/platform'
 import { capitalize, groupsOf, mixLabel, partName, stemSections, useMixFile } from '@/state/mix'
 import { JobNotes } from './Fit'
+import { SongName } from './SongName'
 import { TempoKey } from './TempoKey'
 import { useToast } from './toast'
 import { Button, IconButton, Tooltip } from './ui'
 import { Waveform, useSharedGain } from './Waveform'
+import { useTheme } from '@/lib/theme'
 
 export interface StemsPanelProps {
   title: string
+  /** The song's own file, dragged out by the title. None when it was moved or deleted. */
+  source?: string
   subtitle: string
   directory: string
   stems: StemFile[]
+  /**
+   * The "Hide empty stems" setting: stems with nothing in them stay out of the list, of
+   * what plays and of Drag all, until the line under the list brings them back.
+   */
+  hideEmpty?: boolean
   analysis?: Record<string, unknown>
   /** What did not go as planned, such as a model that ran on the CPU. */
   notes?: string[]
   /** The user changed the tempo or key: the stems as they are now (some may be renamed). */
   onRetagged?: (set: StemSet) => void
+  /**
+   * Name the song; null gives it its file's name back. Its stem folder and files are renamed
+   * with it, so the panel is then given the stems where they are now.
+   */
+  onRename?: (name: string | null) => Promise<unknown>
+  /**
+   * Open the trimmer on what solo and mute leave audible (`null` for every stem), with the
+   * solo and mute to bring back after it. `instant` when the keyboard asked.
+   */
+  onTrim?: (audible: string[] | null, how: { instant: boolean; mix: PanelMix }) => void
+  /** Solo and mute as they were when the panel was last left for the trimmer. */
+  initialMix?: PanelMix
+  /**
+   * The trimmer is coming in over the panel: it stops playing and leaves Space to the
+   * trimmer, for the moment it is still there under it.
+   */
+  frozen?: boolean
   onClose: () => void
+}
+
+/** What solo and mute are set to, to bring back when the panel comes back. */
+export interface PanelMix {
+  soloed: string[]
+  muted: string[]
 }
 
 function useStemPlayer(stems: StemFile[]) {
@@ -77,9 +110,27 @@ function Clock({ player }: { player: StemPlayer }) {
   return <span ref={ref}>0:00</span>
 }
 
-export function StemsPanel({ title, subtitle, directory, stems, analysis, notes, onRetagged, onClose }: StemsPanelProps) {
+export function StemsPanel({ title, source, subtitle, directory, stems: every, hideEmpty = false, analysis, notes, onRetagged, onRename, onTrim, initialMix, frozen = false, onClose }: StemsPanelProps) {
   const setAnalysis = useSetAnalysis()
+  // The song's stems without the empty ones, unless they were asked for. Everything below
+  // works on what is shown: an empty stem is not decoded, played, mixed or dragged.
+  const [showEmpty, setShowEmpty] = useState(false)
+  const empty = useMemo(() => splitEmpty(every, hideEmpty).hidden, [every, hideEmpty])
+  const stems = useMemo(() => splitEmpty(every, hideEmpty && !showEmpty).shown, [every, hideEmpty, showEmpty])
+  const hidden = every.length - stems.length
   const { player, state, playPause } = useStemPlayer(stems)
+  // Back from the trimmer, solo and mute are as they were left. Applied so that running it
+  // again (React's development mode does) changes nothing.
+  const mix = useRef(initialMix)
+  useEffect(() => {
+    const kept = mix.current
+    if (!kept) return
+    player.setMuted(kept.muted)
+    const soloed = player.state.soloed
+    if (kept.soloed.length > 0 && !(soloed.size === kept.soloed.length && kept.soloed.every((name) => soloed.has(name)))) {
+      player.toggleSoloMany(kept.soloed)
+    }
+  }, [player])
   const [dragging, setDragging] = useState<string | null>(null)
   const gain = useSharedGain(stems.map((s) => s.peaks))
   const totalSeconds =
@@ -96,17 +147,31 @@ export function StemsPanel({ title, subtitle, directory, stems, analysis, notes,
     [player, state.status, totalSeconds],
   )
 
-  // Space toggles playback. Keyboard-initiated, so nothing animates.
   useEffect(() => {
+    if (frozen) player.pause()
+  }, [frozen, player])
+
+  // Space toggles playback, and F2 renames the song as it does a file. Keyboard-initiated,
+  // so nothing animates.
+  const [renaming, setRenaming] = useState(false)
+  const canRename = Boolean(onRename)
+  useEffect(() => {
+    if (frozen) return
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
-      if (event.code !== 'Space' || target?.closest('input, textarea, [role="combobox"]')) return
+      if (target?.closest('input, textarea, [role="combobox"]')) return
+      if (event.key === 'F2' && canRename && !modKey(event) && !event.altKey && !event.shiftKey) {
+        event.preventDefault()
+        setRenaming(true)
+        return
+      }
+      if (event.code !== 'Space') return
       event.preventDefault()
       void playPause()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [playPause])
+  }, [playPause, frozen, canRename])
 
   const allPaths = stems.map((s) => s.path)
   // What solo and mute leave audible is a mix, and it can leave as one file. With every
@@ -126,11 +191,29 @@ export function StemsPanel({ title, subtitle, directory, stems, analysis, notes,
 
   return (
     <aside className="flex h-full w-[460px] flex-none flex-col border-l border-line bg-surface" aria-label="Stems">
-      <header className="flex items-start gap-3 px-4 pt-4 pb-3">
+      <header className="group/row flex items-start gap-3 px-4 pt-4 pb-3">
         <div className="min-w-0 flex-1">
-          <h2 className="m-0 truncate font-display text-[15px] font-semibold" title={title}>
-            {title}
-          </h2>
+          <div className="flex items-center gap-1">
+            <h2 className="m-0 flex min-w-0 font-display text-[15px] font-semibold">
+              <SongName
+                name={title}
+                source={source}
+                className="min-w-0"
+                editing={renaming}
+                onEditing={setRenaming}
+                onRename={onRename}
+                onError={toast.error}
+                hint="The stem folder and its files are renamed too. Empty it for the name of the file."
+              />
+            </h2>
+            {onRename && !renaming && (
+              <Tooltip label="Rename (F2)">
+                <button type="button" className="rename-btn reveal-on-hover pressable" aria-label="Rename" data-testid="panel-rename" onClick={() => setRenaming(true)}>
+                  <Pencil size={12} />
+                </button>
+              </Tooltip>
+            )}
+          </div>
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-muted">
             <span>{subtitle}</span>
             <TempoKey
@@ -163,6 +246,21 @@ export function StemsPanel({ title, subtitle, directory, stems, analysis, notes,
           {loading ? `Loading ${state.loaded}/${state.total}` : <><Clock player={player} /> / {formatTime(totalSeconds)}</>}
         </span>
         <span className="flex-1" />
+        {onTrim && (
+          <Tooltip label={partial ? `Trim what you hear: ${mixName}` : 'Cut a part out of the song or its stems'}>
+            <Button
+              size="sm"
+              data-testid="panel-trim"
+              onClick={(event) =>
+                // With empty stems left out, the trimmer opens on the ones shown, not on every stem.
+                onTrim(partial ? audibleNames : hidden > 0 ? names : null, { instant: event.detail === 0, mix: { soloed: [...state.soloed], muted: [...state.muted] } })
+              }
+            >
+              <Scissors size={13} />
+              Trim
+            </Button>
+          </Tooltip>
+        )}
         {partial && (
           <Tooltip label={mixPath ? `Drag what you hear as one file: ${mixName}` : 'Writing the mix you hear'}>
             <div
@@ -181,7 +279,7 @@ export function StemsPanel({ title, subtitle, directory, stems, analysis, notes,
             </div>
           </Tooltip>
         )}
-        <Tooltip label="Drag every stem into your DAW or a folder">
+        <Tooltip label={dragAllHint(stems.length, hidden)}>
           <div
             draggable
             role="button"
@@ -242,6 +340,25 @@ export function StemsPanel({ title, subtitle, directory, stems, analysis, notes,
             </ul>
           </li>
         ))}
+        {empty.length > 0 && (
+          // The stems with nothing in them, in one quiet line where they would have been.
+          // Shown or hidden at once: the list is what changes, and it is looked at.
+          <li className="mt-1 flex items-center gap-2 py-1 pr-1 pl-[27px] text-[12px] text-faint" data-testid="empty-stems">
+            <span className="min-w-0 flex-1 truncate" title={empty.map((stem) => stem.name).join(', ')}>
+              {empty.length} empty{showEmpty ? ' shown' : ''}: {empty.map((stem) => stem.name).join(', ')}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="flex-none"
+              aria-expanded={showEmpty}
+              aria-label={showEmpty ? 'Hide empty stems' : 'Show empty stems'}
+              onClick={() => setShowEmpty((shown) => !shown)}
+            >
+              {showEmpty ? 'Hide' : 'Show'}
+            </Button>
+          </li>
+        )}
       </ul>
 
       <footer className="truncate border-t border-line px-4 py-2 text-[12px] text-faint" title={directory}>
@@ -252,7 +369,7 @@ export function StemsPanel({ title, subtitle, directory, stems, analysis, notes,
 }
 
 const TOGGLE = 'press h-6 w-6 rounded-[5px] border border-transparent text-[11px] font-bold text-muted'
-const SOLO_ON = 'border-accent/50 bg-accent/15 !text-accent'
+const SOLO_ON = 'border-accent-fg/50 bg-accent/15 !text-accent-fg'
 const MUTE_ON = 'border-danger/50 bg-danger/15 !text-danger'
 
 interface StemRowProps {
@@ -267,12 +384,13 @@ interface StemRowProps {
 }
 
 function StemRow({ stem, player, state, dragging, onDragging, getProgress, onSeek, gain }: StemRowProps) {
-  const color = stemColor(stem.name)
+  const theme = useTheme()
+  const color = stemColor(stem.name, theme)
   const audible = player.isAudible(stem.name)
   const soloed = state.soloed.has(stem.name)
   const muted = state.muted.has(stem.name)
   return (
-    <li data-testid="stem-row" className={cn('group/row flex items-center gap-2 rounded-[8px] py-1.5 pr-2 pl-1', dragging && 'bg-raised')}>
+    <li data-testid="stem-row" data-empty={stem.empty || undefined} className={cn('group/row flex items-center gap-2 rounded-[8px] py-1.5 pr-2 pl-1', dragging && 'bg-raised')}>
       <div
         draggable
         role="button"
@@ -291,7 +409,7 @@ function StemRow({ stem, player, state, dragging, onDragging, getProgress, onSee
         <GripVertical size={13} className="flex-none text-faint" />
         <span className="h-2 w-2 flex-none rounded-full" style={{ background: color }} />
         {/* Under its group's heading a part goes by its short name: "lead", not "lead vocals". */}
-        <span className="truncate font-medium" title={stem.name}>
+        <span className={cn('truncate font-medium', stem.empty && 'text-muted')} title={stem.empty ? `${stem.name}: empty` : stem.name}>
           {partName(stem.name, stem.group)}
         </span>
       </div>

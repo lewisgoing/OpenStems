@@ -37,25 +37,32 @@ def post_process(
     cancel: CancelToken,
     sample_rate: int = 44100,
 ) -> dict[str, Any]:
-    """Returns extras for the writer: ``bpm``, ``key``, ``trim`` and ``midi``.
+    """Returns extras for the writer: ``bpm``, ``key``, ``downbeat`` (where bar 1 starts,
+    in seconds), ``trim`` and ``midi``.
 
     ``outputs`` is modified in place when normalization is on.
     """
-    extras: dict[str, Any] = {"bpm": None, "key": None, "trim": {}, "midi": {}, "offsets": {}}
+    extras: dict[str, Any] = {
+        "bpm": None,
+        "key": None,
+        "downbeat": None,
+        "trim": {},
+        "midi": {},
+        "offsets": {},
+    }
 
     template = getattr(options, "naming_template", "") or ""
     wanted = getattr(options, "detect_tempo_key", False) or getattr(options, "tempo_sync", False)
     if wanted or "{bpm}" in template or "{key}" in template:
-        bpm, key = analysis.detect_tempo_key(mix, sample_rate)
-        extras["bpm"], extras["key"] = bpm, key
+        bpm, key, downbeat = analysis.detect_grid(mix, sample_rate)
+        extras["bpm"], extras["key"], extras["downbeat"] = bpm, key, downbeat
     # The user's own figures win, and what detection found is kept beside them.
-    given_bpm, given_key = getattr(options, "bpm", None), getattr(options, "key", None)
-    if given_bpm is not None or given_key is not None:
-        extras["detected"] = {"bpm": extras["bpm"], "key": extras["key"]}
-        if given_bpm is not None:
-            extras["bpm"] = given_bpm
-        if given_key is not None:
-            extras["key"] = given_key
+    given = {name: getattr(options, name, None) for name in ("bpm", "key", "downbeat")}
+    if any(value is not None for value in given.values()):
+        extras["detected"] = {name: extras[name] for name in given}
+        for name, value in given.items():
+            if value is not None:
+                extras[name] = value
     cancel.raise_if_cancelled()
 
     wanted_midi = set(getattr(options, "midi_stems", None) or ())

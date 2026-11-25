@@ -57,6 +57,14 @@ Engine (run from `engine/`):
   `compare DIR DIR`: the same stems from two PyTorch builds (on the CPU)
 - `uv run pytest tests/test_links_mixes.py`: links and mixes, with a stand-in for the fetch
   (no test touches the network)
+- `uv run pytest tests/test_clips.py`: clips, bar 1 and the previews of songs' own files,
+  with the FakeEngine and synthetic beats
+- `uv run pytest tests/test_separate_selection.py`: a part of a song separated alone (the
+  setting, `POST /v1/jobs/{id}/range`, the run), with the FakeEngine
+- `uv run pytest tests/test_rename.py`: a song's name by the user (the rule, a run under a
+  name, stems renamed on the disk, both routes), with the FakeEngine
+- `uv run pytest tests/test_empty_stems.py`: which stems are empty (the rule, the peak a run
+  measures, stems from before it, the setting), with the FakeEngine
 - `uv run openstems serve`: start the local API (prints a JSON line with port and token)
 - `uv run openstems openapi --out openapi.json`: export the schema after any API change, then
   `pnpm gen:api` in `app/` (a test fails if `engine/openapi.json` is stale)
@@ -64,15 +72,58 @@ Engine (run from `engine/`):
   edit that file by hand). A model's `memory_gb` comes from `MEMORY_GB` in that script,
   copied from the Peak VRAM column of `docs/benchmarks.md`
 
+Site (the landing page on GitHub Pages, `site/`, `docs/adr/0025-site.md`; its sections,
+their addresses and what the app could link to are in `docs/site.md`):
+
+- `node scripts/build-site.mjs [OUT]`: assemble the site into `_site/` (or OUT) with the
+  changelog, the icon and three README pictures, and the version from `app/package.json`
+  (what the page shows until GitHub answers); serve it with `python -m http.server -d OUT`
+  (the page fetches `CHANGELOG.md`, so `file://` does not work)
+- `.github/workflows/pages.yml` deploys it on a push to `main` that touches it, the
+  changelog or those pictures (a pull request only builds it). The support button opens the
+  `href` of `#support-link` in `site/index.html` (the owner's Ko-fi page) and hides if that
+  is emptied. Its requirements, the
+  Mac's first-open steps and "Will it run?" (`MACHINES` in `site/main.js`, the README's
+  Memory table) copy the README's, and its OpenStems Studio section (anchor `#trim`) copies `rangeLabel`, `rangeLength`
+  and `mixLabel`: change both together. Sizes in `site/style.css` are in rem (media queries and
+  hairlines stay in px): past 1920px the root size grows with the window, to twice at 3840px,
+  so a 4K screen at 100% shows the 1920px layout larger. Write new sizes in rem
+
 App (run from `app/`):
 
 - `pnpm install`, `pnpm dev`: run the app with hot reload (starts the engine itself)
 - `pnpm typecheck`, `pnpm test`: TypeScript and component tests
+- `pnpm test trimmer`: the trimmer's plain functions, the twins against
+  `engine/tests/fixtures/clip_labels.json`, and the editor with the engine mocked
+  (`src/test/trimstub.ts` stands in for Web Audio, which jsdom lacks)
 - `pnpm build && pnpm e2e`: end-to-end tests (Playwright + Electron + FakeEngine); the build
   must be current
 - `SHOTS=1 SHOTS_DIR=<folder> pnpm e2e -g screenshots`: capture every view for design review,
   the quick-drop window included (`tray-on-screen.png` is the real screen around it)
-  and a machine with little memory (`memory-1-queue.png` to `memory-7-settings.png`)
+  and a machine with little memory (`memory-1-queue.png` to `memory-7-settings.png`).
+  The main views are taken in light as well (`light-1-empty.png` to `light-tray.png`),
+  the welcome's steps in both (`welcome-1-folders.png` to `light-welcome-3-models.png`) and
+  the row menus (`3b-row-menu.png`, `tray-4b-row-menu.png`), and the foot of Settings with
+  its links to the website (`7b-settings-about.png`). Renaming is taken in both
+  (`rename-1-menu.png` to `rename-5-panel-field.png`, and `light-` the same). The trimmer is taken in both
+  (`trim-1-open.png` to `trim-5-queue-part.png`, `light-trim-1-open.png` to
+  `light-trim-5-queue-part.png`, and `trim-6-bar-one-before.png` with its light twin: bar 1's
+  flag at the left edge), on a drum loop the spec writes
+- `pnpm e2e theme`: the theme switch, both windows, the pick across a restart
+- `pnpm e2e welcome`: the welcome on a first start (`OPENSTEMS_E2E_WELCOME=1` forces it,
+  since the FakeEngine has every model; `__openstemsE2E.pickFolder` stands in for the folder
+  picker). `pnpm e2e row-menu`: the right-click menu on queue rows, both windows
+- `pnpm e2e trimmer`: the trimmer on the FakeEngine: a grid fixed by hand and parts of a
+  stem, of every stem and of a mix dragged out as WAVs the length of the part; a waiting
+  song's own file; bar 1 dragged before the song and back, lengths in bars and the loop a new
+  part gets; "Separate only the trimmed part"; Trim from the stems panel; a stem that
+  enters late (`OPENSTEMS_FAKE_LATE=<stem>:<seconds>` leaves a FakeEngine stem silent at its
+  start, so with Trim silence on its file begins later in the song)
+- `pnpm e2e rename`: a song renamed from its row's menu before it runs, then its stems on
+  the disk from the stems panel (also while they play) and from History
+- `pnpm exec playwright test e2e/empty-stems.spec.ts`: stems with nothing in them left out of
+  the panel, the quick-drop window and the drag handles (`OPENSTEMS_FAKE_EMPTY=<stem>,<stem>`
+  leaves those FakeEngine stems a hiss). `EMPTY_SHOTS=<folder>` saves pictures of it
 - `pnpm e2e low-memory`: the CPU note and the marks of an 8 GB machine, with the FakeEngine
   (`OPENSTEMS_FAKE_OOM`, `OPENSTEMS_MEMORY_GB`)
 - `README_SHOTS=1 pnpm e2e -g "readme pictures"`: retake the README's pictures into
@@ -102,7 +153,20 @@ App (run from `app/`):
   its Mac state: run `pnpm package:prepare` afterwards to put the Windows one back
 - Signing the Mac build: ad hoc (`app/mac-build.cjs`, the configuration the Mac commands
   read) unless `CSC_LINK` and `CSC_KEY_PASSWORD` are set where `pnpm dist:mac` runs; notarized when `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and
-  `APPLE_TEAM_ID` are set as well. Never commit any of them
+  `APPLE_TEAM_ID` are set as well. Never commit any of them. There is no Developer ID: the
+  certificate is one the project makes itself (`bash scripts/make-mac-cert.sh NAME FOLDER
+  PASSWORD`, once, with the folder outside the repository), which lets an installed Mac app
+  update itself. `release-mac.yml` sees that it is self-signed, trusts it on the runner and
+  sets `OPENSTEMS_SELF_SIGNED=1` (no hardened runtime, no notarization). Every release must
+  use the same certificate: `docs/adr/0018-mac-self-signed.md`
+- `bash scripts/mac-update-test.sh ENGINE` in `app/` (Mac CI runner only: it trusts the
+  certificate with sudo): two self-signed builds, with the project's certificate from the
+  secrets or a throwaway one, the requirement check the installer makes, and the older one
+  installing the newer one through the real updater (`e2e/mac-update.spec.ts`). The Mac app
+  job in CI runs it
+- `OPENSTEMS_UPDATE_FEED=<http(s) address>` before starting the app: read updates from that
+  folder (a `latest-mac.yml` or `latest.yml` and the build beside it) in place of the GitHub
+  releases (`updatelogic.testFeedUrl`). For trying an update by hand
 - Releasing: set the version in `app/package.json`, `engine/pyproject.toml` and
   `engine/src/openstems/__init__.py`, `uv lock`, changelog heading, merge, tag `v<version>` on
   `main`, `pnpm dist`, then `gh release create v<version>` with those three files. Never a
@@ -133,8 +197,9 @@ App (run from `app/`):
   `audio`, `engines`, `pipeline`, `worker`, `api`, `settings.py`, `cli.py`; tests in
   `engine/tests/`
 - `app/`: Electron + React shell. `electron/` (main process, preload, engine launcher, first-run
-  setup, tray), `src/` (React UI: `api/`, `components/`, `views/`, `audio/`, `state/`, `tray/`),
-  `e2e/`
+  setup, tray), `src/` (React UI: `api/`, `components/`, `views/`, `audio/`, `state/`, `tray/`,
+  `trimmer/`), `e2e/`
+- `site/`: the landing page (static, no build tool), deployed to GitHub Pages
 - `docs/adr/`: decision records; `docs/benchmarks.md`: speed and VRAM per model;
   `docs/research/`: research and plans for features not yet built (`stem-to-midi.md`, the plan
   behind Phase 7)
@@ -148,7 +213,14 @@ work). Tests never touch real settings: `tests/conftest.py` points every folder 
 API structure: `api/app.py` (routes), `api/service.py` (runtime, index, queue, downloads in one
 object), `api/jobs.py` (the queue and job states), `worker/supervisor.py` and `worker/process.py`
 (the GPU worker process), `api/db.py` (SQLite index). API tests use a real worker process with
-the FakeEngine; the API process itself never imports torch. What needs torch is asked of a
+the FakeEngine; the API process itself never imports torch. A job that fails with an
+unexpected error (not a `DomainError`, not a cancel) ends the worker, and the supervisor
+starts a fresh one for the next job (`WorkerSupervisor._replace`, not a crash). The reason:
+a failed import of torch leaves the process failing every job after it with "module 'torch'
+has no attribute 'device'". So never import torch again in a process where its import
+failed. The traceback goes to `engine.log`, the only place it is kept, and
+`OPENSTEMS_FAKE_IMPORT_FAILS=<model id>` acts the failure out with the FakeEngine
+(`docs/adr/0024-fresh-worker-after-failure.md`). What needs torch is asked of a
 process of its own: the self-test, and the doctor (`service.run_doctor_process`, which runs
 `openstems doctor --json`). The doctor's report is kept in the cache folder as `machine.json`
 and checked again in the background at each start (`Service._refresh_machine`), so only the
@@ -170,7 +242,8 @@ Mac branch must be right by reading, and every Mac decision must be a plain func
 by a unit test that runs on Windows with the platform passed in or patched. The Electron glue
 that only carries those decisions is read, not tested: ADR 0014 names it ("Read, not
 tested"). The owner tests on an M1 Max with 32 GB: 0.3.0 was installed from the dmg there on
-2026-11-23 and setup, a separation and the menu bar item worked. Say what has been seen on a
+2026-11-23 and setup, a separation and the menu bar item worked; later that day 0.3.2
+installed 0.3.3 there by itself. Say what has been seen on a
 Mac and what has not wherever Mac support is described, and when a change cannot be proven
 from Windows give the owner steps to run on the Mac (`docs/adr/0014-macos.md`). On "mps" the engine checks the STFT against the CPU once per
 process and, if it fails, runs `torch.stft` and `torch.istft` on the CPU from then on
@@ -192,7 +265,8 @@ first download), the budget and `memory_kind` (where models run: the app words t
 it) in the system info and `notes` on a job. The app's sentences about a fit are in
 `app/src/lib/memory.ts`; they say what may happen, since the engine never consults the fit
 and always tries the GPU first. On out-of-memory
-(`engines/device.is_oom` is the one check: CUDA's class, the MPS wording, the CPU's)
+(`engines/device.is_oom` is the one check: CUDA's class, the MPS wording, the CPU's; the
+pipeline asks it only once torch is loaded, `run._out_of_memory`)
 `Pipeline._separate` goes in order: the runner's batch backoff, drop the other warm models
 and retry, then that model on the CPU for this job, with the note "<model name> ran on the
 CPU: not enough GPU memory" on the job and in the manifest. A machine that runs on the CPU
@@ -213,6 +287,17 @@ and `bin/openstems` where Windows has `Scripts` and `.exe`. The engine decides t
 in, no Node or Electron imports): change both together. Windows folders are unchanged. A Mac
 has no uninstaller, so `engine-env` stays until the user deletes it.
 
+Light and dark: the pick (`system`, `light`, `dark`; dark by default) is `theme` in
+`shell.json`. The main process sets `nativeTheme.themeSource` from it, and both windows read
+it back through `prefers-color-scheme` (`src/lib/theme.ts` sets `data-theme` on the root,
+`styles.css` swaps the tokens under `:root[data-theme='light']`). Use the color tokens and
+the variables beside them, never a raw color: `--color-accent-fg` for the accent as text or a
+thin line, `stemColor(name, useTheme())` for a stem. `WINDOW_COLORS` in `traylogic.ts` must
+match `--color-bg` and `--color-muted` (a test checks it). Playwright answers
+`prefers-color-scheme` with "light" unless a launch passes `colorScheme: null`, as every one
+in `e2e/` does. The switch sits at the foot of the sidebar and under Settings > Appearance.
+`docs/adr/0020-light-mode.md`.
+
 Words and keys in the UI: `src/platform.ts` holds what the renderer says and listens for
 differently on a Mac (Finder, menu bar, "Open at login", Cmd for Ctrl through `shortcut` and
 `modKey`). Use it instead of writing "Ctrl", "tray" or "Explorer" into a component.
@@ -224,7 +309,10 @@ the part with no Electron in it (window placement, icon state, the `shell.json` 
 and what differs between Windows and a Mac: window frame, menus, when the app quits, the
 template icons, `menuBarPlacement`) and is what the unit tests cover. On a Mac the icon is a
 menu bar item, the quick-drop window is a panel under the menu bar, closing the window never
-quits and the Dock icon stays. Both windows load one bundle; `?window=tray` picks
+quits and the Dock icon stays. The icon has four states (`trayPresentation`): busy (a ring),
+stems ready (a dot), a new version (`update`: a small dot over a shortened fourth bar, blue on
+Windows) and idle, in that order of priority; `node scripts/make-icons.mjs` draws all four
+for both systems. Both windows load one bundle; `?window=tray` picks
 `src/tray/TrayApp.tsx`. What both windows do with dropped files lives in
 `src/state/dropflow.tsx`. The quick-drop window does not hide on blur, on purpose:
 `docs/adr/0008-tray.md`. In tests the tray is driven through `__openstemsE2E` (`e2e/helpers.ts`),
@@ -234,15 +322,50 @@ Self-update: `electron/updatelogic.ts` is the state machine with no Electron in 
 `src/test/update.test.tsx`); `electron/updater.ts` is the thin part on `electron-updater`.
 Both steps, download and restart, wait for the user. The repository is public because
 installed apps read its releases: `docs/adr/0010-self-update.md`. A Mac app updates itself
-only when it is signed with a Developer ID (`updater.updateBackend` asks `codesign` once at
-start). An unsigned one takes the manual path: the offer is marked `manual`, "download" opens
-the release page, and the state stays `available`.
+only when it is signed with a certificate, a Developer ID or the project's own
+(`updater.updateBackend` asks `codesign` once at start; `updatelogic.canInstallUpdates`
+decides). One signed ad hoc takes the manual path: the offer is marked `manual`, "download"
+opens the release page, and the state stays `available`. 0.3.2 is the first self-signed
+release, and it installed 0.3.3 by itself on the owner's M1 Max (ADR 0018).
 
 Names: `OpenStems` where people read it and for folders, `openstems` for the command, the
 Python package and keys, `OPENSTEMS_*` for environment variables. The app was lew-stems before
 0.2.0; `settings.adopt_legacy_settings` carries a user's settings over once, and that name
 survives only there, in the changelog and in `docs/adr/0009-rename-openstems.md`. The folder
 `D:\lew-stems` on the development machine is a real folder and keeps its name.
+
+Website links: `app/electron/links.ts` holds the addresses the app opens in the browser
+(`WEBSITE`, `REPOSITORY`, `siteLink(section)` for the changelog, Will it run? and Support
+sections), with no Node or Electron imports, for the main process and the renderer alike.
+`AboutSettings` (Settings > About, both systems) and the Mac Help menu (`macMenuTemplate`)
+use them, and the memory row links to Will it run?. In a window a link is `ExternalLink`
+(`components/ui.tsx`), a real link with `target="_blank"`, which `electron/windows.ts` sends
+to the browser. The section anchors are the site's (`docs/site.md`): `src/test/links.test.tsx`
+reads `site/index.html` and fails when one the app names is gone. Change both together.
+Welcome: the first start with the engine ready, nothing installed and the key
+`openstems.welcome.v1` (or the older `openstems.seed-offer.v1`) not in local storage opens
+`components/Welcome.tsx`: folders with free space, format and auto start, the recommended
+models. Every choice is the setting itself, saved at once. Free space is `fs:space` in the
+main process (`statfs`; the folder walk is `electron/space.ts`, pure). Settings > Getting
+started calls `showWelcomeAgain`. `OPENSTEMS_OUTPUT_DIR` and `OPENSTEMS_MODELS_DIR` win over
+the folders picked there. `docs/adr/0021-welcome.md`.
+
+Row menus: a right-click on a queue row (both windows) and a link row opens
+`components/RowMenu.tsx`. `jobMenuItems` decides the items from the job's state and the
+handlers a window passes (the quick-drop window has no reordering or Trim); `moveQueued` in
+`QueueView.tsx` is the reorder shared with dragging. `shell:reveal` answers whether the file
+was there. Nothing in the menu deletes a file. `docs/adr/0022-row-menus.md`.
+
+Queue order and search: the engine lists jobs in the order they run; the full window sorts
+and narrows that list itself (`app/src/lib/queuesort.ts`, plain functions: `sortQueue`,
+`searchTerms`, `matchesSearch`, `loadSort`). Newest first by default, also Oldest, Name and
+Run order; the pick is `openstems.queue.sort.v1` in local storage. Links being fetched are
+sorted with the jobs. A waiting song's drag handle is there in Run order only (`reorderable`);
+the menu's moves stay. Search matches every word in the song's or recipe's name, accents and
+case aside; Ctrl+F (Cmd+F) goes to it (`QueueSearch` in `QueueView.tsx`). A row animates in
+only when it is new to the queue (`enter`, read once), never when a search or a sort brings
+it back. Tests about rows, not their order, pin `SORT_KEY` to `run`. The quick-drop window
+has neither. `docs/adr/0026-queue-search-sort.md`.
 
 Manual start: a queued job can be held (`held` on a job; `JobManager.release` lets it go,
 `POST /v1/jobs/start` and `/v1/jobs/{id}/start`). Whether a new job is held follows the
@@ -255,10 +378,19 @@ a thread with progress as `link.updated` events, then `Service._queue_fetched` q
 ordinary job for the file, kept under `<output>/_links/`. `openstems/links.py` is the fetcher:
 yt-dlp, pinned in `pyproject.toml` with its `deno` extra (the JavaScript runtime YouTube
 needs; its path is passed to yt-dlp, since `Scripts` is not on `PATH` in the packaged app).
-When a site stops working, bump that pin and release. With `OPENSTEMS_ENGINE=fake` a stand-in
+When a site stops working, bump that pin and release: `.github/workflows/links-check.yml`
+runs `scripts/check_ytdlp.py` every day and keeps an issue "Update yt-dlp to <version>" open
+while the pin is behind the newest release. `python scripts/check_ytdlp.py --write` moves the
+pin; then `uv lock` in `engine/`, try a real link, release. With `OPENSTEMS_ENGINE=fake` a stand-in
 fetches: no test touches the network, and `slow`, `fail` or `playlist` in the address make it
 slow, fail or refuse. In the app both windows share `components/LinkRow.tsx`, and pasting and
 dropping links live in `state/dropflow.tsx` beside files.
+
+Original file: a song's title drags its own file out (`components/SourceTitle.tsx`, in the
+stems panel, the queue, History and the tray). The main process lets a drag through only
+for the extensions in `DRAGGABLE` (`electron/main.ts`), which must hold the engine's
+`AUDIO_SUFFIXES` (`cli_inputs.py`): change both together. A title dragged out and let go
+over the app's own window is not queued again (`lib/sourcedrag.ts`).
 
 Mixes: `POST /v1/mixes` (`pipeline/mix.py`) sums stem files into `<stem folder>/Mixes/`. The
 app asks for the file before a drag can start (`state/mix.ts`, `useMixFile`). The mix's name
@@ -276,10 +408,31 @@ exactly). In the app `state/mix.ts` holds the plain functions (`stemSections`, `
 first reaches its handle. The 53-stem model is not chained into it on purpose: its stems
 overlap. `docs/adr/0017-every-stem.md`.
 
+Empty stems: a stem is `empty` when its peak stays more than 45 dB under the loudest stem
+of its set (`domain/levels.py`, `EMPTY_BELOW_DB`; the figures behind it are in the ADR). A
+run measures each stem's peak before normalize and keeps it in the manifest (`Stem.peak`);
+stems from before that are judged from their peaks files (`pipeline/levels.py`,
+`mark_empty`), index rows and saved jobs once at start (`Index.mark_empty_stems`,
+`_with_empty` in `api/jobs.py`). `StemFile.empty` carries the verdict. Every stem is
+written whatever it says, and the engine never reads the `hide_empty_stems` setting (on by
+default): it is the app's. In the app `lib/empty.ts` (`splitEmpty`) decides what a list
+shows: the stems panel (`hideEmpty`; a line under the list brings them back), the pills of
+the quick-drop window ("+N empty", per song) and the handles that drag every stem all leave
+empty stems out, and a song whose stems are all empty shows them all. What is left out is
+not decoded, played, mixed or dragged, and Trim from the panel opens on what is shown. With
+the setting off an empty stem is only dimmed (`data-empty`). The trimmer's own chips list
+every stem. `docs/adr/0027-empty-stems.md`.
+
 Tempo sync: with the `tempo_sync` setting on, `write_audio` appends an `acid` chunk with the
 detected tempo to WAV stems and mixes (`audio/write.py`, `tempo_chunk`), which FL Studio
 reads to stretch them to the project's tempo. FL reads the tempo field only; the beat count
-stays 0. The option enters a run's cache key only when on. `docs/adr/0016-tempo-sync.md`.
+stays 0. The option enters a run's cache key only when on. FL reads tempo from WAV only:
+`domain/tempo.py` holds which formats carry it (`TEMPO_FORMATS`, the same set as
+`TEMPO_FORMATS` in `app/src/components/FormatSelect.tsx`: change both together) and the notes
+a job gets when its stems carry none (an MP3 or FLAC run, or no tempo found; the second goes
+when a tempo is typed in). FL stretches a sample by itself only up to about a minute (60 s
+yes, 90 s no, measured on 2026-11-23, not in its manual); a full stem needs the clip menu's
+"Fit to tempo" with the "(embedded)" tempo, which the hint says. `docs/adr/0016-tempo-sync.md`.
 
 Tempo and key by hand: a job's `bpm` and `key` options replace what detection finds for
 that run (`pipeline/extras.py`); they are not in the cache key, and a cached result is
@@ -291,6 +444,110 @@ finished one is re-tagged) and `POST /v1/stemsets/analysis` (a folder). In the a
 `components/TempoKey.tsx` is the pair of fields, in the queue row of a waiting song and in
 the stems panel. What may be typed is decided in `retag.clean_bpm`/`clean_key` and in
 `app/src/lib/tempokey.ts`: change both together. `docs/adr/0019-edit-tempo-key.md`.
+
+A song's name: a song goes by its file's name until the user gives it another, and the
+name is the song's, not a row's. A job's `name` option (`RunOptions.name`, `Track.title`)
+names a run: the folder `<output>/<name>/<recipe>`, the stems through `{track}`, and
+`source.name` in the manifest; it is not in the cache key. `JobInfo.track_name` is that
+name or else the file's. `POST /v1/jobs/{id}/name` (`Service.rename_job`) names every row
+of the same file: a row that waits keeps it for its run, and stems that are written are
+renamed on the disk. `POST /v1/stemsets/name` (`rename_stem_set`) does the same from a stem
+folder and resolves with the stem set where it is now. `pipeline/rename.py` (`rename_song`)
+is the disk's part: the song's folder first (on Windows it cannot move while a file in it
+is open elsewhere, and then nothing has changed), then the stems and MIDI files of every
+stem folder in it and each manifest, undone if a step fails; a folder or file that has the
+new name stops it. Mixes and clips keep the names they have. `Service._rename_folder` has
+the index and the queue follow (`JobManager.moved`, `set_name`), and refuses while the song
+runs. A file queued again takes the name it was given (`Service._given_name`). A part
+separated alone keeps its label: the job's route composes "<name> (<label>)", the stem
+set's takes the name whole. null gives the file's name back. The song's own file is never
+renamed. What may be typed is decided in `clean_name` (`domain/naming.py`) and `cleanName`
+(`app/src/lib/songname.ts`), both tested against `engine/tests/fixtures/song_names.json`:
+change both together. In the app `components/SongName.tsx` is the title that turns into a
+field in place (`.name-input`: margin takes back padding, so nothing moves; no motion);
+`useRename` in `api/queries.ts` saves. Ways in: Rename in the queue row's menu (an item
+with `takesFocus` keeps the closing menu from taking the focus back: `finalFocus` in
+`RowMenu.tsx`), the pencil and F2 in the stems panel, and a double click on a title where a
+click does not move it (`doubleClick`: not a row of the queue or History whose stems are
+closed, since the first click opens them and the list can reflow). The quick-drop window has none.
+`docs/adr/0027-rename.md`.
+
+Clips: a stretch of a song as a file of its own, to drag into a DAW. `POST /v1/clips`
+(`pipeline/clip.py`) cuts it from stems of one stem set, summed into one file or one file
+each, into `<stem folder>/Clips/`, or from the song's own file (`source`; a stem that was
+itself separated is both) into `<output>/<track>/Clips/`. Start and end are seconds of the
+song's timeline, a stem whose silence was trimmed keeps its place, and every clip of one
+request has the same length. Always WAV: wav24 when the stems are, float otherwise. Each
+clip carries `OpenStems clip <hash>` in its WAV's `LIST`/`INFO` comment and is found again by
+it; a file of its name that is newer than what it was cut from is never written over (the
+clip takes `(2)`, `(3)`), one that is older is replaced. `POST /v1/sources/preview`
+(`pipeline/preview.py`) makes a song in the queue or the history playable before separation:
+a FLAC, its peaks and the detected grid in `<cache>/previews/`, the 8 newest kept, which
+`is_served` serves. Bar 1 (`downbeat`, seconds into the song) is detected with the tempo
+(`analysis.detect_grid`) and set by hand like the tempo and key: `JobOptions.downbeat`,
+`SetAnalysis.downbeat`, `analysis.downbeat` in the manifest; bar 1 alone rewrites the
+manifest only. Stems carry `start` (offset / 44100). `clip_label` in `domain/grid.py` and
+`rangeLabel` in `app/src/lib/grid.ts` name a selection alike ("bars 9-16", "9.3-11.2",
+"0m21.40s-0m33.10s"), with JavaScript's rounding; the cases are in
+`engine/tests/fixtures/clip_labels.json`, which `src/test/trimmer.test.tsx` reads too: change
+both together. What may be typed for bar 1 is decided in `grid.clean_downbeat` and in
+`cleanDownbeat` (`app/src/lib/grid.ts`): change both together. `docs/adr/0023-trimmer.md`.
+
+Trimmer: the app's side of clips, an editor for one song at a time (`src/trimmer/`). Trim on
+a queue row that waits or is separated (`canTrim`), in the row menu, and in the stems panel
+(Queue and History: it opens on what solo and mute leave audible, past `OPEN_STEMS` on the
+song's own file since every chosen stem is decoded whole, and `initialMix` puts them
+back) shows `TrimEditor` in place of the view and the panel (`Workspace` in `App.tsx`); the
+sidebar stays, and a view switch or the song leaving the list closes it. The view stays
+mounted under it (`inert`, and not drawn once the editor has come in), so Back finds its
+scroll and search; only the stems panel goes, frozen during the entrance (`frozen`), and
+`StartButton` stops listening (`listen`). The quick-drop window has none. `song.ts` builds the song from a job or a stem set and holds the grid rules
+(`songGrid`, `gridChange`, `resetChange`); `model.ts` the chips, snapping and moving, the
+readout, the zoom wheel per platform (`isZoomWheel`), a part of so many bars (`barsRange`,
+`BAR_LENGTHS`, the typed length kept as `openstems.trim.bars.v1`), where a click puts the
+playhead (`seekPlace`: 0:00 when that is nearer than a line) and what a handle asks for
+(`clipRequest`); `Stage.tsx` the ruler (bar 1's flag, the two-point fit with `fitBar`), the
+waveform and the overview. Bar 1 before the song's start keeps its flag at the left edge
+(`pinned`), to be dragged back in; the start takes hold of a flag dragged close to it
+(`flagPlace`), and a double click on the flag or 0:00 in the toolbar puts bar 1 there. A part
+chosen where there was none is looped (`selectionDone` in `TrimEditor.tsx`); Home is
+`toStart`; `memory.ts` what each song was left as, for the session, with the
+timeline it was on (`origin`, moved by `moveRange` when a part comes back separated). One tempo
+per song: the grid, `downbeat` with it, is saved through `useSetAnalysis` (the job's route,
+else the stem set's) when a gesture ends, never on every frame; a nudge or tap still waiting
+is saved when the editor is left. `lib/grid.ts` is the grid as
+plain functions. `audio/pyramid.ts` draws a waveform at any zoom from decoded audio, and from
+the engine's peaks until then; several chosen stems are layers (`drawLayers`), each in its
+`stemColor`, ordered per pixel column so none hides another. `audio/trimplayer.ts` plays the song's own file (its preview,
+`useSourcePreview`) and the stems from the song's 0 (a stem padded by its `start`), with a
+loop, play once and a click, and decodes a track only when it is chosen. `state/clip.ts`
+(`useClipFiles`) has the engine write what a handle gives before its drag: a mix through
+`/v1/mixes`, a part through `/v1/clips`, 350 ms after the request settles and never
+mid-gesture; an editor opened anew asks again (`forgetWritten`), so a deleted or stale clip
+is written anew. The footer's widths are set per container width in `styles.css`, and the
+toasts rise above it (`--toast-lift`). Twins: `rangeLabel` and `clip_label`, `cleanDownbeat` and `clean_downbeat` (see
+Clips): change both together. Words for keys come from `freeKey` (Alt, Option), `modName` and
+`modClick` in `src/platform.ts`. Tests: `src/test/trimmer.test.tsx`, `src/test/layers.test.ts`
+(the layered waveform), the Mac cases in `src/test/mac.test.tsx`, and `pnpm e2e trimmer`.
+`docs/adr/0023-trimmer.md`.
+
+Separating only the part: with `separate_selection` on (off by default; read when the song
+starts), a part chosen on a waiting song is all that is separated, as a song of its own named
+"<song> (<label>)" (`Track.part`). `POST /v1/jobs/{id}/range` sets it (`{"range": {start,
+end, grid?}}`) or takes it away (`{"range": null}`), refused once the song has started and
+when a job is created; it is named by `clip_label` when it is set, and again whenever the
+job's tempo or bar 1 changes (`JobManager.set_analysis`). A job without a tempo of its own
+keeps the grid the part was named on (`_keep_grid` in `api/jobs.py`). It is cut where a clip of
+the same selection is (`SongPart.frames`), and its timeline starts at the part's start:
+`manifest.source.range` records it, and its samples and duration are the part's. Bar 1 is
+moved into the part by whole bars (`grid.part_downbeat`). The cache key carries the frames
+only for a part. `JobInfo.part` and `StemSetInfo.part` say what ran; the trimmer opens a
+part's stems without Original (`isPart` in `song.ts`). In the app the setting is "Separate
+only the trimmed part" in Settings > Queue. While it is on, `TrimEditor` sends a waiting
+song's selection as its part once it settles (`useSetJobRange`; again when a new grid names
+it differently, `null` when it is cleared), its readout says "Start separates only
+<label>.", and the queue rows of both windows add "<label> only" (`statusText`, `jobRange`).
+Off, the editor sends nothing and nothing mentions a part. `docs/adr/0023-trimmer.md`.
 
 Dependencies point inward: `domain` imports nothing from the other packages and never imports
 torch. `cli` and `api` are the only entry points.

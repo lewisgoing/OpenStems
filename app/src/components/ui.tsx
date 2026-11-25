@@ -2,7 +2,7 @@ import { Dialog as BaseDialog } from '@base-ui/react/dialog'
 import { Select as BaseSelect } from '@base-ui/react/select'
 import { Switch as BaseSwitch } from '@base-ui/react/switch'
 import { Tooltip as BaseTooltip } from '@base-ui/react/tooltip'
-import { Check, ChevronsUpDown } from 'lucide-react'
+import { ArrowUpRight, Check, ChevronsUpDown } from 'lucide-react'
 import {
   type ButtonHTMLAttributes,
   type ReactElement,
@@ -45,6 +45,23 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   )
 })
 
+/* ---- ExternalLink ---------------------------------------------------------- */
+
+/**
+ * A link that opens in the user's browser. It is a real link (the main process sends every
+ * `https://` address a window opens to the browser: `electron/windows.ts`), so it can be
+ * copied and it says where it goes. The arrow marks that it leaves the app.
+ * `inline` is for a link in a sentence; without it the link looks like a button.
+ */
+export function ExternalLink({ href, inline, className, children }: { href: string; inline?: boolean; className?: string; children: ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className={cn(inline ? 'link press' : 'btn pressable', className)}>
+      {children}
+      <ArrowUpRight size={inline ? 11 : 13} aria-hidden className={inline ? 'link-arrow' : 'text-faint'} />
+    </a>
+  )
+}
+
 /* ---- Tooltip --------------------------------------------------------------- */
 
 export const TooltipProvider = BaseTooltip.Provider
@@ -81,7 +98,8 @@ export const IconButton = forwardRef<HTMLButtonElement, ButtonProps & { label: s
 interface SegmentedProps<T extends string> {
   label: string
   value: T
-  options: { value: T; label: string; hint?: string }[]
+  /** `label` may be an icon; `name` then gives the option its accessible name. */
+  options: { value: T; label: ReactNode; name?: string; hint?: string }[]
   onChange: (value: T) => void
   className?: string
 }
@@ -107,9 +125,10 @@ export function Segmented<T extends string>({ label, value, options, onChange, c
           type="button"
           role="radio"
           aria-checked={option.value === value}
+          aria-label={option.name}
           title={option.hint}
           tabIndex={option.value === value ? 0 : -1}
-          className="segmented-option"
+          className="segmented-option press"
           onPointerDown={() => setAnimate(true)}
           onClick={() => onChange(option.value)}
           onKeyDown={(event) => {
@@ -216,7 +235,7 @@ export function Select({ label, value, options, onChange, className, renderValue
                   )}
                   {group.options.map((option) => (
                     <BaseSelect.Item key={option.value} value={option.value} disabled={option.disabled} className="menu-item">
-                      <span className="w-3.5 flex-none text-accent">
+                      <span className="w-3.5 flex-none text-accent-fg">
                         <BaseSelect.ItemIndicator>
                           <Check size={13} />
                         </BaseSelect.ItemIndicator>
@@ -301,10 +320,17 @@ export function ProgressBar({ value, indeterminate, color }: { value: number; in
 export function CommitInput({
   value,
   onCommit,
+  commitUnchanged = false,
   ...props
 }: Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value'> & {
   value: string
   onCommit: (value: string) => void
+  /**
+   * Enter commits what the field shows even when it is unchanged, for a value shown rounded
+   * (bar 1, kept to a tenth of a millisecond, shows milliseconds): the owner of the field
+   * compares the numbers. Leaving the field still commits only a change.
+   */
+  commitUnchanged?: boolean
 }) {
   const [draft, setDraft] = useState(value)
   const focused = useRef(false)
@@ -325,7 +351,10 @@ export function CommitInput({
         if (draft !== value) onCommit(draft)
       }}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') event.currentTarget.blur()
+        if (event.key === 'Enter') {
+          if (commitUnchanged && draft === value) onCommit(draft)
+          event.currentTarget.blur()
+        }
         if (event.key === 'Escape') {
           setDraft(value)
           requestAnimationFrame(() => (event.target as HTMLInputElement).blur())

@@ -12,17 +12,21 @@ import { DropOverlay } from '@/components/DropOverlay'
 import { JobNotes } from '@/components/Fit'
 import { FormatSelect } from '@/components/FormatSelect'
 import { LinkRow, useOpenLinks } from '@/components/LinkRow'
+import { type MenuItem, RowMenu, jobMenuItems, revealHandlers } from '@/components/RowMenu'
 import { QUALITY, useCurrentFit, useCurrentRecipe, useRecipeOptions } from '@/components/RecipeBar'
+import { SourceTitle } from '@/components/SourceTitle'
 import { ToastProvider, useToast } from '@/components/toast'
 import { Button, IconButton, ProgressBar, Segmented, Select, Tooltip, TooltipProvider } from '@/components/ui'
 import { UpdatePill } from '@/components/Update'
 import { Wordmark } from '@/components/Wordmark'
+import { dragAllHint, splitEmpty, stemCount } from '@/lib/empty'
 import { cn, formatBytes, formatPercent, stemColor } from '@/lib/format'
 import { isMac, shortcut, words } from '@/platform'
 import { PendingDownload, useDropFlow, usePaste } from '@/state/dropflow'
 import { type MixFile, capitalize, groupsOf, mixLabel, useMixFile } from '@/state/mix'
 import { SelectionProvider, useSelection } from '@/state/selection'
 import { ACTIVE, StartButton, StateIcon, StemsMark, statusText } from '@/views/QueueView'
+import { useTheme } from '@/lib/theme'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 30_000 } },
@@ -32,6 +36,16 @@ const FINISHED = new Set<Job['state']>(['done', 'failed', 'cancelled'])
 /** The window is for the last few drops; the full app has the whole queue and the history. */
 const MAX_ROWS = 30
 const MAX_PILLS = 12
+
+/**
+ * How many stem pills a row shows. A "+N in the full app" pill takes the room of a stem
+ * pill at least, so hiding a single stem behind it saves nothing: one over the limit shows
+ * them all (every-stem's 13). Past that the rest go to the full app, so a 53-stem split does
+ * not fill the window.
+ */
+export function pillCount(stems: number): number {
+  return stems <= MAX_PILLS + 1 ? stems : MAX_PILLS
+}
 
 /**
  * The quick-drop window: a small interface by the tray (on a Mac, under the menu bar). Drop a song on it, then drag the
@@ -371,13 +385,21 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
   const expanded = picked && withStems.some((job) => job.id === picked) ? picked : (latest?.id ?? null)
 
   const shown = [...jobs].reverse().slice(0, MAX_ROWS)
-  const laidOut = jobs.find((job) => job.id === expanded)
+  const { data: settings } = useSettings()
+  // With "Hide empty stems" on, a song is laid out without its empty stems: the one pill
+  // with sound is not lost among five without. They come back per song, by its "+N empty".
+  const hideEmpty = Boolean(settings?.hide_empty_stems)
+  const [emptyShown, setEmptyShown] = useState<string | null>(null)
+  const found = jobs.find((job) => job.id === expanded)
+  const laidOut = useMemo(
+    () => (found ? { ...found, stems: splitEmpty(found.stems, hideEmpty && emptyShown !== found.id).shown } : undefined),
+    [found, hideEmpty, emptyShown],
+  )
   const audition = useAudition(laidOut?.stems ?? [])
   const stopListening = audition.stop
   const { mixer, toggle: toggleMix } = useMixer(laidOut, stopListening)
   const finished = jobs.filter((job) => FINISHED.has(job.state)).length
   const held = jobs.filter((job) => job.held).length
-  const { data: settings } = useSettings()
   const chooseFiles = () => input.current?.click()
 
   return (
@@ -436,7 +458,10 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
               </button>
             </Tooltip>
           </div>
-          <div className="flex flex-none items-center justify-between pt-2 pr-2 pl-4 text-muted">
+          {/* The header keeps the same scrollbar gutter as the list below (10px on Windows, none
+              where scrollbars overlay, as on a Mac), so Clear finished ends where the rows end,
+              and a gap under it keeps its hover from touching the first row. */}
+          <div className="recent-gutter flex flex-none items-center justify-between pt-2 pr-2 pb-1 pl-4 text-muted">
             <span className="text-[11.5px] font-semibold tracking-wide uppercase">
               Recent <span className="tabular ml-1 font-normal text-faint">{jobs.length + links.length}</span>
             </span>
@@ -452,15 +477,26 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
               </Button>
             </div>
           </div>
-          <ul className="m-0 min-h-0 flex-1 list-none overflow-y-auto px-2 pb-2" aria-label="Recent jobs">
+          <ul className="recent-gutter m-0 min-h-0 flex-1 list-none overflow-y-auto px-2 pb-2" aria-label="Recent jobs">
             {/* Newest first: a song still being fetched is newer than every job. */}
             {[...links].reverse().map((link) => (
               <LinkRow key={link.id} link={link} compact />
             ))}
-            {shown.map((job) => (
+            {shown.map((job) => {
+              const stems = job.id === expanded && laidOut ? laidOut.stems : splitEmpty(job.stems, hideEmpty && emptyShown !== job.id).shown
+              return (
               <QuickRow
                 key={job.id}
-                job={job}
+                job={stems === job.stems ? job : { ...job, stems }}
+                empty={hideEmpty ? splitEmpty(job.stems, true).hidden.length : 0}
+                emptyShown={emptyShown === job.id}
+                onEmpty={() => {
+                  // The mix is of the stems on show: it ends when they change.
+                  if (mixer && job.id === expanded) toggleMix()
+                  stopListening()
+                  setEmptyShown((id) => (id === job.id ? null : job.id))
+                }}
+                separatePart={Boolean(settings?.separate_selection)}
                 expanded={job.id === expanded}
                 fresh={picked === null && job.id === finishedId}
                 onPick={() => setPick({ id: job.id, since: finishedId })}
@@ -471,8 +507,18 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
                 onStart={() => actions.start.mutate(job.id, { onError: toast.error })}
                 onCancel={() => actions.cancel.mutate(job.id, { onError: toast.error })}
                 onRetry={() => actions.retry.mutate(job.id, { onError: toast.error })}
+                menu={jobMenuItems(job, {
+                  start: () => actions.start.mutate(job.id, { onError: toast.error }),
+                  cancel: () => actions.cancel.mutate(job.id, { onError: toast.error }),
+                  retry: () => actions.retry.mutate(job.id, { onError: toast.error }),
+                  // Lays the stems out in the row, unless they are already.
+                  showStems: job.id === expanded ? undefined : () => setPick({ id: job.id, since: finishedId }),
+                  ...revealHandlers(job, (message) => toast.show(message)),
+                  remove: () => actions.remove.mutate(job.id, { onError: toast.error }),
+                })}
               />
-            ))}
+              )
+            })}
           </ul>
         </>
       )}
@@ -526,6 +572,8 @@ function DropTarget({ recipes, models }: { recipes: Recipe[]; models: Model[] })
 
 interface QuickRowProps {
   job: Job
+  /** The separate_selection setting: a waiting song's part is all that Start separates. */
+  separatePart?: boolean
   /** This job's stems are laid out for dragging. */
   expanded: boolean
   /** The stems arrived just now, so they may make an entrance. */
@@ -538,9 +586,19 @@ interface QuickRowProps {
   mixer?: Mixer | null
   /** Turn mixing on or off for this song. */
   onMix?: () => void
+  /**
+   * How many of the song's stems are empty, while the "Hide empty stems" setting is on.
+   * `job.stems` is then without them, unless `emptyShown`.
+   */
+  empty?: number
+  emptyShown?: boolean
+  /** Bring the empty stems back among the pills, or leave them out again. */
+  onEmpty?: () => void
   onStart: () => void
   onCancel: () => void
   onRetry: () => void
+  /** What a right-click on the row offers. */
+  menu?: MenuItem[]
 }
 
 function startDrag(event: React.DragEvent, paths: string[]): void {
@@ -549,32 +607,41 @@ function startDrag(event: React.DragEvent, paths: string[]): void {
   window.openstems.startDrag(paths)
 }
 
-export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mixer = null, onMix, onStart, onCancel, onRetry }: QuickRowProps) {
+export function QuickRow({ job, separatePart = false, expanded, fresh, onPick, audition, onListen, mixer = null, onMix, empty = 0, emptyShown = false, onEmpty, onStart, onCancel, onRetry, menu = [] }: QuickRowProps) {
+  const theme = useTheme()
   const active = ACTIVE.has(job.state)
   const queued = job.state === 'queued'
   const done = job.state === 'done'
   const hasStems = done && job.stems.length > 0
-  const pills = job.stems.slice(0, MAX_PILLS)
+  const pills = job.stems.slice(0, pillCount(job.stems.length))
   const more = job.stems.length - pills.length
   // A mix is of stems that can all be seen and clicked.
   const canMix = Boolean(onMix) && more === 0 && job.stems.length > 1
+  // Left out of the pills and of the handle that drags them all.
+  const leftOut = emptyShown ? 0 : empty
 
   return (
-    <li
-      data-testid="quick-row"
-      data-state={job.state}
-      aria-expanded={hasStems ? expanded : undefined}
-      className={cn('group/row row-hover mb-0.5 rounded-[10px] px-2.5 py-2', expanded && 'bg-raised')}
-      onClick={hasStems ? onPick : undefined}
+    <RowMenu
+      items={menu}
+      label={`${job.track_name} actions`}
+      render={
+        <li
+          data-testid="quick-row"
+          data-state={job.state}
+          aria-expanded={hasStems ? expanded : undefined}
+          className={cn('group/row row-hover mb-0.5 rounded-[10px] px-2.5 py-2', expanded && 'bg-raised')}
+          onClick={hasStems ? onPick : undefined}
+        />
+      }
     >
       <div className="flex items-center gap-2.5">
         <StateIcon job={job} />
         <div className="min-w-0 flex-1">
-          <div className="truncate font-medium" title={job.track_path}>
-            {job.track_name}
+          <div className="truncate font-medium">
+            <SourceTitle name={job.track_name} source={job.track_path} />
           </div>
           <div className="truncate text-[12px] text-muted" data-testid="quick-status">
-            {done ? `${job.recipe_name} · ${job.quality}${job.cached ? ' · from the cache' : ''}` : statusText(job)}
+            {done ? `${job.recipe_name} · ${job.quality}${job.cached ? ' · from the cache' : ''}` : statusText(job, separatePart)}
           </div>
         </div>
 
@@ -606,7 +673,7 @@ export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mix
         {active && <span className="tabular flex-none font-mono text-[12px] text-muted">{formatPercent(job.progress)}</span>}
 
         {hasStems && (
-          <Tooltip label="Drag every stem into your DAW or a folder">
+          <Tooltip label={dragAllHint(job.stems.length, leftOut)}>
             <div
               draggable
               role="button"
@@ -618,7 +685,7 @@ export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mix
               onDragStart={(event) => startDrag(event, job.stems.map((stem) => stem.path))}
             >
               <Layers size={13} />
-              {job.stems.length} stems
+              {stemCount(job.stems.length)}
             </div>
           </Tooltip>
         )}
@@ -636,7 +703,8 @@ export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mix
       {hasStems && expanded && (
         <div
           className="stem-pills mt-2 ml-[24px] flex flex-wrap gap-1.5"
-          data-fresh={fresh}
+          // Stems asked back by a click are there at once: the entrance is for stems that just arrived.
+          data-fresh={fresh && !emptyShown}
           aria-label={`Stems of ${job.track_name}`}
           onClick={(event) => event.stopPropagation()}
         >
@@ -663,8 +731,9 @@ export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mix
                 data-testid="quick-stem"
                 data-audition={mine ? audition.status : undefined}
                 data-mix={mixer ? (inMix ? 'in' : 'out') : undefined}
+                data-empty={stem.empty || undefined}
                 className="stem-pill stem-handle"
-                style={{ ['--i' as string]: Math.min(index, 8), ['--stem' as string]: stemColor(stem.name) }}
+                style={{ ['--i' as string]: Math.min(index, 8), ['--stem' as string]: stemColor(stem.name, theme) }}
                 onClick={act}
                 onDragStart={(event) => startDrag(event, [stem.path])}
                 onKeyDown={(event) => {
@@ -694,6 +763,18 @@ export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mix
               +{more} in the full app
             </button>
           )}
+          {empty > 0 && onEmpty && (
+            <button
+              type="button"
+              aria-expanded={emptyShown}
+              title={emptyShown ? 'Leave the empty stems out again' : 'Stems with nothing in them. Click to show them'}
+              data-testid="quick-empty"
+              className="stem-pill pressable cursor-pointer text-muted"
+              onClick={onEmpty}
+            >
+              {emptyShown ? 'Hide empty' : `+${empty} empty`}
+            </button>
+          )}
           {canMix && (
             <button
               type="button"
@@ -711,7 +792,7 @@ export function QuickRow({ job, expanded, fresh, onPick, audition, onListen, mix
       )}
 
       {hasStems && expanded && mixer && <MixBar job={job} mixer={mixer} />}
-    </li>
+    </RowMenu>
   )
 }
 

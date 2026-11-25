@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from openstems.audio import analysis
 from openstems.audio.write import read_audio, set_tempo, write_audio
 from openstems.domain.errors import DomainError
+from openstems.domain.tempo import TEMPO_FORMAT_NOTE, TEMPO_MISSING_NOTE
 from openstems.pipeline.mix import render_mix
 from openstems.pipeline.retag import clean_bpm, clean_key, set_analysis
 from openstems.pipeline.run import RunOptions, read_manifest
@@ -102,6 +103,7 @@ def test_a_given_tempo_needs_no_detection_setting(pipeline, song, tmp_path, monk
         raise AssertionError("analysis should not run")
 
     monkeypatch.setattr(analysis, "detect_tempo_key", boom)
+    monkeypatch.setattr(analysis, "detect_grid", boom)
     result = pipeline.run(song, full_song(), tmp_path / "out", RunOptions(bpm=174.0))
     assert result.manifest["analysis"]["bpm"] == 174.0
     assert result.manifest["analysis"]["key"] is None
@@ -145,7 +147,11 @@ def test_changing_the_tempo_renames_marks_and_records(pipeline, tmp_path: Path) 
     manifest = set_analysis(folder, {"bpm": 60, "key": "bbm"})
     assert manifest["analysis"]["bpm"] == 60.0
     assert manifest["analysis"]["key"] == "A#m"
-    assert manifest["analysis"]["detected"] == {"bpm": detected["bpm"], "key": detected["key"]}
+    assert manifest["analysis"]["detected"] == {
+        "bpm": detected["bpm"],
+        "key": detected["key"],
+        "downbeat": detected["downbeat"],
+    }
     assert read_manifest(folder) == manifest
     for stem in manifest["stems"]:
         path = folder / stem["file"]
@@ -271,6 +277,31 @@ def test_finished_stems_are_retagged_through_the_job_and_the_history(
 
     outside = client.post("/v1/stemsets/analysis", json={"directory": str(songs[0].parent)})
     assert outside.status_code == 400
+
+
+def test_a_job_says_why_its_stems_carry_no_tempo_until_one_is_typed_in(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """With tempo sync on, a song with no tempo is said to have none on the job, and the
+    note goes once the user types one in. An MP3 run says that MP3 cannot carry it."""
+    assert client.patch("/v1/settings", json={"tempo_sync": True}).status_code == 200
+    silent = tmp_path / "Silence.wav"
+    write_audio(silent, np.zeros((2, RATE * 3), dtype=np.float32), RATE)
+    body = {"path": str(silent), "recipe": "full-song", "options": {}}
+    assert client.post("/v1/jobs", json=body).status_code == 200
+    job = wait_for(client, all_terminal)[0]
+    assert job["state"] == "done" and job["notes"] == [TEMPO_MISSING_NOTE]
+
+    changed = client.post(f"/v1/jobs/{job['id']}/analysis", json={"bpm": 120}).json()
+    assert changed["notes"] == []
+    assert all(acid_tempo(Path(s["path"])) == 120.0 for s in changed["stems"])
+
+    assert client.patch("/v1/settings", json={"output_format": "mp3"}).status_code == 200
+    body = {"path": str(silent), "recipe": "full-song", "options": {"bpm": 120}}
+    assert client.post("/v1/jobs", json=body).status_code == 200
+    mp3 = wait_for(client, lambda jobs: len(jobs) == 2 and all_terminal(jobs))
+    newest = next(j for j in mp3 if j["id"] != job["id"])
+    assert newest["notes"] == [TEMPO_FORMAT_NOTE.format(format="MP3")]
 
 
 def test_a_stem_that_is_open_elsewhere_leaves_the_folder_as_it_was(

@@ -14,7 +14,7 @@ queues it as an ordinary job, with the recipe, quality and options that were sel
 the link was pasted.
 
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) does the fetching, as a Python dependency of the
-engine, pinned to `2026.10.26` with its `default` and `deno` extras. Those bring
+engine, pinned to `2026.11.23` (first `2026.10.26`) with its `default` and `deno` extras. Those bring
 `yt-dlp-ejs` and the Deno runtime (`deno` 2.9.8 from PyPI): since late 2025 yt-dlp needs an
 external JavaScript runtime for YouTube. The engine passes Deno's path to yt-dlp itself,
 because the environment's `Scripts` folder is not on `PATH` when the app starts the engine.
@@ -53,6 +53,17 @@ Sites change, and a pinned yt-dlp falls behind them. When YouTube changes someth
 fail until OpenStems ships a newer pin. The self-update exists for this: bump
 `yt-dlp[default,deno]` in `engine/pyproject.toml`, `uv lock`, release. The quick refresh
 installs the new version on the user's machine without rebuilding anything.
+
+Added after 0.3.1: nothing told us when that moment had come. A scheduled workflow,
+`.github/workflows/links-check.yml`, now compares the pin with the newest yt-dlp on PyPI
+every day (`scripts/check_ytdlp.py`) and keeps one issue open while the pin is behind, so the
+owner gets an e-mail; it closes the issue once the pin is current. A new yt-dlp release is
+taken as the sign that a site changed. The workflow does not fetch a real song: sites turn
+away the addresses GitHub's runners use, so a failure there would say nothing about the app
+on a user's machine. Two limits: not every yt-dlp release fixes something OpenStems users
+would notice, and a site can break before yt-dlp has a fix out. `check_ytdlp.py --write`
+moves the pin; `uv lock` and a release follow by hand, because a new pin should be tried
+with a real link first. Installed apps are still updated only through a release.
 
 Sites also sign the addresses of their media for a short time, and now and then turn a
 download away (`HTTP Error 403`). That happened once in five real runs here. The fetcher asks
@@ -111,6 +122,8 @@ own naming template with the mix in place of the stem (`Song - no vocals.wav`).
   summed as written, so with "normalize" on, the mix is of normalized stems.
 - The name is decided in two places that must agree: `mix_label` in `pipeline/mix.py` names
   the file, `mixLabel` in `app/src/state/mix.ts` names it on screen. Both have the same test.
+  Parts of one group with up to three of its parts left out go by the group, `drums no
+  kick` (ADR 0017), where a count ("6 stems") would say nothing of what is in the file.
 
 ### Not done
 

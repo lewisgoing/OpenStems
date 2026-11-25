@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { linkFrom } from '@/lib/link'
+import { isOwnSourceDrop } from '@/lib/sourcedrag'
 
 interface DropOverlayProps {
   onDrop: (files: File[]) => void
@@ -56,7 +57,10 @@ export function DropOverlay({ onDrop, onLink, label, manual }: DropOverlayProps)
       depth.current = 0
       setActive(false)
       if (hasFiles(event)) {
-        onDrop([...(event.dataTransfer?.files ?? [])])
+        const files = [...(event.dataTransfer?.files ?? [])]
+        // A song's title dragged out and let go over the window again: not a new song.
+        if (isOwnSourceDrop(window.openstems.pathsForFiles(files))) return
+        onDrop(files)
         return
       }
       // A uri-list may carry comment lines; the first address is the link.
@@ -83,7 +87,7 @@ export function DropOverlay({ onDrop, onLink, label, manual }: DropOverlayProps)
 
   return (
     <div className="drop-overlay" data-active={active} aria-hidden={!active}>
-      <div className="drop-card max-w-[calc(100vw-40px)] rounded-[18px] border-2 border-dashed border-accent/60 bg-surface px-12 py-10 text-center">
+      <div className="drop-card max-w-[calc(100vw-40px)] rounded-[18px] border-2 border-dashed border-accent-fg/60 bg-surface px-12 py-10 text-center">
         <div className="font-display text-[19px] font-semibold">{manual ? 'Drop to add to the queue' : 'Drop to separate'}</div>
         <div className="mt-1.5 text-muted">{manual ? `${label}, when you press Start` : `Runs ${label}`}</div>
       </div>

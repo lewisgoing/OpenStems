@@ -15,7 +15,14 @@ from openstems.audio.decode import decode, probe
 from openstems.audio.midi import midi_bytes, read_midi_notes
 from openstems.audio.write import read_audio, write_audio
 from openstems.domain import OutputStem, PassSpec, Recipe
+from openstems.domain.tempo import (
+    TEMPO_FORMAT_NOTE,
+    TEMPO_MISSING_NOTE,
+    notes_after_retag,
+    tempo_notes,
+)
 from openstems.pipeline.mix import render_mix
+from openstems.pipeline.retag import set_analysis
 from openstems.pipeline.run import Pipeline, RunOptions
 from tests.conftest import RATE, tone
 
@@ -110,8 +117,9 @@ def test_analysis_is_skipped_when_off_and_unused(pipeline, song, tmp_path, monke
         raise AssertionError("analysis should not run")
 
     monkeypatch.setattr(analysis, "detect_tempo_key", boom)
+    monkeypatch.setattr(analysis, "detect_grid", boom)
     result = pipeline.run(song, full_song(), tmp_path / "out", RunOptions())
-    assert result.manifest["analysis"] == {"bpm": None, "key": None}
+    assert result.manifest["analysis"] == {"bpm": None, "key": None, "downbeat": None}
 
 
 # -- output options ---------------------------------------------------------------
@@ -373,3 +381,48 @@ def test_stems_are_unmarked_without_tempo_sync_or_a_tempo(pipeline, song, tmp_pa
     for result in (off, none):
         for stem in result.stems:
             assert acid_tempo(Path(result.directory) / stem.file) is None
+    # The setting was off for one, and it says so for the other: it found no tempo.
+    assert off.manifest["notes"] == []
+    assert none.manifest["notes"] == [TEMPO_MISSING_NOTE]
+
+
+@pytest.mark.parametrize(("fmt", "name"), [("mp3", "MP3"), ("flac", "FLAC")])
+def test_tempo_sync_says_so_when_the_format_cannot_carry_the_tempo(
+    pipeline, tmp_path, fmt: str, name: str
+) -> None:
+    """FL Studio reads tempo from WAV files only. MP3 and FLAC stems were left unmarked
+    without a word, so a user dropping them into FL saw no tempo and no reason why."""
+    source = tmp_path / "Click.wav"
+    write_audio(source, click_track(120.0, 10.0), RATE)
+    options = RunOptions(tempo_sync=True, output_format=fmt)
+    result = pipeline.run(source, full_song(), tmp_path / "out", options)
+    assert result.manifest["analysis"]["bpm"]  # there was a tempo to write
+    assert result.manifest["notes"] == [TEMPO_FORMAT_NOTE.format(format=name)]
+    assert "WAV" in result.manifest["notes"][0]
+    # Without the setting nothing is said, whatever the format.
+    plain = pipeline.run(source, full_song(), tmp_path / "plain", RunOptions(output_format=fmt))
+    assert plain.manifest["notes"] == []
+
+
+def test_a_tempo_typed_in_clears_the_note_that_none_was_found(pipeline, tmp_path) -> None:
+    silent = tmp_path / "Silence.wav"
+    write_audio(silent, np.zeros((2, RATE * 3), dtype=np.float32), RATE)
+    result = pipeline.run(silent, full_song(), tmp_path / "out", RunOptions(tempo_sync=True))
+    folder = Path(result.directory)
+    assert result.manifest["notes"] == [TEMPO_MISSING_NOTE]
+    manifest = set_analysis(folder, {"bpm": 96})
+    assert manifest["notes"] == []
+    for stem in manifest["stems"]:
+        assert acid_tempo(folder / stem["file"]) == 96.0
+    # Taken away again on purpose: the song has none, and the note does not come back.
+    assert set_analysis(folder, {"bpm": None})["notes"] == []
+
+
+def test_the_tempo_notes_follow_the_setting_the_format_and_the_tempo() -> None:
+    assert tempo_notes(False, "mp3", None) == []
+    assert tempo_notes(True, "wav32f", 120.0) == []
+    assert tempo_notes(True, "wav24", 120.0) == []
+    assert tempo_notes(True, "wav24", None) == [TEMPO_MISSING_NOTE]
+    assert tempo_notes(True, "mp3", None) == [TEMPO_FORMAT_NOTE.format(format="MP3")]
+    assert notes_after_retag(["other", TEMPO_MISSING_NOTE], 120.0) == ["other"]
+    assert notes_after_retag([TEMPO_MISSING_NOTE], None) == [TEMPO_MISSING_NOTE]

@@ -1,14 +1,17 @@
 import { FolderOpen } from 'lucide-react'
 import { type ReactNode, useEffect, useState } from 'react'
 import type { SetupStatus, ShellStatus, TorchVariant } from '../../electron/bridge'
+import { REPOSITORY, siteLink } from '../../electron/links'
 import { VARIANT_CARDS, VARIANT_DOWNLOAD, VARIANT_LABEL, variantsFor } from '../../electron/variant'
 import type { Recipe, Settings, SettingsPatch } from '@/api/client'
 import { useMaintenance, usePatchSettings, useSettings, useSystem } from '@/api/queries'
-import { FORMATS } from '@/components/FormatSelect'
+import { FORMATS, carriesTempo, formatOptions } from '@/components/FormatSelect'
 import { useToast } from '@/components/toast'
 import { UpdateSettings } from '@/components/Update'
-import { Button, CommitInput, Dialog, IconButton, Segmented, Select, Switch } from '@/components/ui'
+import { Button, CommitInput, Dialog, ExternalLink, IconButton, Segmented, Select, Switch } from '@/components/ui'
 import { FitChip } from '@/components/Fit'
+import { ThemeSetting } from '@/components/ThemeSwitch'
+import { showWelcomeAgain } from '@/components/Welcome'
 import { cn, previewName } from '@/lib/format'
 import { type Machine, budgetHint, formatGb } from '@/lib/memory'
 import { useMachine } from '@/state/machine'
@@ -44,6 +47,12 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
       </header>
       <div className="flex-1 overflow-y-auto px-5 py-4">
         <div className="mx-auto flex max-w-[720px] flex-col gap-6">
+          <Group title="Appearance">
+            <Row label="Theme" hint="System follows your computer's setting as it changes. Also at the foot of the sidebar.">
+              <ThemeSetting />
+            </Row>
+          </Group>
+
           <Group title="Folders">
             <FolderRow label="Output folder" hint="One folder per track and recipe." value={settings.output_dir} onPick={() => pickFolder('output_dir')} />
             <FolderRow label="Models folder" hint="Downloaded weights. Uninstalling the app leaves it alone." value={settings.models_dir} onPick={() => pickFolder('models_dir')} />
@@ -51,7 +60,7 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
 
           <Group title="Output">
             <Row label="Format" hint="Stems are 44.1 kHz stereo, the rate the models run at. Also on the bar where you drop files.">
-              <Select label="Output format" value={settings.output_format} options={FORMATS} onChange={(v) => save({ output_format: v as Settings['output_format'] })} className="min-w-[200px]" minWidth={300} />
+              <Select label="Output format" value={settings.output_format} options={formatOptions(settings.tempo_sync)} onChange={(v) => save({ output_format: v as Settings['output_format'] })} className="min-w-[200px]" minWidth={300} />
             </Row>
             <Row label="Match the source sample rate" hint="Resample stems back to the source's rate, for example 48 kHz.">
               <Switch label="Match the source sample rate" checked={settings.match_source_rate} onChange={(v) => save({ match_source_rate: v })} />
@@ -83,7 +92,7 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
             <Row label="Detect tempo and key" hint="Fills the {bpm} and {key} tokens and shows them with the stems.">
               <Switch label="Detect tempo and key" checked={settings.detect_tempo_key} onChange={(v) => save({ detect_tempo_key: v })} />
             </Row>
-            <Row label="Tempo-sync for FL Studio" hint="Writes the detected tempo into WAV stems and mixes, so FL Studio stretches them to your project's tempo. Not for FLAC or MP3.">
+            <Row label="Tempo-sync for FL Studio" hint={<TempoSyncHint settings={settings} />}>
               <Switch label="Tempo-sync for FL Studio" checked={settings.tempo_sync} onChange={(v) => save({ tempo_sync: v })} />
             </Row>
             <Row label="Write MIDI" hint="A draggable .mid next to vocal, bass and melody stems. Monophonic: one note at a time.">
@@ -97,6 +106,12 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
               hint="Off: songs you add wait in the queue until you press Start, so you can line up several and set the order first. On: each song starts as soon as it is added. The watch folder always starts its files."
             >
               <Switch label="Start songs automatically" checked={settings.auto_start} onChange={(v) => save({ auto_start: v })} />
+            </Row>
+            <Row
+              label="Separate only the trimmed part"
+              hint="When a waiting song has a part chosen in the trimmer, Start separates just that part: faster, and its stems come out trimmed. Off: the whole song is separated, and the part can be dragged from it afterwards."
+            >
+              <Switch label="Separate only the trimmed part" checked={settings.separate_selection} onChange={(v) => save({ separate_selection: v })} />
             </Row>
           </Group>
 
@@ -115,6 +130,12 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
             </Row>
             <Row label="Sum to mix" hint="Fold the residual into 'other' so the stems sum back to the mix.">
               <Switch label="Sum to mix by default" checked={settings.sum_to_mix} onChange={(v) => save({ sum_to_mix: v })} />
+            </Row>
+            <Row
+              label="Hide empty stems"
+              hint="A song with no guitar still gets a guitar stem, with nothing in it. Such stems stay out of the lists and of what you drag; their files are written all the same."
+            >
+              <Switch label="Hide empty stems" checked={settings.hide_empty_stems} onChange={(v) => save({ hide_empty_stems: v })} />
             </Row>
           </Group>
 
@@ -200,10 +221,15 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
                 Open the logs folder
               </Button>
             </Row>
-            <p className="m-0 text-[12px] text-faint">
-              OpenStems {window.openstems.info.version} · engine {system?.version}
-            </p>
           </Group>
+
+          <Group title="Getting started">
+            <Row label="Welcome" hint="Walk through the folders, the format and the recommended models again. Nothing changes until you pick something.">
+              <Button onClick={showWelcomeAgain}>Show the welcome again</Button>
+            </Row>
+          </Group>
+
+          <AboutSettings engineVersion={system?.version} />
         </div>
       </div>
     </div>
@@ -310,7 +336,17 @@ export function gpuMemory(system: { vram_gb?: number | null; gpu_backend?: strin
 export function MemoryRow({ machine }: { machine: Machine }) {
   if (machine.budget === null) return null
   return (
-    <Row label="Memory for one model" hint={budgetHint(machine)}>
+    <Row
+      label="Memory for one model"
+      hint={
+        <>
+          {budgetHint(machine)}{' '}
+          <ExternalLink inline href={siteLink('run')}>
+            What fits on which machine
+          </ExternalLink>
+        </>
+      }
+    >
       <span className="text-muted" data-testid="memory-budget">
         {formatGb(machine.budget)}
       </span>
@@ -436,12 +472,62 @@ export function TraySettings() {
   )
 }
 
+/**
+ * The way out to the website: the page itself, what changed in each version, and how to
+ * support the project. Last in Settings, since nothing here is a setting. Each link opens in
+ * the browser; the app works the same with the page down.
+ */
+export function AboutSettings({ engineVersion }: { engineVersion?: string }) {
+  return (
+    <Group title="About">
+      <Row label="Website" hint="What OpenStems does, with the downloads for Windows and Mac.">
+        <ExternalLink href={siteLink()}>Open the website</ExternalLink>
+      </Row>
+      <Row label="What's new" hint="What changed in each version.">
+        <ExternalLink href={siteLink('changelog')}>Read the changelog</ExternalLink>
+      </Row>
+      <Row label="Support OpenStems" hint="OpenStems is free and open source. A tip helps fund its development.">
+        <ExternalLink href={siteLink('support')}>Support</ExternalLink>
+      </Row>
+      <p className="m-0 text-[12px] text-faint">
+        OpenStems {window.openstems.info.version} · engine {engineVersion} ·{' '}
+        <ExternalLink inline href={REPOSITORY} className="text-faint">
+          Source on GitHub
+        </ExternalLink>
+      </p>
+    </Group>
+  )
+}
+
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
       <h2 className="m-0 mb-2 text-[12px] font-semibold tracking-wide text-muted uppercase">{title}</h2>
       <div className="flex flex-col divide-y divide-line rounded-[12px] border border-line bg-surface px-4 [&>*]:py-3">{children}</div>
     </section>
+  )
+}
+
+/**
+ * What tempo sync does, and when it cannot: FL Studio reads tempo from WAV files only, so with
+ * MP3 or FLAC chosen the hint says plainly that nothing is written. FL also stretches a sample
+ * by itself only up to about a minute (measured, not in its manual: ADR 0016), so the hint
+ * gives the one step a full-length stem needs.
+ */
+export function TempoSyncHint({ settings }: { settings: Settings }) {
+  const format = FORMATS.find((f) => f.value === settings.output_format)
+  return (
+    <>
+      Writes the detected tempo into WAV stems and mixes for FL Studio. FL stretches a sample to your project's tempo by
+      itself only up to about a minute long: for a full-length stem, open the clip's menu, choose Fit to tempo and pick
+      the tempo marked "(embedded)". FL reads tempo only from WAV files, and only with "Read sample tempo information" on
+      in its General settings.
+      {settings.tempo_sync && !carriesTempo(settings.output_format) && (
+        <span className="mt-1 block text-warn" role="note">
+          Your format is {format?.short ?? settings.output_format}, so no tempo is written. Choose WAV to embed it.
+        </span>
+      )}
+    </>
   )
 }
 

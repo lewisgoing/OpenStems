@@ -75,6 +75,9 @@ export async function launch(
   const app = await electron.launch({
     args: [appDir, `--user-data-dir=${join(root, 'user-data')}`, ...(options.args ?? [])],
     cwd: appDir,
+    // Playwright answers `prefers-color-scheme` with "light" unless told not to; the app reads
+    // it for its theme, which Electron's `nativeTheme` decides (`src/lib/theme.ts`).
+    colorScheme: null,
     env: {
       ...(process.env as Record<string, string>),
       OPENSTEMS_E2E: '1',
@@ -91,7 +94,10 @@ export async function launch(
     },
   })
   const page = await app.firstWindow()
-  if (options.window !== 'tray') await page.getByRole('navigation', { name: 'Views' }).waitFor({ timeout: 90_000 })
+  // The welcome (`OPENSTEMS_E2E_WELCOME`) is a modal: the sidebar behind it is hidden from roles.
+  if (options.window !== 'tray') {
+    await page.getByRole('navigation', { name: 'Views' }).or(page.getByTestId('welcome')).first().waitFor({ timeout: 90_000 })
+  }
   return { app, page, outputDir, fixtures: fixtures() }
 }
 

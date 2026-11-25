@@ -11,10 +11,12 @@ import {
   readyNotice,
   trayClickAction,
   trayIconFile,
+  trayUpdateOf,
+  type TrayUpdate,
   trayMenuTemplate,
   trayPresentation,
 } from './traylogic'
-import { BACKGROUND, iconPath, loadRenderer, webPreferences } from './windows'
+import { background, iconPath, loadRenderer, webPreferences } from './windows'
 
 const MAC = process.platform === 'darwin'
 
@@ -46,6 +48,7 @@ export class TrayController {
   private closing = false
   private activity: TrayActivity | null = null
   private seenDone: string | null = null
+  private update: TrayUpdate | null = null
   /** Songs that finished since the user last looked. */
   private unseen = 0
   /** The Mac notification on screen, held so it is still there to be clicked. */
@@ -56,7 +59,7 @@ export class TrayController {
   /** Put the icon in the notification area or the menu bar. A machine without one still runs the app. */
   create(): void {
     try {
-      const tray = new Tray(iconPath(trayIconFile('idle', process.platform)))
+      const tray = new Tray(iconPath(trayIconFile(this.presentation.icon, process.platform)))
       tray.setToolTip(this.presentation.tooltip)
       const menu = Menu.buildFromTemplate(
         trayMenuTemplate(process.platform, {
@@ -107,7 +110,7 @@ export class TrayController {
       fullscreenable: false,
       alwaysOnTop: true,
       ...popupChrome(process.platform),
-      backgroundColor: BACKGROUND,
+      backgroundColor: background(),
       title: 'OpenStems quick drop',
       icon: iconPath('icon.png'),
       webPreferences: webPreferences(),
@@ -203,6 +206,14 @@ export class TrayController {
     this.render()
   }
 
+  /** Where self-update stands: a newer version marks the icon while it waits. */
+  setUpdate(status: Parameters<typeof trayUpdateOf>[0]): void {
+    const next = trayUpdateOf(status)
+    if (next?.version === this.update?.version && next?.ready === this.update?.ready) return
+    this.update = next
+    this.render()
+  }
+
   /** The user is looking at the results: the "stems are ready" mark has done its job. */
   markSeen(): void {
     this.unseen = 0
@@ -213,7 +224,7 @@ export class TrayController {
   }
 
   private render(): void {
-    const next = trayPresentation(this.activity, this.seenDone)
+    const next = trayPresentation(this.activity, this.seenDone, this.update)
     const previous = this.presentation
     this.presentation = next
     if (!this.tray || this.tray.isDestroyed()) {

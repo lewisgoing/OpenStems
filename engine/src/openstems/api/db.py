@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import Any
 
 from openstems.domain.stem import MANIFEST_NAME
-from openstems.pipeline.run import read_manifest
+from openstems.pipeline.levels import mark_empty
+from openstems.pipeline.run import SAMPLE_RATE, read_manifest
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tracks (
@@ -39,10 +40,13 @@ CREATE TABLE IF NOT EXISTS stem_sets (
     cache_key TEXT NOT NULL,
     created_at TEXT NOT NULL,
     stems TEXT NOT NULL,
-    analysis TEXT NOT NULL
+    analysis TEXT NOT NULL,
+    part TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS stem_sets_name ON stem_sets (track_name);
 """
+# Columns added since the first version, for an index that was made before them.
+_ADDED = {"stem_sets": {"part": "TEXT NOT NULL DEFAULT ''"}}
 
 
 class Index:
@@ -55,6 +59,11 @@ class Index:
         self._db.row_factory = sqlite3.Row
         with self._lock:
             self._db.executescript(SCHEMA)
+            for table, columns in _ADDED.items():
+                have = {row[1] for row in self._db.execute(f"PRAGMA table_info({table})")}
+                for column, kind in columns.items():
+                    if column not in have:
+                        self._db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
             self._db.commit()
 
     def close(self) -> None:
@@ -113,14 +122,26 @@ class Index:
                 "samples": s.get("samples"),
                 "sample_rate": s.get("sample_rate"),
                 "group": s.get("group") or None,
+                "offset": int(s.get("offset") or 0),
+                "peak": s.get("peak"),
             }
             for s in manifest.get("stems", [])
         ]
+        # Which of them are empty is decided here, once, and kept in the row. A stem from
+        # before peaks were measured is read from its peaks file, which needs its full path.
+        found = mark_empty(
+            [
+                {**s, "peaks": str(Path(directory) / s["peaks"]) if s["peaks"] else None}
+                for s in stems
+            ]
+        )
+        for stem, marked in zip(stems, found, strict=True):
+            stem["empty"] = marked["empty"]
         with self._lock:
             self._db.execute(
                 "INSERT OR REPLACE INTO stem_sets (directory, track_name, track_path, "
-                "track_hash, recipe_id, recipe_name, cache_key, created_at, stems, analysis) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "track_hash, recipe_id, recipe_name, cache_key, created_at, stems, analysis, "
+                "part) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     directory,
                     source.get("name", ""),
@@ -132,6 +153,8 @@ class Index:
                     manifest.get("created_at", ""),
                     json.dumps(stems),
                     json.dumps(manifest.get("analysis") or {}),
+                    # The part of the song, when only a part of it was separated.
+                    json.dumps(source["range"]) if source.get("range") else "",
                 ),
             )
             self._db.commit()
@@ -165,6 +188,11 @@ class Index:
         with self._lock:
             return [r[0] for r in self._db.execute("SELECT directory FROM stem_sets")]
 
+    def track_paths(self) -> list[str]:
+        """The song file of every indexed stem set."""
+        with self._lock:
+            return [r[0] for r in self._db.execute("SELECT DISTINCT track_path FROM stem_sets")]
+
     # -- rebuild --------------------------------------------------------------
 
     def rebuild(self, output_root: Path) -> int:
@@ -183,12 +211,28 @@ class Index:
             self.save_stem_set(directory, manifest)
         return len(found)
 
+    def mark_empty_stems(self) -> int:
+        """Say which stems are empty in every row saved before rows said so, from the
+        manifest on disk. Done once: a row saved again carries it."""
+        with self._lock:
+            rows = self._db.execute("SELECT directory, stems FROM stem_sets").fetchall()
+        old = [r["directory"] for r in rows if _unmarked(json.loads(r["stems"]))]
+        for directory in old:
+            manifest = read_manifest(Path(directory))
+            if manifest is not None:
+                self.save_stem_set(directory, manifest)
+        return len(old)
+
     def prune_missing(self) -> int:
         """Forget stem sets whose manifest no longer exists on disk."""
         gone = [d for d in self.stem_set_dirs() if not (Path(d) / MANIFEST_NAME).is_file()]
         for directory in gone:
             self.delete_stem_set(directory)
         return len(gone)
+
+
+def _unmarked(stems: Any) -> bool:
+    return any(isinstance(stem, dict) and "empty" not in stem for stem in stems)
 
 
 def _stem_set_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -198,6 +242,9 @@ def _stem_set_row(row: sqlite3.Row) -> dict[str, Any]:
         stem["path"] = str(Path(directory) / stem["file"])
         stem["peaks"] = str(Path(directory) / stem["peaks"]) if stem.get("peaks") else None
         stem["midi"] = str(Path(directory) / stem["midi"]) if stem.get("midi") else None
+        # Where the file begins in the song. A row from before offsets were kept has none.
+        stem["start"] = int(stem.get("offset") or 0) / SAMPLE_RATE
+        stem.setdefault("empty", False)
     return {
         "directory": directory,
         "track_name": row["track_name"],
@@ -208,4 +255,5 @@ def _stem_set_row(row: sqlite3.Row) -> dict[str, Any]:
         "created_at": row["created_at"],
         "analysis": json.loads(row["analysis"]),
         "stems": stems,
+        "part": json.loads(row["part"]) if row["part"] else None,
     }

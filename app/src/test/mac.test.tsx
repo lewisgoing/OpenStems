@@ -1,16 +1,41 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import type { ReactNode } from 'react'
+import { type ReactNode, createRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SetupStatus, UpdateStatus } from '../../electron/bridge'
 import { recommendVariant } from '../../electron/variant'
 import { SetupScreen } from '@/App'
+import type { Job } from '@/api/client'
 import { ToastProvider } from '@/components/toast'
 import { TooltipProvider } from '@/components/ui'
 import { UpdatePill, UpdateSettings, updateSummary } from '@/components/Update'
-import { isMac, modClick, modKey, shortcut, words } from '@/platform'
-import { StartButton } from '@/views/QueueView'
+import { freeKey, homeKey, isMac, modClick, modKey, modName, shortcut, words } from '@/platform'
+import { TrimEditor } from '@/trimmer/TrimEditor'
+import { FRESH, type TrimMemory } from '@/trimmer/memory'
+import { isZoomWheel, zoomFactor } from '@/trimmer/model'
+import { songOfJob } from '@/trimmer/song'
+import { QueueSearch, StartButton } from '@/views/QueueView'
 import { EngineBuildRow, TraySettings, gpuHint, gpuMemory, selfTestLines } from '@/views/SettingsView'
 import { bridge } from './setup'
+import { TrimPlayer } from './trimstub'
+
+// The trimmer is drawn here with its player, the engine and its queries stood in for; the
+// other tests in this file use none of them.
+vi.mock('@/audio/trimplayer', async () => await import('./trimstub'))
+vi.mock('@/api/engine', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api/engine')>()),
+  useEngine: () => ({
+    api: { GET: async () => ({ data: undefined, error: { detail: 'no peaks here' }, response: { status: 404 } }) },
+    connection: { baseUrl: 'http://127.0.0.1:1', token: 't' },
+  }),
+}))
+vi.mock('@/api/queries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api/queries')>()),
+  useSourcePreview: () => ({ data: undefined, isPending: true, isError: false, error: null }),
+  useSettings: () => ({ data: undefined }),
+  useCreateClips: () => ({ mutateAsync: vi.fn(async () => []) }),
+  useCreateMix: () => ({ mutateAsync: vi.fn(async () => ({ path: '/Users/me/Music/OpenStems/Song/every-stem/Mixes/Song - mix.wav' })) }),
+}))
 
 /* What the renderer shows on a Mac. Nothing here runs on one: the platform is a stand-in. */
 
@@ -59,7 +84,7 @@ afterEach(() => {
 describe('the words and keys per system', () => {
   it('names things the Mac way on a Mac', () => {
     expect(isMac()).toBe(true)
-    expect(words()).toMatchObject({ fileManager: 'Finder', tray: 'menu bar', trayTitle: 'Menu bar', loginItem: 'Open at login', computer: 'Mac' })
+    expect(words()).toMatchObject({ fileManager: 'Finder', tray: 'menu bar', trayTitle: 'Menu bar', loginItem: 'Open at login', computer: 'Mac', drive: 'disk' })
     expect(shortcut('V')).toBe('⌘V')
     expect(shortcut('Enter')).toBe('⌘Enter')
     expect(modClick()).toBe('⌘-click')
@@ -68,7 +93,7 @@ describe('the words and keys per system', () => {
   it('keeps the Windows names on Windows', () => {
     bridge.info.platform = 'win32'
     expect(isMac()).toBe(false)
-    expect(words()).toMatchObject({ fileManager: 'Explorer', tray: 'tray', trayTitle: 'Tray', loginItem: 'Start with Windows', computer: 'PC' })
+    expect(words()).toMatchObject({ fileManager: 'Explorer', tray: 'tray', trayTitle: 'Tray', loginItem: 'Start with Windows', computer: 'PC', drive: 'drive' })
     expect(shortcut('V')).toBe('Ctrl+V')
     expect(modClick()).toBe('Ctrl+click')
   })
@@ -190,10 +215,10 @@ describe('an update the app cannot install itself', () => {
     expect(bridge.installUpdate).not.toHaveBeenCalled()
   })
 
-  it('is one word in the quick-drop window', async () => {
+  it('names the version in the quick-drop window too', async () => {
     bridge.updates.mockResolvedValueOnce(offer)
     render(tree(<UpdatePill compact />))
-    expect(await screen.findByRole('button', { name: 'Get' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Get 0.3.0' })).toBeInTheDocument()
   })
 
   it('says in Settings where the version comes from', async () => {
@@ -218,6 +243,29 @@ describe('shortcuts on a Mac', () => {
     expect(onStart).toHaveBeenCalledTimes(1)
   })
 
+  it("goes to the queue's search on Command+F, not on Control+F", () => {
+    const field = createRef<HTMLInputElement>()
+    render(tree(<QueueSearch field={field} query="" onQuery={vi.fn()} />))
+    const search = screen.getByRole('textbox', { name: 'Search the queue' })
+    expect(search).toHaveAttribute('title', 'Search the queue (⌘F)')
+    fireEvent.keyDown(window, { key: 'f', ctrlKey: true })
+    expect(search).not.toHaveFocus()
+    fireEvent.keyDown(window, { key: 'f', metaKey: true })
+    expect(search).toHaveFocus()
+  })
+
+  it('keeps Ctrl+F on Windows', () => {
+    bridge.info.platform = 'win32'
+    const field = createRef<HTMLInputElement>()
+    render(tree(<QueueSearch field={field} query="" onQuery={vi.fn()} />))
+    const search = screen.getByRole('textbox', { name: 'Search the queue' })
+    expect(search).toHaveAttribute('title', 'Search the queue (Ctrl+F)')
+    fireEvent.keyDown(window, { key: 'f', metaKey: true })
+    expect(search).not.toHaveFocus()
+    fireEvent.keyDown(window, { key: 'f', ctrlKey: true })
+    expect(search).toHaveFocus()
+  })
+
   it('keeps Ctrl+Enter on Windows', () => {
     bridge.info.platform = 'win32'
     const onStart = vi.fn()
@@ -227,5 +275,100 @@ describe('shortcuts on a Mac', () => {
     expect(onStart).not.toHaveBeenCalled()
     fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true })
     expect(onStart).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('the trimmer on a Mac', () => {
+  const DIR = '/Users/me/Music/OpenStems/Song/every-stem'
+  const stem = (name: string, group: string | null = null) => ({
+    name,
+    file: `Song - ${name}.wav`,
+    path: `${DIR}/Song - ${name}.wav`,
+    peaks: null,
+    samples: 44100 * 60,
+    sample_rate: 44100,
+    group,
+    start: 0,
+    empty: false,
+  })
+  const job = {
+    id: 'j1',
+    track_path: '/Users/me/Music/Song.m4a',
+    track_name: 'Song',
+    recipe_id: 'every-stem',
+    recipe_name: 'Every stem',
+    quality: 'balanced',
+    state: 'done',
+    progress: 1,
+    message: '',
+    error: null,
+    cached: false,
+    output_dir: DIR,
+    options: {},
+    stems: [stem('kick', 'drums'), stem('snare', 'drums'), stem('bass')],
+    analysis: { bpm: 120, downbeat: 0.5 },
+    queue_position: null,
+    held: false,
+    created_at: 0,
+    started_at: null,
+    finished_at: null,
+    notes: [],
+  } as Job
+  const editor = (initial: TrimMemory = FRESH) =>
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        {tree(<TrimEditor song={songOfJob(job)} initial={initial} instant={false} leaving={false} onBack={vi.fn()} onCommit={vi.fn(async () => undefined)} />)}
+      </QueryClientProvider>,
+    )
+  const chip = (name: string) => screen.getByRole('button', { name })
+
+  it('places freely with Option, and names Command for zooming', () => {
+    expect(freeKey()).toBe('Option')
+    expect(modName()).toBe('⌘')
+    expect(homeKey()).toBe('Home, or Fn+←')
+    bridge.info.platform = 'win32'
+    expect(freeKey()).toBe('Alt')
+    expect(modName()).toBe('Ctrl')
+    expect(homeKey()).toBe('Home')
+  })
+
+  it('zooms with Command and the wheel, or a trackpad pinch, which arrives with Control held', () => {
+    expect(isZoomWheel({ ctrlKey: false, metaKey: true }, true)).toBe(true)
+    expect(isZoomWheel({ ctrlKey: true, metaKey: false }, true)).toBe(true)
+    expect(isZoomWheel({ ctrlKey: false, metaKey: false }, true)).toBe(false)
+    // A pinch sends small steps: each counts for more than a wheel's.
+    expect(zoomFactor({ deltaY: -10, ctrlKey: true, metaKey: false }, true)).toBeCloseTo(Math.exp(0.1), 9)
+    expect(zoomFactor({ deltaY: -10, ctrlKey: false, metaKey: true }, true)).toBeCloseTo(Math.exp(0.025), 9)
+  })
+
+  it('says Option and ⌘ in the editor, and a ⌘-click adds a stem where a Control-click does not', () => {
+    editor()
+    expect(screen.getByTestId('readout')).toHaveTextContent('Drag across the waveform')
+    expect(screen.getByTestId('readout')).toHaveTextContent('Hold Option to place freely.')
+    expect(screen.getByText('⌘-click to mix several stems')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Bar' })).toHaveAttribute('title', 'Snap to bars. Hold Option to place freely.')
+    fireEvent.click(chip('kick'))
+    fireEvent.click(chip('bass'), { metaKey: true })
+    expect(chip('kick')).toHaveAttribute('aria-pressed', 'true')
+    expect(chip('bass')).toHaveAttribute('aria-pressed', 'true')
+    // A Control-click is a right click on a Mac: it takes the chip alone.
+    fireEvent.click(chip('snare'), { ctrlKey: true })
+    expect(chip('snare')).toHaveAttribute('aria-pressed', 'true')
+    expect(chip('kick')).toHaveAttribute('aria-pressed', 'false')
+    expect(TrimPlayer.last?.state.audible).toEqual(['stem:snare'])
+  })
+
+  it('leaves ⌘ with a letter to the system: ⌘L and ⌘Z do nothing in the editor', () => {
+    editor({ ...FRESH, sel: { start: 2.5, end: 4.5 }, view: { t0: 10, t1: 20 } })
+    const editorEl = screen.getByTestId('trim-editor')
+    fireEvent.keyDown(window, { key: 'l', code: 'KeyL', metaKey: true })
+    expect(TrimPlayer.last?.state.loop).toBeNull()
+    fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', metaKey: true })
+    expect(editorEl).toHaveAttribute('data-t0', '10')
+    // The letters alone are the editor's.
+    fireEvent.keyDown(window, { key: 'l', code: 'KeyL' })
+    expect(TrimPlayer.last?.state.loop).toEqual({ start: 2.5, end: 4.5 })
+    fireEvent.keyDown(window, { key: 'z', code: 'KeyZ' })
+    expect(editorEl).toHaveAttribute('data-t0', '0')
   })
 })
