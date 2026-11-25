@@ -35,6 +35,12 @@ test('a waiting song moves to the top from its menu', async () => {
   await page.getByTestId('file-input').setInputFiles(['First Song.mp3', 'Second Song.flac'].map((name) => join(fixtures, name)))
   const rows = page.locator('[data-testid="job-row"][data-state="queued"]')
   await expect(rows).toHaveCount(2)
+  // The newest is first; the handle to drag a waiting song is in the order songs run in.
+  await expect(rows.first()).toContainText('Second Song')
+  await expect(page.getByRole('button', { name: /^Reorder / })).toHaveCount(0)
+  await page.getByRole('combobox', { name: 'Sort the queue' }).click()
+  await page.getByRole('option', { name: /^Run order/ }).click()
+  await expect(page.getByRole('button', { name: /^Reorder / })).toHaveCount(2)
   await expect(rows.first()).toContainText('First Song')
   await rows.nth(1).click({ button: 'right' })
   const menu = page.getByTestId('row-menu')

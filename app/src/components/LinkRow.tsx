@@ -1,4 +1,5 @@
 import { AlertTriangle, RotateCcw, X } from 'lucide-react'
+import { useState } from 'react'
 import type { Link } from '@/api/client'
 import { useLinkActions, useLinks } from '@/api/queries'
 import { cn, formatPercent } from '@/lib/format'
@@ -30,7 +31,10 @@ export function linkStatus(link: Link): string {
  * job that is working, because to the person waiting it is one. A fetch that failed stays,
  * with the reason, until it is tried again or dismissed.
  */
-export function LinkRow({ link, compact }: { link: Link; compact?: boolean }) {
+export function LinkRow({ link, compact, enter = true }: { link: Link; compact?: boolean; enter?: boolean }) {
+  // Whether the row comes in is decided when it first appears: a row a search brings back is
+  // simply there.
+  const [entering] = useState(enter)
   const actions = useLinkActions()
   const toast = useToast()
   const failed = link.state === 'failed'
@@ -49,7 +53,8 @@ export function LinkRow({ link, compact }: { link: Link; compact?: boolean }) {
           data-state={link.state}
           className={cn(
             'group/row row-hover',
-            compact ? 'mb-0.5 rounded-[10px] px-2.5 py-2' : 'row-enter relative mb-1 rounded-[10px] border border-transparent px-3 py-2.5',
+            compact ? 'mb-0.5 rounded-[10px] px-2.5 py-2' : 'relative mb-1 rounded-[10px] border border-transparent px-3 py-2.5',
+            !compact && entering && 'row-enter',
           )}
         />
       }

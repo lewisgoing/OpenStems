@@ -10,6 +10,7 @@ import { ToastProvider, useToast } from '@/components/toast'
 import { CommitInput, ProgressBar, Segmented, TooltipProvider } from '@/components/ui'
 import { dragSource } from '@/lib/sourcedrag'
 import { SelectionProvider } from '@/state/selection'
+import { SORT_KEY, loadSort, matchesSearch, searchTerms, sortQueue } from '@/lib/queuesort'
 import { QueueView } from '@/views/QueueView'
 import { bridge } from './setup'
 
@@ -122,6 +123,8 @@ beforeEach(() => {
 })
 
 describe('QueueView', () => {
+  // These are about the rows, not their order: the list is pinned to the order songs run in.
+  beforeEach(() => localStorage.setItem(SORT_KEY, 'run'))
   const view = (onSelect = vi.fn(), onAddFiles = vi.fn()) =>
     wrap(
       <QueueView recipes={[]} models={[]} selectedJob={null} onSelect={onSelect} onAddFiles={onAddFiles} onPasteLink={onPasteLink} />,
@@ -343,6 +346,173 @@ function dropFiles(...names: string[]): void {
     window.dispatchEvent(event)
   })
 }
+
+describe('the order and search of the queue, as plain functions', () => {
+  const rows = [
+    { name: 'beta 10', created_at: 1 },
+    { name: 'Alpha', created_at: 3 },
+    { name: 'beta 9', created_at: 2 },
+  ]
+  const names = (sort: Parameters<typeof sortQueue>[1]) => sortQueue(rows, sort).map((row) => row.name)
+
+  it('puts the newest first, the oldest first, by name, or leaves the order songs run in', () => {
+    expect(names('newest')).toEqual(['Alpha', 'beta 9', 'beta 10'])
+    expect(names('oldest')).toEqual(['beta 10', 'beta 9', 'Alpha'])
+    // Case does not count, and 9 comes before 10.
+    expect(names('name')).toEqual(['Alpha', 'beta 9', 'beta 10'])
+    expect(names('run')).toEqual(['beta 10', 'Alpha', 'beta 9'])
+    expect(rows.map((row) => row.name)).toEqual(['beta 10', 'Alpha', 'beta 9'])
+  })
+
+  it('counts the later of two songs added in the same instant as the newer', () => {
+    const same = [
+      { name: 'a', created_at: 5 },
+      { name: 'b', created_at: 5 },
+    ]
+    expect(sortQueue(same, 'newest').map((row) => row.name)).toEqual(['b', 'a'])
+    expect(sortQueue(same, 'oldest').map((row) => row.name)).toEqual(['a', 'b'])
+  })
+
+  it('finds every word of a search, in any order, whatever the case or the accents', () => {
+    expect(matchesSearch(searchTerms(''), 'Song')).toBe(true)
+    expect(matchesSearch(searchTerms('  '), 'Song')).toBe(true)
+    expect(matchesSearch(searchTerms('drive NIGHT'), 'Night Drive', 'Full song')).toBe(true)
+    expect(matchesSearch(searchTerms('night full'), 'Night Drive', 'Full song')).toBe(true)
+    expect(matchesSearch(searchTerms('night vocals'), 'Night Drive', 'Full song')).toBe(false)
+    expect(matchesSearch(searchTerms('beyonce'), 'Beyoncé - Halo')).toBe(true)
+    expect(matchesSearch(searchTerms('x'), null, undefined)).toBe(false)
+  })
+
+  it('starts on the newest first and keeps a pick, ignoring one it does not know', () => {
+    expect(loadSort()).toBe('newest')
+    localStorage.setItem(SORT_KEY, 'name')
+    expect(loadSort()).toBe('name')
+    localStorage.setItem(SORT_KEY, 'sideways')
+    expect(loadSort()).toBe('newest')
+  })
+})
+
+describe('QueueView: order and search', () => {
+  const view = () =>
+    wrap(<QueueView recipes={[]} models={[]} selectedJob={null} onSelect={vi.fn()} onAddFiles={vi.fn()} onPasteLink={vi.fn()} />)
+  const titles = () => screen.getAllByTestId(/^(job|link)-row$/).map((row) => row.querySelector('.font-medium')?.textContent)
+  const three = () => [
+    job({ id: 'a', track_name: 'Cello', created_at: 10, state: 'done' }),
+    job({ id: 'b', track_name: 'Bells', created_at: 20, queue_position: 0 }),
+    job({ id: 'c', track_name: 'Anthem', created_at: 30, queue_position: 1, recipe_name: 'Drum kit' }),
+  ]
+  const pick = async (name: string) => {
+    await userEvent.click(screen.getByRole('combobox', { name: 'Sort the queue' }))
+    await userEvent.click(await screen.findByRole('option', { name: new RegExp(`^${name}`) }))
+  }
+
+  it('shows the newest song first unless another order is picked, and remembers the pick', async () => {
+    jobs = three()
+    links = [link({ name: 'Night Drive', state: 'downloading', created_at: 40 })]
+    const first = view()
+    // The song still being fetched was added last, so it leads.
+    expect(titles()).toEqual(['Night Drive', 'Anthem', 'Bells', 'Cello'])
+    expect(screen.getByRole('combobox', { name: 'Sort the queue' })).toHaveTextContent('Newest')
+
+    await pick('Oldest')
+    expect(titles()).toEqual(['Cello', 'Bells', 'Anthem', 'Night Drive'])
+    await pick('Name')
+    expect(titles()).toEqual(['Anthem', 'Bells', 'Cello', 'Night Drive'])
+    expect(localStorage.getItem(SORT_KEY)).toBe('name')
+
+    first.unmount()
+    view()
+    expect(titles()).toEqual(['Anthem', 'Bells', 'Cello', 'Night Drive'])
+  })
+
+  it('lets a waiting song be dragged only in the order songs run in', async () => {
+    jobs = three()
+    view()
+    expect(screen.queryByRole('button', { name: 'Reorder Bells' })).not.toBeInTheDocument()
+    await pick('Run order')
+    expect(titles()).toEqual(['Cello', 'Bells', 'Anthem'])
+    expect(screen.getByRole('button', { name: 'Reorder Bells' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reorder Anthem' })).toBeInTheDocument()
+    // The menu's moves are about the order songs run in, and stay in every order.
+    await pick('Newest')
+    fireEvent.contextMenu(screen.getAllByTestId('job-row')[0]!)
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Move to the top' }))
+    expect(actions.reorder.mutate).toHaveBeenCalledWith(['c', 'b'], expect.anything())
+  })
+
+  it('narrows the list to what the search finds, by song or recipe, and says how many', async () => {
+    jobs = three()
+    links = [link({ name: 'Night Drive', state: 'downloading', created_at: 40 })]
+    view()
+    const search = screen.getByRole('textbox', { name: 'Search the queue' })
+    expect(screen.getByTestId('queue-count')).toHaveTextContent(/^4$/)
+
+    await userEvent.type(search, 'LL')
+    expect(titles()).toEqual(['Bells', 'Cello'])
+    expect(screen.getByTestId('queue-count')).toHaveTextContent('2 of 4')
+
+    await userEvent.clear(search)
+    await userEvent.type(search, 'drum kit')
+    expect(titles()).toEqual(['Anthem'])
+
+    // A song being fetched is found by its name or its address.
+    await userEvent.clear(search)
+    await userEvent.type(search, 'youtube')
+    expect(titles()).toEqual(['Night Drive'])
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear the search' }))
+    expect(search).toHaveValue('')
+    expect(search).toHaveFocus()
+    expect(titles()).toHaveLength(4)
+  })
+
+  it('says when nothing matches, and Escape empties the search and then leaves it', async () => {
+    jobs = three()
+    view()
+    const search = screen.getByRole('textbox', { name: 'Search the queue' })
+    await userEvent.type(search, 'zzz')
+    expect(screen.getByTestId('queue-no-match')).toHaveTextContent('Nothing in the queue matches "zzz".')
+    expect(screen.queryByTestId('job-row')).not.toBeInTheDocument()
+    // The queue is not empty: the drop hint stays away and Start and Clear stay.
+    expect(screen.queryByRole('heading', { name: 'Drop audio or video here' })).not.toBeInTheDocument()
+
+    await userEvent.keyboard('{Escape}')
+    expect(search).toHaveValue('')
+    expect(search).toHaveFocus()
+    expect(screen.getAllByTestId('job-row')).toHaveLength(3)
+    await userEvent.keyboard('{Escape}')
+    expect(search).not.toHaveFocus()
+  })
+
+  it('goes to the search on Ctrl+F, not while the trimmer covers the queue', () => {
+    jobs = three()
+    const shown = view()
+    const search = screen.getByRole('textbox', { name: 'Search the queue' })
+    fireEvent.keyDown(window, { key: 'f', ctrlKey: true })
+    expect(search).toHaveFocus()
+    search.blur()
+    shown.unmount()
+
+    wrap(<QueueView recipes={[]} models={[]} selectedJob={null} onSelect={vi.fn()} onAddFiles={vi.fn()} onPasteLink={vi.fn()} covered />)
+    fireEvent.keyDown(window, { key: 'f', ctrlKey: true })
+    expect(screen.getByRole('textbox', { name: 'Search the queue' })).not.toHaveFocus()
+  })
+
+  it('brings a new song in, and not one that a search brings back', async () => {
+    jobs = three()
+    view()
+    const search = screen.getByRole('textbox', { name: 'Search the queue' })
+    expect(screen.getAllByTestId('job-row')[0]).toHaveClass('row-enter')
+    await userEvent.type(search, 'anthem')
+    await userEvent.clear(search)
+    const rows = screen.getAllByTestId('job-row')
+    expect(rows).toHaveLength(3)
+    // Anthem never left; the two the search hid are back without the entrance.
+    expect(rows[0]).toHaveClass('row-enter')
+    expect(rows[1]).not.toHaveClass('row-enter')
+    expect(rows[2]).not.toHaveClass('row-enter')
+  })
+})
 
 describe('StemsPanel', () => {
   const stems = ['vocals', 'drums', 'bass'].map(stem)

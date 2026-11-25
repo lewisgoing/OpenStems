@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Check, GripVertical, Layers, Play, RotateCcw, Scissors, Trash2, X, Zap } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
-import type { Job, Model, Recipe } from '@/api/client'
+import { AlertTriangle, Check, GripVertical, Layers, Play, RotateCcw, Scissors, Search, Trash2, X, Zap } from 'lucide-react'
+import { type RefObject, useEffect, useRef, useState } from 'react'
+import type { Job, Link, Model, Recipe } from '@/api/client'
 import { keys, useJobActions, useJobs, useSetAnalysis, useSettings } from '@/api/queries'
 import { JobNotes } from '@/components/Fit'
 import { LinkRow, useOpenLinks } from '@/components/LinkRow'
@@ -10,8 +10,9 @@ import { type MenuItem, RowMenu, jobMenuItems, revealHandlers } from '@/componen
 import { SourceTitle } from '@/components/SourceTitle'
 import { TempoKey } from '@/components/TempoKey'
 import { useToast } from '@/components/toast'
-import { Button, IconButton, ProgressBar, Tooltip } from '@/components/ui'
+import { Button, IconButton, ProgressBar, Select, Tooltip } from '@/components/ui'
 import { cn, formatPercent, paletteColor } from '@/lib/format'
+import { type QueueSort, SORTS, isQueueSort, loadSort, matchesSearch, saveSort, searchTerms, sortQueue } from '@/lib/queuesort'
 import { useTheme } from '@/lib/theme'
 import { tempoKeyOf } from '@/lib/tempokey'
 import { modKey, shortcut } from '@/platform'
@@ -43,6 +44,15 @@ interface QueueViewProps {
   covered?: boolean
 }
 
+/** One row of the list: a job, or a song still being fetched from a link. */
+interface QueueRow {
+  id: string
+  name: string
+  created_at: number
+  job?: Job
+  link?: Link
+}
+
 export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, onPasteLink, onTrim, covered = false }: QueueViewProps) {
   const { data: jobs = [] } = useJobs()
   const { data: settings } = useSettings()
@@ -51,6 +61,9 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
   const actions = useJobActions()
   const toast = useToast()
   const queryClient = useQueryClient()
+  const [sort, setSort] = useState<QueueSort>(loadSort)
+  const [query, setQuery] = useState('')
+  const search = useRef<HTMLInputElement>(null)
   const [dragged, setDragged] = useState<string | null>(null)
   const [over, setOver] = useState<string | null>(null)
   // The cascade plays once per session, the first time the queue is shown. Coming back
@@ -60,6 +73,29 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
     queueShownOnce = true
     cascade.current = false
   }, [])
+
+  // Rows the list has shown before. A song that is new to the queue comes in; one that a
+  // search or another order brings back is simply there, since typing must not set the list
+  // moving.
+  const known = useRef(new Set<string>())
+  useEffect(() => {
+    for (const job of jobs) known.current.add(job.id)
+    for (const link of links) known.current.add(link.id)
+  })
+
+  const total = jobs.length + links.length
+  const terms = searchTerms(query)
+  // Jobs in the order they run, then the songs still being fetched: that is where their jobs
+  // will appear. Any other order places both by when they were added, or by name.
+  const rows = sortQueue<QueueRow>(
+    [
+      ...jobs.map((job): QueueRow => ({ id: job.id, name: job.track_name, created_at: job.created_at, job })),
+      ...links.map((link): QueueRow => ({ id: link.id, name: link.name, created_at: link.created_at, link })),
+    ],
+    sort,
+  ).filter((row) => (row.job ? matchesSearch(terms, row.job.track_name, row.job.recipe_name) : matchesSearch(terms, row.name, row.link?.url)))
+  // Dragging sets the order songs run in, so it is there only while the list shows that order.
+  const reorderable = sort === 'run'
 
   const finished = jobs.filter((j) => j.state === 'done' || j.state === 'failed' || j.state === 'cancelled').length
   const held = jobs.filter((j) => j.held).length
@@ -86,15 +122,31 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
     <div className="flex h-full min-w-0 flex-1 flex-col">
       <RecipeBar recipes={recipes} models={models} onAddFiles={onAddFiles} onPasteLink={onPasteLink} quietAdd={held > 0} />
 
-      {jobs.length + links.length === 0 ? (
+      {total === 0 ? (
         <EmptyQueue />
       ) : (
         <>
-          <div className="flex items-center justify-between px-5 pt-3 pb-1 text-muted">
-            <span className="text-[12px] font-semibold tracking-wide uppercase">
-              Queue <span className="tabular ml-1 font-normal text-faint">{jobs.length + links.length}</span>
+          <div className="@container/bar flex items-center gap-3 px-5 pt-3 pb-1 text-muted">
+            <span className="flex-none text-[12px] font-semibold tracking-wide uppercase">
+              Queue{' '}
+              <span className="tabular ml-1 font-normal text-faint" data-testid="queue-count">
+                {terms.length > 0 ? `${rows.length} of ${total}` : total}
+              </span>
             </span>
-            <div className="flex items-center gap-1.5">
+            <div className="ml-auto flex min-w-0 items-center gap-1.5">
+              <QueueSearch field={search} query={query} onQuery={setQuery} listen={!covered} />
+              <Select
+                label="Sort the queue"
+                value={sort}
+                options={SORTS}
+                className="btn-sm flex-none"
+                minWidth={250}
+                onChange={(value) => {
+                  if (!isQueueSort(value)) return
+                  setSort(value)
+                  saveSort(value)
+                }}
+              />
               <StartButton held={held} listen={!covered} onStart={() => actions.startAll.mutate(undefined, { onError: toast.error })} />
               <Button
                 size="sm"
@@ -105,12 +157,34 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
                   actions.clearFinished.mutate(undefined, { onError: toast.error })
                 }}
               >
-                Clear finished
+                <span>
+                  Clear<span className="@max-[470px]/bar:sr-only"> finished</span>
+                </span>
               </Button>
             </div>
           </div>
+          {rows.length === 0 ? (
+            <div className="grid flex-1 place-items-center p-8 text-center text-muted" data-testid="queue-no-match">
+              <div>
+                <p className="m-0">Nothing in the queue matches "{query.trim()}".</p>
+                <Button
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => {
+                    setQuery('')
+                    search.current?.focus()
+                  }}
+                >
+                  Clear the search
+                </Button>
+              </div>
+            </div>
+          ) : (
           <ul className="m-0 flex-1 list-none overflow-y-auto px-3 pt-1 pb-4" aria-label="Jobs">
-            {jobs.map((job, index) => {
+            {rows.map((row, index) => {
+              if (row.link) return <LinkRow key={row.id} link={row.link} enter={!known.current.has(row.id)} />
+              const job = row.job
+              if (!job) return null
               const remove = () => {
                 if (job.id === selectedJob) onSelect(null)
                 actions.remove.mutate(job.id, { onError: toast.error })
@@ -134,6 +208,8 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
                 key={job.id}
                 job={job}
                 separatePart={separatePart}
+                reorderable={reorderable}
+                enter={!known.current.has(job.id)}
                 menu={menu}
                 index={cascade.current ? index : 0}
                 selected={job.id === selectedJob}
@@ -149,7 +225,7 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
                   setDragged(null)
                   setOver(null)
                 }}
-                onDragOver={() => dragged && job.state === 'queued' && setOver(job.id)}
+                onDragOver={() => dragged && reorderable && job.state === 'queued' && setOver(job.id)}
                 onDrop={() => {
                   drop(job.id)
                   setDragged(null)
@@ -158,14 +234,72 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
               />
               )
             })}
-            {/* Songs still being fetched come last: that is where their jobs will appear. */}
-            {links.map((link) => (
-              <LinkRow key={link.id} link={link} />
-            ))}
           </ul>
+          )}
         </>
       )}
     </div>
+  )
+}
+
+/**
+ * The queue's search field. Ctrl+F (Cmd+F on a Mac) goes to it with what is in it selected;
+ * Escape empties it first and leaves it once it is empty.
+ */
+export function QueueSearch({
+  field,
+  query,
+  onQuery,
+  listen = true,
+}: {
+  field: RefObject<HTMLInputElement | null>
+  query: string
+  onQuery: (query: string) => void
+  listen?: boolean
+}) {
+  useEffect(() => {
+    if (!listen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== 'f' || !modKey(event) || event.altKey || event.shiftKey) return
+      event.preventDefault()
+      field.current?.focus()
+      field.current?.select()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [field, listen])
+  return (
+    <label className="queue-search">
+      <Search size={12} className="queue-search-icon" aria-hidden="true" />
+      <input
+        ref={field}
+        className="input"
+        placeholder="Search"
+        aria-label="Search the queue"
+        title={`Search the queue (${shortcut('F')})`}
+        spellCheck={false}
+        value={query}
+        onChange={(event) => onQuery(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape') return
+          if (query) onQuery('')
+          else event.currentTarget.blur()
+        }}
+      />
+      {query && (
+        <button
+          type="button"
+          className="queue-search-clear press"
+          aria-label="Clear the search"
+          onClick={() => {
+            onQuery('')
+            field.current?.focus()
+          }}
+        >
+          <X size={11} />
+        </button>
+      )}
+    </label>
   )
 }
 
@@ -224,6 +358,10 @@ interface JobRowProps {
   job: Job
   /** The separate_selection setting: a waiting song's part is all that Start separates. */
   separatePart: boolean
+  /** The list shows the order songs run in, so a waiting song can be dragged to another place. */
+  reorderable: boolean
+  /** New to the queue, so it comes in. Read once, when the row first appears. */
+  enter: boolean
   /** What a right-click on the row offers. */
   menu: MenuItem[]
   index: number
@@ -242,7 +380,7 @@ interface JobRowProps {
   onDrop: () => void
 }
 
-function JobRow({ job, separatePart, menu, index, selected, dropTarget, onSelect, onStart, onCancel, onRetry, onRemove, onTrim, onDragStart, onDragEnd, onDragOver, onDrop }: JobRowProps) {
+function JobRow({ job, separatePart, reorderable, enter, menu, index, selected, dropTarget, onSelect, onStart, onCancel, onRetry, onRemove, onTrim, onDragStart, onDragEnd, onDragOver, onDrop }: JobRowProps) {
   const active = ACTIVE.has(job.state)
   const done = job.state === 'done'
   const queued = job.state === 'queued'
@@ -251,6 +389,7 @@ function JobRow({ job, separatePart, menu, index, selected, dropTarget, onSelect
   const given = tempoKeyOf(job.options)
   const setAnalysis = useSetAnalysis()
   const toast = useToast()
+  const [entering] = useState(enter)
 
   return (
     <RowMenu
@@ -261,7 +400,8 @@ function JobRow({ job, separatePart, menu, index, selected, dropTarget, onSelect
           data-testid="job-row"
           data-state={job.state}
           className={cn(
-            'row-enter group/row row-hover relative mb-1 rounded-[10px] border border-transparent px-3 py-2.5',
+            'group/row row-hover relative mb-1 rounded-[10px] border border-transparent px-3 py-2.5',
+            entering && 'row-enter',
             selected && '!border-line-strong bg-raised',
             done && 'cursor-pointer',
             dropTarget && 'shadow-[0_-2px_0_var(--color-accent-fg)]',
@@ -284,7 +424,7 @@ function JobRow({ job, separatePart, menu, index, selected, dropTarget, onSelect
       {/* A container: narrow (the stems panel open in a small window), Trim keeps its icon only
           and the recipe gives way before the song's name does. */}
       <div className="@container/row flex items-center gap-2.5">
-        {queued ? (
+        {queued && reorderable ? (
           <div
             draggable
             role="button"
