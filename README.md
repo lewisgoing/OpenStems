@@ -129,10 +129,18 @@ an editor across the window, to take a few bars out as a file of their own.
 2. **Check the grid.** Turn on Click for a click on every beat. If the grid is off, use Half
    or Double, type the tempo or tap it (T). For an exact tempo, drag bar 1's flag (the 1 in
    the ruler) onto the first downbeat, then drag a later bar line onto its beat. The tempo you
-   set is the song's: file names, the manifest and the tempo FL Studio reads follow.
+   set is the song's: file names, the manifest and the tempo FL Studio reads follow. The
+   song's start takes hold of the flag when it is dragged close to it, and 0:00 beside the
+   bar 1 field, or a double click on the flag, puts bar 1 there. A flag dragged before the
+   start waits at the left edge of the ruler, to be dragged back in.
 3. **Drag across the waveform** to choose a part. It snaps to bars; pick Beat, 1/2, 1/4 or
    Off under Snap, or hold Alt (Option on a Mac) to place it freely. Drag its edges to change
-   it and its middle to move it. A double click takes one bar.
+   it and its middle to move it. A double click takes one bar. Under Length, 4, 8, 16, 32 or
+   64 gives a part of that many bars from the bar the playhead is in, or makes the part you
+   have that long; type any other number of bars in the field beside them, and it is kept for
+   next time. A part chosen where there was none is looped; L or Loop turns that off, and it
+   stays off for the parts after it. The button left of Play, or Home, takes the playhead
+   and the view back to 0:00.
 4. **Drag the clip out** of the footer into your DAW or a folder. It shows the name of the
    file it gives, such as "Song - drums - bars 9-16.wav". "Every stem, this part" gives every
    stem cut to the part, one file each. Clips are WAV, in a `Clips` folder beside the stems,

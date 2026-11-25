@@ -249,6 +249,89 @@ export function nudgeDownbeat(g: Grid, direction: -1 | 1, byBeat: boolean): numb
   return Math.min(MAX_DOWNBEAT, Math.max(MIN_DOWNBEAT, t))
 }
 
+/**
+ * Where a click puts the playhead: on the nearest line like anything placed, or at the song's
+ * start or end when that is nearer (or the line is outside the song). The start is where a
+ * song is played from most, and a grid whose bar 1 is not at 0:00 has no line there.
+ */
+export function seekPlace(g: Grid, t: number, snap: Snap, free: boolean, duration: number): number {
+  const inside = Math.min(duration, Math.max(0, t))
+  const at = placed(g, inside, snap, free)
+  if (at <= 0 || Math.abs(inside) < Math.abs(at - inside)) return 0
+  if (at >= duration || Math.abs(duration - inside) < Math.abs(at - inside)) return duration
+  return at
+}
+
+/**
+ * Where bar 1 goes as its flag is dragged to `t`: the song's start takes hold of it within
+ * `reach` seconds (a few pixels), since 0:00 is where bar 1 most often belongs and a flag let
+ * go a hair before it would start the bars before the song. Held free, it goes exactly to `t`.
+ */
+export function flagPlace(t: number, reach: number, free: boolean): number {
+  return !free && Math.abs(t) <= reach ? 0 : t
+}
+
+/* ---- a part of so many bars ------------------------------------------------------ */
+
+/** The lengths a part is given with one press, in bars. */
+export const BAR_LENGTHS = [4, 8, 16, 32, 64]
+/** The longest part that can be asked for by its bars. */
+export const MAX_BARS = 999
+/** Where the length typed last is kept, for the next song and the next start. */
+export const BARS_KEY = 'openstems.trim.bars.v1'
+
+/** A typed number of bars: a whole number from 1 to 999. Null when it is not one. */
+export function parseBars(text: string): number | null {
+  const trimmed = text.trim()
+  if (!/^\d{1,3}$/.test(trimmed)) return null
+  const bars = Number(trimmed)
+  return bars >= 1 && bars <= MAX_BARS ? bars : null
+}
+
+/** The length typed last, or none. */
+export function loadBars(): number | null {
+  try {
+    return parseBars(localStorage.getItem(BARS_KEY) ?? '')
+  } catch {
+    return null
+  }
+}
+
+export function saveBars(bars: number): void {
+  try {
+    localStorage.setItem(BARS_KEY, String(bars))
+  } catch {
+    // Kept for this editor only.
+  }
+}
+
+/**
+ * A part `bars` bars long. With a part chosen it keeps its start and takes that length;
+ * without one it starts on the bar line at or before `at` (the playhead), or on the first
+ * one in the song when that line is before its start. A part that would run past the end
+ * moves back by whole bars to fit; in a song shorter than that it runs to the end.
+ */
+export function barsRange(g: Grid, sel: Range | null, at: number, bars: number, duration: number): Range | null {
+  const bar = g.beatsPerBar * beatSeconds(g)
+  const length = bars * bar
+  let start = sel ? sel.start : floorTime(g, Math.min(duration, Math.max(0, at)), 'bar')
+  if (start < -1e-9) start = ceilTime(g, 0, 'bar')
+  const over = start + length - duration
+  if (over > 1e-6) {
+    const back = start - Math.ceil(over / bar - 1e-9) * bar
+    if (back >= -1e-6) start = Math.max(0, back)
+  }
+  return cleanRange(start, start + length, duration)
+}
+
+/** How many whole bars long a part is, whatever line it starts on. Null when it is not whole bars. */
+export function barsOf(g: Grid | null, r: Range | null): number | null {
+  if (!g || !r) return null
+  const bars = (r.end - r.start) / (g.beatsPerBar * beatSeconds(g))
+  const whole = Math.round(bars)
+  return whole >= 1 && Math.abs(bars - whole) * g.beatsPerBar * beatSeconds(g) < 0.0015 ? whole : null
+}
+
 /* ---- words ----------------------------------------------------------------------- */
 
 /** Seconds as m:ss.cc, for a clock that runs. */

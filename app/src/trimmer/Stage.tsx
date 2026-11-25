@@ -32,7 +32,7 @@ import {
 import { formatBpm } from '@/lib/tempokey'
 import { isMac } from '@/platform'
 import { type Tokens, useCanvas, useFrame, useWidth } from './canvas'
-import { barRange, isZoomWheel, moved, nudgeDownbeat, nudgeEdge, placed, spanned, zoomFactor } from './model'
+import { barRange, flagPlace, isZoomWheel, moved, nudgeDownbeat, nudgeEdge, placed, seekPlace, spanned, zoomFactor } from './model'
 
 /** How near (px) the pointer must be to a line or an edge to take hold of it. */
 const GRAB = 6
@@ -40,7 +40,7 @@ const GRAB = 6
 const SLOP = 3
 
 /** Play from `t`. A loop that does not hold `t` is let go first, or the player would jump back into it. */
-function seekTo(player: TrimPlayer, t: number): void {
+export function seekTo(player: TrimPlayer, t: number): void {
   const loop = player.state.loop
   if (loop && (t < loop.start || t >= loop.end)) player.setLoop(null)
   player.seek(t)
@@ -119,7 +119,7 @@ interface StageProps {
 
 type Hold = { kind: 'flag' } | { kind: 'bar'; bar: number }
 
-type RulerDrag = { kind: 'downbeat'; grab: number; from: Grid } | { kind: 'fit'; bar: number; grab: number; from: Grid } | { kind: 'scrub' }
+type RulerDrag = { kind: 'downbeat'; grab: number; from: Grid; x0: number; held: boolean } | { kind: 'fit'; bar: number; grab: number; from: Grid } | { kind: 'scrub' }
 
 type WaveDrag =
   | { kind: 'create'; origin: number; x0: number; moved: boolean }
@@ -273,13 +273,20 @@ export function Stage(props: StageProps) {
   const [hover, setHover] = useState<Hold | null>(null)
   const [held, setHeld] = useState<Hold | null>(null)
   const rulerDrag = useRef<RulerDrag | null>(null)
+  // What the last press on the ruler took hold of: a double click is told by its second press,
+  // since its own event comes from the ruler (which has the pointer), not from what was pressed.
+  const pressed = useRef<Hold | null>(null)
   const active = held ?? hover
 
   const flagX = xOf(grid.downbeat)
+  // Bar 1 before the song's start cannot be scrolled to: with the start on screen its flag
+  // waits at the left edge, to be dragged back in from there.
+  const pinned = pps > 0 && flagX < -1 && view.t0 <= 1e-6
+  const flagAt = pinned ? 0 : flagX
 
   const holdAt = (x: number, target: EventTarget | null): Hold | null => {
     if ((target as HTMLElement | null)?.closest?.('.trim-flag')) return { kind: 'flag' }
-    if (Math.abs(x - flagX) <= GRAB) return { kind: 'flag' }
+    if (Math.abs(x - flagAt) <= GRAB) return { kind: 'flag' }
     let best: Hold | null = null
     let distance = GRAB
     for (const line of lines) {
@@ -304,8 +311,10 @@ export function Stage(props: StageProps) {
     const x = rulerX(event)
     const t = tOf(x)
     const hold = holdAt(x, event.target)
+    pressed.current = hold
     if (hold?.kind === 'flag') {
-      rulerDrag.current = { kind: 'downbeat', grab: t - grid.downbeat, from: grid }
+      // A flag waiting at the edge is taken as if bar 1 were there: it comes in under the pointer.
+      rulerDrag.current = { kind: 'downbeat', grab: t - (pinned ? view.t0 : grid.downbeat), from: grid, x0: x, held: !pinned }
       setHeld(hold)
       onGesture(true)
     } else if (hold?.kind === 'bar') {
@@ -314,7 +323,7 @@ export function Stage(props: StageProps) {
       onGesture(true)
     } else {
       rulerDrag.current = { kind: 'scrub' }
-      seekTo(player, Math.min(duration, Math.max(0, placed(grid, t, snap, event.altKey))))
+      seekTo(player, seekPlace(grid, t, snap, event.altKey, duration))
     }
   }
 
@@ -328,10 +337,15 @@ export function Stage(props: StageProps) {
       return
     }
     const t = tOf(x)
-    if (drag.kind === 'downbeat') setGrid(withDownbeat(drag.from, t - drag.grab))
-    else if (drag.kind === 'fit') setGrid(fitBar(drag.from, drag.bar, t - drag.grab))
+    if (drag.kind === 'downbeat') {
+      // A press on the flag at the edge is not yet a drag: a click there leaves bar 1 alone.
+      if (!drag.held && Math.abs(x - drag.x0) < SLOP) return
+      drag.held = true
+      // The song's start takes hold of the flag a few pixels either side of it.
+      setGrid(withDownbeat(drag.from, flagPlace(t - drag.grab, GRAB / pps, event.altKey)))
+    } else if (drag.kind === 'fit') setGrid(fitBar(drag.from, drag.bar, t - drag.grab))
     // Scrubbing moves a paused playhead; a playing one would restart every source per move.
-    else if (!playing) seekTo(player, Math.min(duration, Math.max(0, placed(grid, t, snap, event.altKey))))
+    else if (!playing) seekTo(player, seekPlace(grid, t, snap, event.altKey, duration))
   }
 
   const onRulerUp = () => {
@@ -360,6 +374,14 @@ export function Stage(props: StageProps) {
 
   const showDownbeat = () => {
     onView(panView(view, grid.downbeat - span * 0.1 - view.t0, duration))
+  }
+
+  const onRulerDouble = () => {
+    // A double click on the flag puts bar 1 at the song's start.
+    if (pressed.current?.kind !== 'flag' || grid.downbeat === 0) return
+    const next = withDownbeat(grid, 0)
+    setGrid(next)
+    onGridDone(next, false)
   }
 
   /* ---- the waveform: select, resize, move, seek ---- */
@@ -479,7 +501,7 @@ export function Stage(props: StageProps) {
     }
     // A click, without a drag: the playhead goes there.
     const t = Math.min(duration, Math.max(0, tOf(waveX(event))))
-    seekTo(player, placed(grid, t, snap, event.altKey))
+    seekTo(player, seekPlace(grid, t, snap, event.altKey, duration))
   }
 
   const onWaveDouble = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -505,18 +527,19 @@ export function Stage(props: StageProps) {
   const tag = (() => {
     if (!active) return null
     if (active.kind === 'flag') {
-      return { x: flagX, text: held ? `Bar 1 at ${formatClock(grid.downbeat)}` : 'Bar 1: drag it onto the first downbeat' }
+      const text = held ? `Bar 1 at ${formatClock(grid.downbeat)}` : pinned ? 'Bar 1 is before the song starts: drag it back in, or double-click for 0:00' : 'Bar 1: drag it onto the first downbeat'
+      return { x: flagAt, text }
     }
     const x = xOf(timeAtBar(grid, active.bar))
     return { x, text: held ? `Bar ${active.bar} · ${formatBpm(grid.bpm)} BPM` : `Bar ${active.bar}: drag it onto its beat to set the tempo` }
   })()
   const guideX = active?.kind === 'bar' ? xOf(timeAtBar(grid, active.bar)) : null
 
-  const flagVisible = flagX >= -1 && flagX <= width + 1
+  const flagVisible = pinned || (flagX >= -1 && flagX <= width + 1)
   // The hint takes the side of the ruler away from the flag, and only the room on that side
   // (the flag's cloth is 22 px wide). Before the ruler is measured, it has all of it.
-  const hintLeft = flagX > width / 2
-  const hintRoom = width <= 0 ? Number.POSITIVE_INFINITY : hintLeft ? Math.min(width, flagX) - 16 : width - Math.max(0, flagX) - 38
+  const hintLeft = flagAt > width / 2
+  const hintRoom = width <= 0 ? Number.POSITIVE_INFINITY : hintLeft ? Math.min(width, flagAt) - 16 : width - Math.max(0, flagAt) - 38
   const selVisible = sel !== null && xe >= 0 && xs <= width
 
   return (
@@ -533,6 +556,7 @@ export function Stage(props: StageProps) {
         onPointerLeave={() => {
           if (!rulerDrag.current) setHover(null)
         }}
+        onDoubleClick={onRulerDouble}
       >
         <canvas ref={rulerCanvas} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true" />
         {selVisible && sel && (
@@ -540,8 +564,8 @@ export function Stage(props: StageProps) {
         )}
         {flagVisible || pps <= 0 ? (
           <div
-            className={cn('trim-flag', active?.kind === 'flag' && 'trim-flag-active')}
-            style={{ transform: `translateX(${flagX}px)` }}
+            className={cn('trim-flag', active?.kind === 'flag' && 'trim-flag-active', pinned && 'trim-flag-pinned')}
+            style={{ transform: `translateX(${flagAt}px)` }}
             role="slider"
             tabIndex={0}
             aria-label="Bar 1"
@@ -550,10 +574,13 @@ export function Stage(props: StageProps) {
             aria-valuenow={Math.round(grid.downbeat * 1000) / 1000}
             aria-valuetext={`Bar 1 at ${formatClock(grid.downbeat)}`}
             data-testid="bar-one-flag"
+            data-pinned={pinned || undefined}
             onKeyDown={onFlagKey}
           >
             <span className="trim-flag-pole" aria-hidden="true" />
-            <span className="trim-flag-cloth">1</span>
+            <span className="trim-flag-cloth">
+              {pinned && <ChevronLeft size={10} strokeWidth={3} className="-ml-0.5" aria-hidden="true" />}1
+            </span>
           </div>
         ) : (
           <button

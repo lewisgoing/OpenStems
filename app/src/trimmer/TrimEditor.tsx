@@ -8,7 +8,7 @@
  */
 
 import { useQueries } from '@tanstack/react-query'
-import { ArrowLeft, AudioLines, GripVertical, Layers, Metronome, Pause, Play, Repeat, RotateCcw, TriangleAlert, X } from 'lucide-react'
+import { ArrowLeft, AudioLines, GripVertical, Layers, Metronome, Pause, Play, Repeat, RotateCcw, SkipBack, TriangleAlert, X } from 'lucide-react'
 import {
   type CSSProperties,
   type ReactNode,
@@ -45,6 +45,7 @@ import {
   formatClock,
   formatPosition,
   halve,
+  panView,
   rangeLabel,
   shiftDownbeat,
   withDownbeat,
@@ -52,17 +53,20 @@ import {
 import { dragSource } from '@/lib/sourcedrag'
 import { formatBpm, parseBpm } from '@/lib/tempokey'
 import { type Theme, useTheme } from '@/lib/theme'
-import { freeKey, isMac, modClick, modKey, modName } from '@/platform'
+import { freeKey, homeKey, isMac, modClick, modKey, modName } from '@/platform'
 import { type ClipFiles, SETTLE_MS, forgetWritten, useClipFiles } from '@/state/clip'
 import { capitalize } from '@/state/mix'
 import { type Tokens, mixColors, useFrame, useTokens } from './canvas'
 import { type TrimMemory, remember } from './memory'
 import {
+  BAR_LENGTHS,
   type Chip,
   ORIGINAL,
   type Pick,
   type Target,
   audibleOf,
+  barsOf,
+  barsRange,
   choose,
   clipNameParts,
   clipRequest,
@@ -72,10 +76,13 @@ import {
   folderOf,
   folderParts,
   isChosen,
+  loadBars,
+  parseBars,
   parseClock,
   peaksOf,
   readout,
   sameGrid,
+  saveBars,
   sectionsOf,
   stemTrack,
   targetOf,
@@ -84,7 +91,7 @@ import {
   wholeNear,
 } from './model'
 import { type Figures, type GridChange, type SongGrid, type TrimSong, gridChange, moveRange, resetChange, songGrid, songSeconds } from './song'
-import { Overview, Stage, type WaveLayers } from './Stage'
+import { Overview, Stage, type WaveLayers, seekTo } from './Stage'
 
 export interface TrimEditorProps {
   song: TrimSong
@@ -421,6 +428,9 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
   const [fitted, setFitted] = useState(initial.fitted)
   const [click, setClick] = useState(false)
   const [gesture, setGesture] = useState(false)
+  // The part as it was before the gesture under way: what tells a new part from a changed one.
+  const rest = useRef(sel)
+  if (!gesture) rest.current = sel
 
   // A song that comes back on another timeline while it is open (a waiting song whose part
   // was separated alone): the part moves with it, and the view shows the whole of it.
@@ -485,11 +495,29 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
   }
   const selectionDone = useCallback(
     (next: Range | null) => {
-      // The loop follows the selection once the pointer lets go, not on every move.
-      if (player.state.loop) player.setLoop(next)
+      // A part chosen where there was none is looped: it is chosen to be heard round and
+      // round. After that the loop is the user's: on, it follows the part once the pointer
+      // lets go (not on every move); turned off, it stays off.
+      const created = next !== null && rest.current === null
+      rest.current = next
+      if (created || player.state.loop) player.setLoop(next)
     },
     [player],
   )
+  /** A part of so many bars: the part chosen made that long, or one from the playhead's bar. */
+  const selectBars = (bars: number) => {
+    const next = barsRange(grid, sel, player.position, bars, duration)
+    if (!next) return
+    setSel(next)
+    selectionDone(next)
+    // A part that reaches out of sight is shown whole.
+    if (next.start < view.t0 - 1e-6 || next.end > view.t1 + 1e-6) setView(fitView(next, duration))
+  }
+  /** The playhead and the view go to 0:00. */
+  const toStart = () => {
+    seekTo(player, 0)
+    setView((v) => panView(v, -v.t0, duration))
+  }
   const fitSelection = () => {
     if (sel) setView(fitView(sel, duration))
   }
@@ -561,6 +589,8 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
         fitSelection()
       } else if (key === 'z') {
         wholeSong()
+      } else if (key === 'home') {
+        toStart()
       } else if (key === 'escape') {
         if (sel) {
           const fromEdge = el?.closest('[data-edge]')
@@ -712,6 +742,8 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
             onEmptyTempo={() => save(song.waiting ? { bpm: null } : { bpm: saved.detectedFigures.bpm }, { ...grid, bpm: saved.detected.bpm })}
             onDownbeat={(next) => commit(next, false)}
             onNudge={nudge}
+            sel={sel}
+            onBars={selectBars}
             onReset={() => {
               setFitted(false)
               save(resetChange(song, saved), saved.detected)
@@ -746,6 +778,11 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
               label={label}
             />
             <div className="mt-2.5 flex flex-none items-center gap-3">
+              <Tooltip label={`Back to the start (${homeKey()})`}>
+                <Button variant="ghost" size="icon" className="-mr-1.5 !h-7 !w-7 flex-none" aria-label="Back to the start" data-testid="trim-start" onClick={toStart}>
+                  <SkipBack size={14} fill="currentColor" />
+                </Button>
+              </Tooltip>
               <Tooltip label={state.playing ? 'Pause (Space)' : 'Play (Space)'}>
                 <Button
                   variant="primary"
@@ -978,13 +1015,13 @@ function Break() {
 }
 
 /**
- * Where the toolbar's three groups break into lines, from the widths they need on this
- * screen: one line when all fit; else tempo and bar 1, then the rest; else a group a line.
+ * Where the toolbar's groups break into lines, from the widths they need on this screen:
+ * each line takes the groups that fit on it, in their order.
  * Measured rather than set at fixed widths, since the font decides (SF Pro on a Mac is wider
- * than Segoe UI). `[after the tempo, after bar 1]`: true where a line breaks.
+ * than Segoe UI). One for each group but the last: true where a line breaks after it.
  */
-function useToolbarBreaks(bar: RefObject<HTMLDivElement | null>, groups: RefObject<HTMLDivElement | null>[]): [boolean, boolean] {
-  const [breaks, setBreaks] = useState<[boolean, boolean]>([false, false])
+function useToolbarBreaks(bar: RefObject<HTMLDivElement | null>, groups: RefObject<HTMLDivElement | null>[]): boolean[] {
+  const [breaks, setBreaks] = useState<boolean[]>(() => groups.slice(1).map(() => false))
   useLayoutEffect(() => {
     const el = bar.current
     if (!el) return
@@ -996,13 +1033,12 @@ function useToolbarBreaks(bar: RefObject<HTMLDivElement | null>, groups: RefObje
       // A divider between two groups on a line: itself, and a gap either side.
       const joint = 2 * (Number.parseFloat(style.columnGap) || 12) + 1
       let line = widths[0] ?? 0
-      const next = widths.slice(1).map((width) => {
+      const after = widths.slice(1).map((width) => {
         const fits = line + joint + width <= room + 0.5
         line = fits ? line + joint + width : width
         return !fits
       })
-      const after = [next[0] ?? false, next[1] ?? false] as [boolean, boolean]
-      setBreaks((before) => (before[0] === after[0] && before[1] === after[1] ? before : after))
+      setBreaks((before) => (before.length === after.length && before.every((was, i) => was === after[i]) ? before : after))
     }
     measure()
     const observer = new ResizeObserver(measure)
@@ -1037,11 +1073,15 @@ interface GridBarProps {
   onDownbeat: (grid: Grid) => void
   /** Bar 1 moved by a button: saved a moment after the last press. */
   onNudge: (grid: Grid) => void
+  /** The part chosen, for the length it has. */
+  sel: Range | null
+  /** A length pressed or typed: a part of so many bars. */
+  onBars: (bars: number) => void
   onReset: () => void
   onError: (error: unknown) => void
 }
 
-function GridBar({ song, grid, saved, duration, snap, onSnap, click, onClick, taps, onTap, onTempo, onEmptyTempo, onDownbeat, onNudge, onReset, onError }: GridBarProps) {
+function GridBar({ song, grid, saved, duration, snap, onSnap, click, onClick, taps, onTap, onTempo, onEmptyTempo, onDownbeat, onNudge, sel, onBars, onReset, onError }: GridBarProps) {
   // A refused field is made anew, so it shows the grid's figure again; so is bar 1's once
   // typed in, so "0.25" shows as the time it is.
   const [refused, setRefused] = useState(0)
@@ -1067,9 +1107,15 @@ function GridBar({ song, grid, saved, duration, snap, onSnap, click, onClick, ta
   const bar = useRef<HTMLDivElement>(null)
   const tempoGroup = useRef<HTMLDivElement>(null)
   const barOneGroup = useRef<HTMLDivElement>(null)
+  const partGroup = useRef<HTMLDivElement>(null)
   const restGroup = useRef<HTMLDivElement>(null)
-  const groups = useMemo(() => [tempoGroup, barOneGroup, restGroup], [])
-  const [afterTempo, afterBarOne] = useToolbarBreaks(bar, groups)
+  const groups = useMemo(() => [tempoGroup, barOneGroup, partGroup, restGroup], [])
+  const [afterTempo, afterBarOne, afterPart] = useToolbarBreaks(bar, groups)
+
+  // The length typed last is offered again, in the next song too.
+  const [ownBars, setOwnBars] = useState(loadBars)
+  const length = barsOf(grid, sel)
+  const barsLabel = (bars: number) => (sel ? `Make the part ${bars} ${bars === 1 ? 'bar' : 'bars'} long` : `Choose ${bars} ${bars === 1 ? 'bar' : 'bars'} from the playhead`)
 
   // Everything that comes and goes keeps its place (hidden, not gone), and what appears now
   // and then (Reset, "Use 87") is last, where room left over reads as the end of a line: the
@@ -1170,11 +1216,24 @@ function GridBar({ song, grid, saved, duration, snap, onSnap, click, onClick, ta
             </button>
           </Tooltip>
         </div>
+        {/* Always there, dimmed while bar 1 is at 0:00 already: nothing moves when it is pressed. */}
+        <Tooltip label={grid.downbeat === 0 ? 'Bar 1 is at the start of the song' : 'Put bar 1 at the start of the song'}>
+          <Button
+            size="sm"
+            className="tabular"
+            aria-label="Put bar 1 at the start of the song"
+            aria-disabled={grid.downbeat === 0}
+            data-testid="downbeat-start"
+            onClick={() => grid.downbeat !== 0 && onDownbeat(withDownbeat(grid, 0))}
+          >
+            0:00
+          </Button>
+        </Tooltip>
       </div>
 
       {afterBarOne ? <Break /> : <Divider />}
 
-      <div ref={restGroup} className="flex flex-none items-center gap-2">
+      <div ref={partGroup} className="flex flex-none items-center gap-2">
         <span className="text-[12px] text-faint">Snap</span>
         <Segmented<Snap>
           label="Snap"
@@ -1188,6 +1247,51 @@ function GridBar({ song, grid, saved, duration, snap, onSnap, click, onClick, ta
           }))}
         />
         <Divider className="mx-1" />
+        <span className="text-[12px] text-faint">Length</span>
+        <div className="trim-joined" role="group" aria-label="Length of the part in bars">
+          {BAR_LENGTHS.map((bars) => (
+            <Tooltip key={bars} label={barsLabel(bars)}>
+              <button
+                type="button"
+                className="trim-join-btn pressable tabular"
+                aria-label={`${bars} bars`}
+                aria-pressed={length === bars}
+                data-testid={`bars-${bars}`}
+                onClick={() => onBars(bars)}
+              >
+                {bars}
+              </button>
+            </Tooltip>
+          ))}
+          <CommitInput
+            key={`bars-${refused}`}
+            className="trim-join-field trim-bars-field tabular"
+            inputMode="numeric"
+            aria-label="Another length in bars"
+            title="Another length in bars: type it and press Enter. It is kept for next time."
+            value={ownBars === null ? '' : String(ownBars)}
+            placeholder="12"
+            data-testid="bars-field"
+            // Enter on the length it shows gives the part that length again.
+            commitUnchanged
+            onCommit={(text) => {
+              if (!text.trim()) return
+              const bars = parseBars(text)
+              if (bars === null) return refuse('Type a number of bars, from 1 to 999.')
+              setOwnBars(bars)
+              saveBars(bars)
+              onBars(bars)
+            }}
+          />
+        </div>
+        <span className="text-[12px] text-faint" aria-hidden="true">
+          bars
+        </span>
+      </div>
+
+      {afterPart ? <Break /> : <Divider />}
+
+      <div ref={restGroup} className="flex flex-none items-center gap-2">
         <Tooltip label="A click on every beat, to hear whether the grid sits on the music">
           <Button size="sm" className="press trim-toggle" aria-pressed={click} data-testid="click" onClick={onClick}>
             <Metronome size={13} />

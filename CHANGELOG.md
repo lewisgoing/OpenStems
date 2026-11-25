@@ -14,6 +14,17 @@
   separated. A project in a DAW that already uses the stems will need to find them again,
   as after renaming a folder by hand. The same on Windows and a Mac, where it has not been
   seen yet.
+- **The trimmer: bar 1, lengths and the loop.** Bar 1's flag dragged before the start of the
+  song used to be lost off the left of the ruler. Now it waits at the left edge and can be
+  dragged back in. The song's start takes hold of the flag when it is dragged close to it
+  (hold Alt, Option on a Mac, to place it freely), and 0:00 beside the bar 1 field, or a
+  double click on the flag, puts bar 1 at the start. Under Length, 4, 8, 16, 32 or 64 chooses
+  a part of that many bars from the bar the playhead is in, or makes the part chosen that
+  long; any other number of bars can be typed beside them and is kept for next time. A part
+  chosen where there was none is looped at once; turned off, the loop stays off. A new button
+  left of Play, and the Home key, take the playhead and the view back to 0:00, and a click at
+  the very start of the waveform puts the playhead at 0:00 where it used to go to the nearest
+  bar line. The same on Windows and a Mac, where it has not been seen yet.
 
 ## 0.4.2 (2026-11-24)
 

@@ -9,7 +9,7 @@ import type { Job } from '@/api/client'
 import { ToastProvider } from '@/components/toast'
 import { TooltipProvider } from '@/components/ui'
 import { UpdatePill, UpdateSettings, updateSummary } from '@/components/Update'
-import { freeKey, isMac, modClick, modKey, modName, shortcut, words } from '@/platform'
+import { freeKey, homeKey, isMac, modClick, modKey, modName, shortcut, words } from '@/platform'
 import { TrimEditor } from '@/trimmer/TrimEditor'
 import { FRESH, type TrimMemory } from '@/trimmer/memory'
 import { isZoomWheel, zoomFactor } from '@/trimmer/model'
@@ -324,9 +324,11 @@ describe('the trimmer on a Mac', () => {
   it('places freely with Option, and names Command for zooming', () => {
     expect(freeKey()).toBe('Option')
     expect(modName()).toBe('⌘')
+    expect(homeKey()).toBe('Home, or Fn+←')
     bridge.info.platform = 'win32'
     expect(freeKey()).toBe('Alt')
     expect(modName()).toBe('Ctrl')
+    expect(homeKey()).toBe('Home')
   })
 
   it('zooms with Command and the wheel, or a trackpad pinch, which arrives with Control held', () => {
