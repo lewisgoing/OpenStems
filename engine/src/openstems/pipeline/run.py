@@ -63,6 +63,10 @@ class RunOptions:
     bpm: float | None = None
     key: str | None = None
     downbeat: float | None = None
+    # The user's own name for the song, in place of its file's: the stem folder and the
+    # stems are named by it. Not part of the cache key: the folder is where a result is
+    # looked for, so a song under another name is another folder.
+    name: str | None = None
     midi_stems: list[str] = field(default_factory=list)
     force: bool = False
     # A part of the song to separate alone, as a song of its own: a job's `range` while the
@@ -236,6 +240,7 @@ class Pipeline:
             content_hash=digest,
             size=size,
             part=part.label if part is not None else "",
+            title=options.name or "",
         )
         if part is not None and options.downbeat is not None:
             # Bar 1 as the part has it, before the cache is looked at: a cached part takes it.

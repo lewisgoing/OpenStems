@@ -66,6 +66,7 @@ import { TrimPlayer } from './trimstub'
 const createClips = { mutateAsync: vi.fn() }
 const createMix = { mutateAsync: vi.fn() }
 const setAnalysis = { job: { mutateAsync: vi.fn() }, stemSet: { mutateAsync: vi.fn() } }
+const rename = { job: { mutateAsync: vi.fn(async (_change: { id: string; name: string | null }) => undefined) }, stemSet: { mutateAsync: vi.fn(async (_change: { directory: string; name: string | null }) => undefined) } }
 const actions = {
   startAll: { mutate: vi.fn() },
   start: { mutate: vi.fn() },
@@ -110,6 +111,7 @@ vi.mock('@/api/queries', () => ({
   useJobs: () => ({ data: jobs }),
   useJobActions: () => actions,
   useSetAnalysis: () => setAnalysis,
+  useRename: () => rename,
   useLinks: () => ({ data: [] }),
   useLinkActions: () => ({ add: { mutate: vi.fn() }, retry: { mutate: vi.fn() }, remove: { mutate: vi.fn() } }),
   useCreateMix: () => createMix,
@@ -1462,7 +1464,7 @@ describe('the ways into the trimmer', () => {
     queue(onTrim)
     fireEvent.contextMenu(screen.getByTestId('job-row'))
     const item = await screen.findByRole('menuitem', { name: 'Trim' })
-    expect(screen.getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Show stems', 'Trim', 'Show in Explorer', 'Show the original in Explorer', 'Remove from the list'])
+    expect(screen.getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Show stems', 'Trim', 'Rename', 'Show in Explorer', 'Show the original in Explorer', 'Remove from the list'])
     await userEvent.click(item)
     expect(onTrim).toHaveBeenCalledWith(jobs[0], false)
     // Chosen from the keyboard (a click with no pointer behind it), the trimmer opens at once.

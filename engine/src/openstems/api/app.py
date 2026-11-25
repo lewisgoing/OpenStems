@@ -290,6 +290,19 @@ def create_app(token: str, service: Service | None = None) -> FastAPI:
         return service.set_job_analysis(job_id, body.model_dump(exclude_unset=True))
 
     @app.post(
+        "/v1/jobs/{job_id}/name",
+        response_model=s.JobInfo,
+        dependencies=secured,
+        responses=errors,
+    )
+    def set_job_name(job_id: str, body: s.SetName, service: Svc) -> dict[str, Any]:
+        """Name a job's song, or give it its file's name back with null. Every job of the
+        same file follows. One that waits keeps the name for its run; stems that are
+        written are renamed on the disk, their folder and their files. Refused while the
+        song is being separated."""
+        return service.rename_job(job_id, body.name)
+
+    @app.post(
         "/v1/jobs/{job_id}/range",
         response_model=s.JobInfo,
         dependencies=secured,
@@ -399,6 +412,18 @@ def create_app(token: str, service: Service | None = None) -> FastAPI:
         """Set the tempo, key and bar 1 of a song's finished stems by hand."""
         changes = body.model_dump(exclude_unset=True)
         return service.set_analysis(changes.pop("directory"), changes)
+
+    @app.post(
+        "/v1/stemsets/name",
+        response_model=s.StemSetInfo,
+        dependencies=secured,
+        responses=errors,
+    )
+    def set_stem_set_name(body: s.SetStemSetName, service: Svc) -> dict[str, Any]:
+        """Name the song of finished stems, or give it its file's name back with null.
+        Its folder and its stem files are renamed, for every recipe it was separated
+        with. Resolves with the stem set where it is now."""
+        return service.rename_stem_set(body.directory, body.name)
 
     @app.post(
         "/v1/stemsets/rebuild", response_model=s.Rebuilt, dependencies=secured, responses=errors

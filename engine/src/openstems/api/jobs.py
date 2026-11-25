@@ -131,7 +131,8 @@ class JobManager:
         return {
             "id": job.id,
             "track_path": job.track_path,
-            "track_name": Path(job.track_path).stem,
+            # The name the user gave the song, or else its file's.
+            "track_name": job.options.get("name") or Path(job.track_path).stem,
             "recipe_id": job.recipe_id,
             "recipe_name": extra.get("recipe_name", job.recipe_id),
             "quality": job.quality,
@@ -301,6 +302,50 @@ class JobManager:
                 self._extra[job.id]["analysis"] = analysis
                 if notes is not None:
                     self._extra[job.id]["notes"] = notes
+                self._changed(job)
+
+    def running(self) -> dict[str, Any] | None:
+        """The job that is on the GPU now, if any."""
+        with self._lock:
+            job = self._jobs.get(self._current or "")
+            return self.to_dict(job) if job is not None and not job.is_terminal else None
+
+    def set_name(self, job_ids: list[str], name: str | None) -> None:
+        """Name the song of these jobs, or with None give it its file's name back. A job
+        that waits keeps the name for its run; one that is running is left as it is."""
+        with self._lock:
+            for job_id in job_ids:
+                job = self._jobs.get(job_id)
+                if job is None or job.state in _ORDER:
+                    continue
+                if (job.options.get("name") or None) == name:
+                    continue
+                if name is None:
+                    job.options.pop("name", None)
+                else:
+                    job.options["name"] = name
+                self._changed(job)
+
+    def moved(
+        self, folders: dict[str, tuple[str, list[dict[str, Any]] | None]], name: str | None
+    ) -> None:
+        """A song was renamed on the disk: finished jobs whose stems were in one of
+        ``folders`` (a stem folder as it compares, to where it is now and its stems as
+        they are now) follow, and carry the song's name."""
+        with self._lock:
+            for job in self._jobs.values():
+                if job.state is not JobState.DONE or not job.output_dir:
+                    continue
+                key = os.path.normcase(os.path.normpath(os.path.abspath(job.output_dir)))
+                if key not in folders:
+                    continue
+                job.output_dir, stems = folders[key]
+                if stems is not None:
+                    self._extra[job.id]["stems"] = stems
+                if name is None:
+                    job.options.pop("name", None)
+                else:
+                    job.options["name"] = name
                 self._changed(job)
 
     def writing_to(self, directory: str) -> bool:

@@ -68,7 +68,9 @@ def clean_changes(changes: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _tokens(manifest: dict[str, Any], analysis: dict[str, Any], directory: Path) -> dict[str, str]:
+def tokens_of(
+    manifest: dict[str, Any], analysis: dict[str, Any], directory: Path
+) -> dict[str, str]:
     source = manifest.get("source") or {}
     recipe = manifest.get("recipe") or {}
     return {
@@ -88,7 +90,7 @@ def _renames(
     template = str((manifest.get("options") or {}).get("template") or DEFAULT_TEMPLATE)
     if "{bpm}" not in template and "{key}" not in template:
         return {}
-    before, after = _tokens(manifest, old, directory), _tokens(manifest, new, directory)
+    before, after = tokens_of(manifest, old, directory), tokens_of(manifest, new, directory)
     moves: dict[str, str] = {}
     for stem in manifest.get("stems", []):
         was = render_name(template, stem=str(stem["name"]), **before)

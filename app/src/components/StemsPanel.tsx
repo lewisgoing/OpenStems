@@ -1,4 +1,4 @@
-import { Blend, FolderOpen, GripVertical, Layers, Music2, Pause, Play, Scissors, X } from 'lucide-react'
+import { Blend, FolderOpen, GripVertical, Layers, Music2, Pause, Pencil, Play, Scissors, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { type StemFile, type StemSet, fileUrl } from '@/api/client'
 import { useEngine } from '@/api/engine'
@@ -10,7 +10,7 @@ import { tempoKeyOf } from '@/lib/tempokey'
 import { modClick, modKey, words } from '@/platform'
 import { capitalize, groupsOf, mixLabel, partName, stemSections, useMixFile } from '@/state/mix'
 import { JobNotes } from './Fit'
-import { SourceTitle } from './SourceTitle'
+import { SongName } from './SongName'
 import { TempoKey } from './TempoKey'
 import { useToast } from './toast'
 import { Button, IconButton, Tooltip } from './ui'
@@ -34,6 +34,11 @@ export interface StemsPanelProps {
   notes?: string[]
   /** The user changed the tempo or key: the stems as they are now (some may be renamed). */
   onRetagged?: (set: StemSet) => void
+  /**
+   * Name the song; null gives it its file's name back. Its stem folder and files are renamed
+   * with it, so the panel is then given the stems where they are now.
+   */
+  onRename?: (name: string | null) => Promise<unknown>
   /**
    * Open the trimmer on what solo and mute leave audible (`null` for every stem), with the
    * solo and mute to bring back after it. `instant` when the keyboard asked.
@@ -105,7 +110,7 @@ function Clock({ player }: { player: StemPlayer }) {
   return <span ref={ref}>0:00</span>
 }
 
-export function StemsPanel({ title, source, subtitle, directory, stems: every, hideEmpty = false, analysis, notes, onRetagged, onTrim, initialMix, frozen = false, onClose }: StemsPanelProps) {
+export function StemsPanel({ title, source, subtitle, directory, stems: every, hideEmpty = false, analysis, notes, onRetagged, onRename, onTrim, initialMix, frozen = false, onClose }: StemsPanelProps) {
   const setAnalysis = useSetAnalysis()
   // The song's stems without the empty ones, unless they were asked for. Everything below
   // works on what is shown: an empty stem is not decoded, played, mixed or dragged.
@@ -146,18 +151,27 @@ export function StemsPanel({ title, source, subtitle, directory, stems: every, h
     if (frozen) player.pause()
   }, [frozen, player])
 
-  // Space toggles playback. Keyboard-initiated, so nothing animates.
+  // Space toggles playback, and F2 renames the song as it does a file. Keyboard-initiated,
+  // so nothing animates.
+  const [renaming, setRenaming] = useState(false)
+  const canRename = Boolean(onRename)
   useEffect(() => {
     if (frozen) return
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
-      if (event.code !== 'Space' || target?.closest('input, textarea, [role="combobox"]')) return
+      if (target?.closest('input, textarea, [role="combobox"]')) return
+      if (event.key === 'F2' && canRename && !modKey(event) && !event.altKey && !event.shiftKey) {
+        event.preventDefault()
+        setRenaming(true)
+        return
+      }
+      if (event.code !== 'Space') return
       event.preventDefault()
       void playPause()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [playPause, frozen])
+  }, [playPause, frozen, canRename])
 
   const allPaths = stems.map((s) => s.path)
   // What solo and mute leave audible is a mix, and it can leave as one file. With every
@@ -177,11 +191,29 @@ export function StemsPanel({ title, source, subtitle, directory, stems: every, h
 
   return (
     <aside className="flex h-full w-[460px] flex-none flex-col border-l border-line bg-surface" aria-label="Stems">
-      <header className="flex items-start gap-3 px-4 pt-4 pb-3">
+      <header className="group/row flex items-start gap-3 px-4 pt-4 pb-3">
         <div className="min-w-0 flex-1">
-          <h2 className="m-0 truncate font-display text-[15px] font-semibold">
-            <SourceTitle name={title} source={source} />
-          </h2>
+          <div className="flex items-center gap-1">
+            <h2 className="m-0 flex min-w-0 font-display text-[15px] font-semibold">
+              <SongName
+                name={title}
+                source={source}
+                className="min-w-0"
+                editing={renaming}
+                onEditing={setRenaming}
+                onRename={onRename}
+                onError={toast.error}
+                hint="The stem folder and its files are renamed too. Empty it for the name of the file."
+              />
+            </h2>
+            {onRename && !renaming && (
+              <Tooltip label="Rename (F2)">
+                <button type="button" className="rename-btn reveal-on-hover pressable" aria-label="Rename" data-testid="panel-rename" onClick={() => setRenaming(true)}>
+                  <Pencil size={12} />
+                </button>
+              </Tooltip>
+            )}
+          </div>
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-muted">
             <span>{subtitle}</span>
             <TempoKey

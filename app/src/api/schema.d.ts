@@ -227,6 +227,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/jobs/{job_id}/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Job Name
+         * @description Name a job's song, or give it its file's name back with null. Every job of the
+         *     same file follows. One that waits keeps the name for its run; stems that are
+         *     written are renamed on the disk, their folder and their files. Refused while the
+         *     song is being separated.
+         */
+        post: operations["set_job_name"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/jobs/{job_id}/range": {
         parameters: {
             query?: never;
@@ -602,6 +625,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/stemsets/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Stem Set Name
+         * @description Name the song of finished stems, or give it its file's name back with null.
+         *     Its folder and its stem files are renamed, for every recipe it was separated
+         *     with. Resolves with the stem set where it is now.
+         */
+        post: operations["set_stem_set_name"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/stemsets/rebuild": {
         parameters: {
             query?: never;
@@ -945,7 +990,10 @@ export interface components {
              * @default []
              */
             stems: components["schemas"]["StemFile"][];
-            /** Track Name */
+            /**
+             * Track Name
+             * @description The song's name: the one the user gave it, or else its file's.
+             */
             track_name: string;
             /** Track Path */
             track_path: string;
@@ -978,6 +1026,11 @@ export interface components {
             match_source_rate?: boolean | null;
             /** Midi Stems */
             midi_stems?: string[] | null;
+            /**
+             * Name
+             * @description The song's name, in place of its file's: its stem folder and stems are named by it. Left out, a song the user named before keeps that name.
+             */
+            name?: string | null;
             /** Normalize */
             normalize?: boolean | null;
             /** Output Format */
@@ -1378,6 +1431,17 @@ export interface components {
             /** @description The part, or null to separate the whole song. */
             range: components["schemas"]["JobRangeRequest"] | null;
         };
+        /**
+         * SetName
+         * @description The name the user gives a song. null gives it its file's name back.
+         */
+        SetName: {
+            /**
+             * Name
+             * @description Up to 120 characters. Characters a file name cannot hold are kept in the name and replaced where it names a folder or a file.
+             */
+            name: string | null;
+        };
         /** SetStemSetAnalysis */
         SetStemSetAnalysis: {
             /** Bpm */
@@ -1391,6 +1455,16 @@ export interface components {
             downbeat?: number | null;
             /** Key */
             key?: string | null;
+        };
+        /** SetStemSetName */
+        SetStemSetName: {
+            /** Directory */
+            directory: string;
+            /**
+             * Name
+             * @description Up to 120 characters. Characters a file name cannot hold are kept in the name and replaced where it names a folder or a file.
+             */
+            name: string | null;
         };
         /** SettingsModel */
         SettingsModel: {
@@ -2539,6 +2613,68 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobInfo"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_job_name: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetName"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -3819,6 +3955,66 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SetStemSetAnalysis"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemSetInfo"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_stem_set_name: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetStemSetName"];
             };
         };
         responses: {
