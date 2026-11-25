@@ -4,6 +4,7 @@
  * differs between Windows and a Mac (the window's frame, the menus, when the app quits).
  */
 import type { BrowserWindowConstructorOptions, MenuItemConstructorOptions } from 'electron'
+import { REPOSITORY, siteLink } from './links'
 
 export interface Rect {
   x: number
@@ -412,7 +413,7 @@ export function trayMenuTemplate(
  * Cmd+W, no Cmd+M and no Hide, since on a Mac those shortcuts are menu items. Windows has
  * no menu bar in the window and gets no menu.
  */
-export function macMenuTemplate(host: { name: string; settings: () => void; help: () => void }): MenuItemConstructorOptions[] {
+export function macMenuTemplate(host: { name: string; settings: () => void; open: (url: string) => void }): MenuItemConstructorOptions[] {
   // The three items that carry the app's name are labelled here. Left to Electron they
   // would read `app.name`, which is the package's name ("openstems-app"), not the app's.
   return [
@@ -446,6 +447,17 @@ export function macMenuTemplate(host: { name: string; settings: () => void; help
       ],
     },
     { role: 'windowMenu' },
-    { role: 'help', submenu: [{ label: `${host.name} on GitHub`, click: host.help }] },
+    {
+      // Help lands on the page written for people; the code is the last item. The same
+      // addresses are under Settings > About, which Windows has too.
+      role: 'help',
+      submenu: [
+        { label: `${host.name} Website`, click: () => host.open(siteLink()) },
+        { label: "What's New", click: () => host.open(siteLink('changelog')) },
+        { label: `Support ${host.name}`, click: () => host.open(siteLink('support')) },
+        { type: 'separator' },
+        { label: `${host.name} on GitHub`, click: () => host.open(REPOSITORY) },
+      ],
+    },
   ]
 }

@@ -134,6 +134,14 @@ test('recipe, quality, queue controls and the other views', async () => {
   await ctx.page.getByRole('button', { name: 'Queue' }).click()
   await ctx.page.getByRole('button', { name: 'Settings' }).click()
   await expect(ctx.page.getByRole('switch', { name: 'Sum to mix by default' })).toBeChecked()
+
+  // About: the links out to the website. Checked, never clicked: a click opens the real browser.
+  const website = ctx.page.getByRole('link', { name: 'Open the website' })
+  await website.scrollIntoViewIfNeeded()
+  await expect(website).toHaveAttribute('href', 'https://lewisgoing.github.io/OpenStems/')
+  await expect(website).toHaveAttribute('target', '_blank')
+  await expect(ctx.page.getByRole('link', { name: 'Read the changelog' })).toHaveAttribute('href', /\/OpenStems\/#changelog$/)
+  await expect(ctx.page.getByRole('link', { name: 'Support', exact: true })).toHaveAttribute('href', /\/OpenStems\/#support$/)
 })
 
 test('a running job can be cancelled and retried', async () => {

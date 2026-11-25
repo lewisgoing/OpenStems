@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { test } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { MAC, MOD, captureAroundPopup, clickTray, launch, trayPage } from './helpers'
 
 // Design review screenshots. Run with: SHOTS=1 pnpm e2e -g screenshots
@@ -50,6 +50,15 @@ async function mainViews(theme: 'dark' | 'light') {
     await page.getByRole('button', { name: 'Settings' }).click()
     await page.waitForTimeout(500)
     await shot('7-settings')
+    // The foot of Settings: the links out to the website. Checked, never clicked: a click
+    // would open the real browser.
+    const website = page.getByRole('link', { name: 'Open the website' })
+    await website.scrollIntoViewIfNeeded()
+    await expect(website).toHaveAttribute('href', 'https://lewisgoing.github.io/OpenStems/')
+    await expect(page.getByRole('link', { name: 'Read the changelog' })).toHaveAttribute('href', /#changelog$/)
+    await expect(page.getByRole('link', { name: 'Support', exact: true })).toHaveAttribute('href', /#support$/)
+    await page.waitForTimeout(300)
+    await shot('7b-settings-about')
     if (theme === 'light') {
       // The quick-drop window follows the pick, with the stems of the last song.
       await clickTray(app)

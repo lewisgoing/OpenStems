@@ -302,6 +302,14 @@ Python package and keys, `OPENSTEMS_*` for environment variables. The app was le
 survives only there, in the changelog and in `docs/adr/0009-rename-openstems.md`. The folder
 `D:\lew-stems` on the development machine is a real folder and keeps its name.
 
+Website links: `app/electron/links.ts` holds the addresses the app opens in the browser
+(`WEBSITE`, `REPOSITORY`, `siteLink(section)` for the changelog, Will it run? and Support
+sections), with no Node or Electron imports, for the main process and the renderer alike.
+`AboutSettings` (Settings > About, both systems) and the Mac Help menu (`macMenuTemplate`)
+use them, and the memory row links to Will it run?. In a window a link is `ExternalLink`
+(`components/ui.tsx`), a real link with `target="_blank"`, which `electron/windows.ts` sends
+to the browser. The section anchors are the site's (`docs/site.md`): `src/test/links.test.tsx`
+reads `site/index.html` and fails when one the app names is gone. Change both together.
 Welcome: the first start with the engine ready, nothing installed and the key
 `openstems.welcome.v1` (or the older `openstems.seed-offer.v1`) not in local storage opens
 `components/Welcome.tsx`: folders with free space, format and auto start, the recommended

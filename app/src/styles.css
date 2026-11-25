@@ -219,6 +219,24 @@
   font-weight: 500;
   white-space: nowrap;
   cursor: default;
+  /* a link styled as a button (ExternalLink) reads like one */
+  color: inherit;
+  text-decoration: none;
+}
+/* A link in a sentence, out to the browser. Underlined, since color alone would not say so. */
+.link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  color: var(--color-text);
+  text-decoration: underline;
+  text-decoration-color: var(--color-line-strong);
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+.link-arrow {
+  align-self: center;
+  color: var(--color-faint);
 }
 .btn-primary {
   background: var(--color-accent);
@@ -262,6 +280,9 @@
   }
   .row-hover:hover {
     background: var(--color-raised);
+  }
+  .link:hover {
+    text-decoration-color: var(--color-text);
   }
   .nav-item:hover {
     color: var(--color-text);

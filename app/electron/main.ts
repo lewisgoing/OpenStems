@@ -38,7 +38,6 @@ process.env.OPENSTEMS_APP_VERSION = app.getVersion()
 
 const E2E = process.env.OPENSTEMS_E2E === '1'
 const MAC = process.platform === 'darwin'
-const REPOSITORY = 'https://github.com/lewisgoing/OpenStems'
 const engine = new EngineProcess()
 const setup = new EngineSetup()
 const prefs = new Prefs()
@@ -351,7 +350,7 @@ if (!app.requestSingleInstanceLock()) {
     Menu.setApplicationMenu(
       MAC
         ? Menu.buildFromTemplate(
-            macMenuTemplate({ name: APP_NAME, settings: showSettings, help: () => void shell.openExternal(REPOSITORY) }),
+            macMenuTemplate({ name: APP_NAME, settings: showSettings, open: (url) => void shell.openExternal(url) }),
           )
         : null,
     )
