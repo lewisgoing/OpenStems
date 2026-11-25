@@ -1831,6 +1831,10 @@
             "title": "Detect Tempo Key",
             "type": "boolean"
           },
+          "hide_empty_stems": {
+            "title": "Hide Empty Stems",
+            "type": "boolean"
+          },
           "match_source_rate": {
             "title": "Match Source Rate",
             "type": "boolean"
@@ -1918,7 +1922,8 @@
           "vram_budget_gb",
           "use_gpu",
           "auto_start",
-          "separate_selection"
+          "separate_selection",
+          "hide_empty_stems"
         ],
         "title": "SettingsModel",
         "type": "object"
@@ -1984,6 +1989,17 @@
               }
             ],
             "title": "Detect Tempo Key"
+          },
+          "hide_empty_stems": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hide Empty Stems"
           },
           "match_source_rate": {
             "anyOf": [
@@ -2252,6 +2268,12 @@
       },
       "StemFile": {
         "properties": {
+          "empty": {
+            "default": false,
+            "description": "Nothing but what the model let through: its peak stays more than 45 dB under the loudest stem of the set. The file is written all the same. The app leaves such stems out of its lists while the hide_empty_stems setting is on.",
+            "title": "Empty",
+            "type": "boolean"
+          },
           "file": {
             "title": "File",
             "type": "string"

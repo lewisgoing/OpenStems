@@ -139,6 +139,7 @@ class Service:
 
     def start(self) -> None:
         self.index.prune_missing()
+        self.index.mark_empty_stems()
         self.jobs.start()
         self._configure_watcher()
         self.watcher.start()
@@ -720,6 +721,7 @@ class Service:
     def set_analysis(self, directory: str, changes: dict[str, Any]) -> dict[str, Any]:
         """The tempo, key and bar 1 of stems that are written, by the user: in the
         manifest, in file names that hold them and in the tempo FL Studio reads."""
+        from openstems.pipeline.levels import mark_empty
         from openstems.pipeline.retag import set_analysis
         from openstems.pipeline.run import SAMPLE_RATE, stem_set_from_manifest
 
@@ -733,21 +735,24 @@ class Service:
         self.index.save_stem_set(where, manifest)
         result = stem_set_from_manifest(folder, manifest)
         if result is not None:
-            stems = [
-                {
-                    "name": s.name,
-                    "file": s.file,
-                    "path": os.path.join(where, s.file),
-                    "peaks": os.path.join(where, s.peaks) if s.peaks else None,
-                    "midi": os.path.join(where, s.midi) if s.midi else None,
-                    "offset": s.offset,
-                    "start": s.offset / SAMPLE_RATE,
-                    "samples": s.samples,
-                    "sample_rate": s.sample_rate,
-                    "group": s.group or None,
-                }
-                for s in result.stems
-            ]
+            stems = mark_empty(
+                [
+                    {
+                        "name": s.name,
+                        "file": s.file,
+                        "path": os.path.join(where, s.file),
+                        "peaks": os.path.join(where, s.peaks) if s.peaks else None,
+                        "midi": os.path.join(where, s.midi) if s.midi else None,
+                        "offset": s.offset,
+                        "start": s.offset / SAMPLE_RATE,
+                        "samples": s.samples,
+                        "sample_rate": s.sample_rate,
+                        "group": s.group or None,
+                        "peak": s.peak,
+                    }
+                    for s in result.stems
+                ]
+            )
             self.jobs.output_changed(
                 where, stems, manifest.get("analysis") or {}, list(manifest.get("notes") or [])
             )

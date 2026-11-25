@@ -100,6 +100,10 @@ class Settings:
     # `range`) is all that is separated, as a song of its own. Off (the default): the part
     # only gives clips, and the whole song is separated. Read when the song starts.
     separate_selection: bool = False
+    # On (the default): the app leaves a song's empty stems (`domain.levels`) out of its
+    # lists, behind a line that brings them back. It decides what is shown and dragged
+    # only: every stem is written either way, and the engine itself never reads this.
+    hide_empty_stems: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
