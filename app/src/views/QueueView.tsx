@@ -11,6 +11,7 @@ import { SourceTitle } from '@/components/SourceTitle'
 import { TempoKey } from '@/components/TempoKey'
 import { useToast } from '@/components/toast'
 import { Button, IconButton, ProgressBar, Select, Tooltip } from '@/components/ui'
+import { dragAllHint, splitEmpty, stemCount } from '@/lib/empty'
 import { cn, formatPercent, paletteColor } from '@/lib/format'
 import { type QueueSort, SORTS, isQueueSort, loadSort, matchesSearch, saveSort, searchTerms, sortQueue } from '@/lib/queuesort'
 import { useTheme } from '@/lib/theme'
@@ -208,6 +209,7 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
                 key={job.id}
                 job={job}
                 separatePart={separatePart}
+                hideEmpty={Boolean(settings?.hide_empty_stems)}
                 reorderable={reorderable}
                 enter={!known.current.has(job.id)}
                 menu={menu}
@@ -358,6 +360,8 @@ interface JobRowProps {
   job: Job
   /** The separate_selection setting: a waiting song's part is all that Start separates. */
   separatePart: boolean
+  /** The "Hide empty stems" setting: the stems handle carries the ones with sound. */
+  hideEmpty?: boolean
   /** The list shows the order songs run in, so a waiting song can be dragged to another place. */
   reorderable: boolean
   /** New to the queue, so it comes in. Read once, when the row first appears. */
@@ -380,11 +384,12 @@ interface JobRowProps {
   onDrop: () => void
 }
 
-function JobRow({ job, separatePart, reorderable, enter, menu, index, selected, dropTarget, onSelect, onStart, onCancel, onRetry, onRemove, onTrim, onDragStart, onDragEnd, onDragOver, onDrop }: JobRowProps) {
+function JobRow({ job, separatePart, hideEmpty = false, reorderable, enter, menu, index, selected, dropTarget, onSelect, onStart, onCancel, onRetry, onRemove, onTrim, onDragStart, onDragEnd, onDragOver, onDrop }: JobRowProps) {
   const active = ACTIVE.has(job.state)
   const done = job.state === 'done'
   const queued = job.state === 'queued'
-  const stemPaths = job.stems.map((s) => s.path)
+  const stems = splitEmpty(job.stems, hideEmpty)
+  const stemPaths = stems.shown.map((s) => s.path)
   // The tempo and key the user gave this song ahead of its run, if any.
   const given = tempoKeyOf(job.options)
   const setAnalysis = useSetAnalysis()
@@ -494,7 +499,7 @@ function JobRow({ job, separatePart, reorderable, enter, menu, index, selected, 
         )}
 
         {done && job.stems.length > 0 && (
-          <Tooltip label="Drag every stem into your DAW or a folder">
+          <Tooltip label={dragAllHint(stems.shown.length, stems.hidden.length)}>
             <div
               draggable
               role="button"
@@ -508,7 +513,7 @@ function JobRow({ job, separatePart, reorderable, enter, menu, index, selected, 
               }}
             >
               <Layers size={13} />
-              {job.stems.length} stems
+              {stemCount(stems.shown.length)}
             </div>
           </Tooltip>
         )}

@@ -1407,6 +1407,8 @@ export interface components {
             default_recipe: string;
             /** Detect Tempo Key */
             detect_tempo_key: boolean;
+            /** Hide Empty Stems */
+            hide_empty_stems: boolean;
             /** Match Source Rate */
             match_source_rate: boolean;
             /** Models Dir */
@@ -1453,6 +1455,8 @@ export interface components {
             default_recipe?: string | null;
             /** Detect Tempo Key */
             detect_tempo_key?: boolean | null;
+            /** Hide Empty Stems */
+            hide_empty_stems?: boolean | null;
             /** Match Source Rate */
             match_source_rate?: boolean | null;
             /** Models Dir */
@@ -1528,6 +1532,12 @@ export interface components {
         };
         /** StemFile */
         StemFile: {
+            /**
+             * Empty
+             * @description Nothing but what the model let through: its peak stays more than 45 dB under the loudest stem of the set. The file is written all the same. The app leaves such stems out of its lists while the hide_empty_stems setting is on.
+             * @default false
+             */
+            empty: boolean;
             /** File */
             file: string;
             /**

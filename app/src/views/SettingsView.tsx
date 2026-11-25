@@ -137,6 +137,12 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
             <Row label="Sum to mix" hint="Fold the residual into 'other' so the stems sum back to the mix.">
               <Switch label="Sum to mix by default" checked={settings.sum_to_mix} onChange={(v) => save({ sum_to_mix: v })} />
             </Row>
+            <Row
+              label="Hide empty stems"
+              hint="A song with no guitar still gets a guitar stem, with nothing in it. Such stems stay out of the lists and of what you drag; their files are written all the same."
+            >
+              <Switch label="Hide empty stems" checked={settings.hide_empty_stems} onChange={(v) => save({ hide_empty_stems: v })} />
+            </Row>
           </Group>
 
           <Group title="Watch folder">

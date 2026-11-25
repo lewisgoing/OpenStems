@@ -85,6 +85,7 @@ const SETTINGS: Settings = {
   output_dir: 'D:\\out',
   output_format: 'wav32f',
   separate_selection: false,
+  hide_empty_stems: true,
   sum_to_mix: false,
   tempo_sync: false,
   trim_silence: false,
@@ -135,6 +136,7 @@ vi.mock('@/components/Waveform', () => ({
 const DIR = 'D:\\out\\Song\\every-stem'
 const stem = (name: string, group: string | null = null, start = 0): StemFile => ({
   name,
+  empty: false,
   file: `Song - ${name}.wav`,
   path: `${DIR}\\Song - ${name}.wav`,
   peaks: null,

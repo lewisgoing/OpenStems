@@ -520,6 +520,7 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
             subtitle={panel.subtitle}
             directory={panel.directory}
             stems={panelJob?.stems ?? panel.stems}
+            hideEmpty={Boolean(settings?.hide_empty_stems)}
             analysis={panelJob?.analysis ?? panel.analysis}
             notes={panelJob?.notes ?? panel.notes}
             initialMix={panel.initialMix}
