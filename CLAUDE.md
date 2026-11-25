@@ -453,7 +453,7 @@ with `takesFocus` keeps the closing menu from taking the focus back: `finalFocus
 `RowMenu.tsx`), the pencil and F2 in the stems panel, and a double click on a title where a
 click does not move it (`doubleClick`: not a row of the queue or History whose stems are
 closed, since the first click opens them and the list can reflow). The quick-drop window has none.
-`docs/adr/0027-rename.md`.
+`docs/adr/0028-rename.md`.
 
 Clips: a stretch of a song as a file of its own, to drag into a DAW. `POST /v1/clips`
 (`pipeline/clip.py`) cuts it from stems of one stem set, summed into one file or one file
