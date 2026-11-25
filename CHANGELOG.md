@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.3 (2026-11-25)
 
 - **Empty stems stay out of the way.** A song with no guitar still gets a guitar stem, with
   nothing in it but a hiss. Such stems are now left out of the stems panel, of the pills in
@@ -12,6 +12,8 @@
   from their waveforms. "Hide empty stems" in Settings > Defaults, under Sum to mix, turns
   it off. A song with one stem now reads "1 stem". The same on Windows and a Mac, where it
   has not been seen yet.
+- **Settings.** "Show the welcome again" (Getting started) moved to the foot of Settings,
+  above About.
 
 ## 0.4.2 (2026-11-24)
 
