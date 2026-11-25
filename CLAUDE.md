@@ -14,6 +14,10 @@ Engine (run from `engine/`):
 - On a Mac: `uv sync --no-default-groups --group mps --group dev` (PyTorch from PyPI, the
   Apple GPU), then `uv run --no-sync ...` for every command below. A plain `uv sync` or
   `uv run` asks for the `cuda` group, which has no macOS wheel
+- `bash scripts/mac_check.sh SONG` (on a Mac, with the app installed and set up): the doctor,
+  the self-tests, a timed `full-song` and `every-stem` on Fast and what an 8 GB Mac would be
+  told, written to `~/Desktop/openstems-mac-check.txt` for the owner to send back. The way to
+  get Mac figures, since nothing here can measure them
 - `uv run openstems doctor`: Python, PyTorch, GPU backend (CUDA, ROCm or MPS), GPU, FFmpeg
   check; non-zero without a working GPU. On a Mac the "VRAM" line reads "Memory (shared)".
   `--json` prints the report as JSON (the API reads it that way).

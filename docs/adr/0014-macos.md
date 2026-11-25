@@ -272,6 +272,33 @@ that version) worked on the same Mac. Reported without detail of which views or 
 Not recorded from that run: how long a separation takes, whether the STFT check passed
 natively or the CPU patch went in, the doctor's output, and the self-test with a model.
 
+## On GitHub's Mac runner: 2026-11-23
+
+`mac-check.yml` ran `scripts/mac_check.sh` with real models on a `macos-15` runner: a virtual
+Apple M1 with 7 GB, macOS 15.8.2, PyTorch 2.14.1 from the `mps` group. The song was the
+synthetic demo song (`scripts/make_demo_song.py`), 192 s. The runner does expose the Apple
+GPU: the doctor reported the MPS backend, "Apple M1 (Virtual)", 7.0 GB shared memory and 3.8 GB
+for one model.
+
+- **Every operation matches the CPU**, the STFT and inverse STFT included (errors of 3e-7),
+  so the STFT check passed natively and the CPU fallback (`engines/stft_fallback.py`) never
+  went in.
+- **BS-RoFormer on MPS matches the CPU**: `selftest -m bs-roformer-sw` gave -127.2 dB, GPU
+  against CPU, where the pass mark is -40 dB. 34.7 s on the GPU and 82.5 s on the CPU for the
+  6 s test signal.
+- **`full-song` on Fast finished**: 1136 s for the 192 s song, 0.17x real time, on a machine
+  whose budget (3.8 GB) is below the estimate for SW at full precision. A second run took
+  1413 s.
+- **Not reached**: `every-stem` (Mel-Band RoFormer is not in it; MDX23C is), because the job hit
+  its two-hour limit. A longer limit, or dropping the second `full-song` run, would let it
+  reach `every-stem`.
+
+What it does not tell: speed on real hardware. The runner's GPU is virtual and its memory
+small, and the self-test's own ratio (2.4x the CPU) is far below what a real M1 gives, so
+these times are a floor for the slowest Mac, not a benchmark. Whether the CPU fallback for
+memory went in during that run is not in the report: the command line does not print a job's
+notes.
+
 ## Still unproven on a Mac
 
 The list as it stood before the run above. The items that run covers in broad terms (the
@@ -280,11 +307,12 @@ no Developer ID, the test suites) are seen working once, on one machine, with no
 The rest has not been seen at all.
 
 - **Whether the models run correctly on MPS, and how fast**, for each family: BS-RoFormer,
-  Mel-Band RoFormer and MDX23C. They use complex tensors, `index_fill` and einsum, among
+  Mel-Band RoFormer and MDX23C. BS-RoFormer is now measured on the runner (above); the other
+  two, and any speed on real hardware, are not. They use complex tensors, `index_fill` and einsum, among
   others, and upstream no longer tests them on MPS. A missing operation falls back to the CPU;
   a wrong result would only show in the self-test or by ear.
 - **The STFT safety net.** Whether the native MPS STFT passes its check on real hardware, so
-  whether the patch ever goes in; and whether a patched STFT's complex output moves back to
+  whether the patch ever goes in (on the runner's virtual GPU it passed); and whether a patched STFT's complex output moves back to
   the GPU correctly. The patch is tested on CPU tensors only.
 - **Memory.** Whether an MPS out-of-memory error reaches the batch backoff, or macOS swaps or
   ends the process first. Whether half of the machine's memory is the right cap.
@@ -328,6 +356,16 @@ Not built: dropping files on the menu bar item itself. Queuing lives in the wind
 quick-drop window is one click away.
 
 ## For whoever tests on a Mac
+
+With the app installed and set up, one command gathers what is still unmeasured (the
+doctor, the self-tests, a timed `full-song` and `every-stem`, and the 8 GB view) into a text
+file on the Desktop:
+
+```
+bash scripts/mac_check.sh ~/Music/a-song.mp3
+```
+
+The report holds the song's length and format, not its name.
 
 In a development checkout (`cd engine` first):
 
