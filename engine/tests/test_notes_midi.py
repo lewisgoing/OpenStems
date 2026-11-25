@@ -301,3 +301,94 @@ def test_times_land_on_the_tempo_grid() -> None:
     (_, _, _, on, off) = _notes_of(tracks[1])[0]
     per_second = TICKS_PER_BEAT * 90 / 60
     assert on == round(1.0 * per_second) and off == round(1.5 * per_second)
+
+
+# -- found on review (2026-11-25) ---------------------------------------------------------
+
+
+def test_a_note_refuses_what_the_writer_cannot_carry() -> None:
+    for bad in (
+        {"velocity": 90.5},
+        {"velocity": True},
+        {"bend": ((0.0, float("nan")),)},
+        {"bend": ((float("inf"), 0.0),)},
+    ):
+        with pytest.raises(DomainError):
+            Note(0.0, 1.0, 60.0, **bad)
+
+
+def test_every_notes_file_written_reads_back() -> None:
+    # Rounding a note's times can shorten it under its last bend point: about one note in
+    # eight with a point at its end was refused by the reader before this was held.
+    import random
+
+    rng = random.Random(1)
+    for _ in range(3000):
+        start, length = rng.uniform(0, 100), rng.uniform(0.0002, 2)
+        note = Note(start, start + length, 60.0, bend=((0.0, 0.1), (length, -0.2)))
+        back, _ = from_sidecar(json.loads(json.dumps(to_sidecar([note], stem="vocals"))))
+        assert back[0].bend[-1][0] <= back[0].duration + 1e-9
+    tiny, _ = from_sidecar(to_sidecar([Note(1.0, 1.00001, 60.0)], stem="vocals"))
+    assert tiny[0].end > tiny[0].start
+
+
+def _ons_and_offs(track: list[tuple[int, bytes]]) -> list[tuple[int, str]]:
+    return [(t, "on" if m[0] & 0xF0 == 0x90 else "off") for t, m in track if m[0] & 0xE0 == 0x80]
+
+
+def test_one_key_never_sounds_twice_at_once() -> None:
+    # A Note Off names only its key: two overlapping notes on one key must not share one.
+    notes = [Note(0.0, 2.0, 60.0), Note(1.0, 3.0, 60.2)]
+    for mode in ("plain", "bend"):
+        track = read_tracks(midi_file_bytes([Part("lead", notes)], bpm=120, pitch=mode))[2][1]
+        assert _ons_and_offs(track) == [(0, "on"), (960, "off"), (960, "on"), (2880, "off")]
+    # Struck together: one note, the longer.
+    both = [Note(0.0, 1.0, 60.0, 80), Note(0.0, 2.0, 60.0, 110)]
+    track = read_tracks(midi_file_bytes([Part("lead", both)], bpm=120))[2][1]
+    assert _ons_and_offs(track) == [(0, "on"), (1920, "off")]
+    assert [m[2] for _, m in track if m[0] & 0xF0 == 0x90] == [110]
+    # Drum hits on one piece, closer than they are long.
+    hits = [Note(0.0, 0.5, 42, drum="hh"), Note(0.25, 0.75, 42, drum="hh")]
+    track = read_tracks(midi_file_bytes([Part("kit", hits, drums=True)], bpm=120))[2][1]
+    assert _ons_and_offs(track) == [(0, "on"), (240, "off"), (240, "on"), (720, "off")]
+
+
+def test_parts_get_channels_of_their_own() -> None:
+    def channels(data: bytes) -> list[int]:
+        tracks = read_tracks(data)[2][1:]
+        return [next(m[0] & 0x0F for _, m in t if m[0] & 0xF0 == 0x90) for t in tracks]
+
+    same = [Part("x", [Note(0.0, 1.0, 60.0)]), Part("x", [Note(0.0, 1.0, 60.0)])]
+    assert channels(midi_file_bytes(same)) == [0, 1]  # equal parts are still two parts
+    many = [Part(f"p{i}", [Note(0.0, 1.0, 60.0)]) for i in range(16)]
+    assert channels(midi_file_bytes(many))[-1] == 0  # plain notes may share a channel
+    with pytest.raises(ValueError):
+        midi_file_bytes(many, pitch="bend")  # a bend would move another part's notes
+
+
+def test_odd_tempos_and_flat_keys() -> None:
+    assert key_signature("Bb") == bytes([0xFE, 0]) and key_signature("Bbm") == bytes([0xFB, 1])
+    data = midi_file_bytes([Part("p", [Note(0.0, 1.0, 60.0)])], bpm=2.0)  # slower than MIDI can say
+    tempo = next(m for _, m in read_tracks(data)[2][0] if m[:2] == b"\xff\x51")
+    assert tempo[2:] == b"\xff\xff\xff"
+
+
+def test_every_note_on_has_its_own_note_off_in_every_mode() -> None:
+    import random
+
+    rng = random.Random(3)
+    notes = []
+    for _ in range(400):  # dense: more than 15 at once, and keys struck again while sounding
+        start, length = rng.uniform(0, 30), rng.uniform(0.03, 3)
+        notes.append(Note(start, start + length, rng.uniform(40, 80), rng.randint(1, 127)))
+    for mode in ("plain", "bend", "mpe"):
+        sounding: set[tuple[int, int]] = set()
+        for _, m in read_tracks(midi_file_bytes([Part("p", notes)], bpm=97.3, pitch=mode))[2][1]:
+            kind, voice = m[0] & 0xF0, (m[0] & 0x0F, m[1])
+            if kind == 0x90:
+                assert voice not in sounding, mode  # struck while still sounding
+                sounding.add(voice)
+            elif kind == 0x80:
+                assert voice in sounding, mode  # an Off with no note to end
+                sounding.remove(voice)
+        assert not sounding, mode

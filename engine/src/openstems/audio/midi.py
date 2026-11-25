@@ -128,8 +128,10 @@ _MAJOR_SHARPS = {0: 0, 7: 1, 2: 2, 9: 3, 4: 4, 11: 5, 6: 6, 1: -5, 8: -4, 3: -3,
 _PITCH_CLASS = {
     **{"C": 0, "C#": 1, "D": 2, "D#": 3, "E": 4, "F": 5},
     **{"F#": 6, "G": 7, "G#": 8, "A": 9, "A#": 10, "B": 11},
+    **{"Db": 1, "Eb": 3, "Gb": 6, "Ab": 8, "Bb": 10},  # the engine writes sharps; read both
 }
 Event = tuple[int, int, bytes]  # tick, order within the tick, message
+Span = tuple[NoteObject, int, int, int]  # a note, its key, its Note On and Note Off ticks
 
 
 @dataclass
@@ -145,7 +147,7 @@ class Part:
 def key_signature(key: str | None) -> bytes | None:
     """The key signature meta event's data for a key as the engine writes it (``C``,
     ``F#``, ``Am``), spelled with fewer accidentals (C# major is written as Db). None when
-    there is no key."""
+    there is no key, or it is not one this reads."""
     if not key:
         return None
     minor = key.endswith("m")
@@ -210,9 +212,12 @@ def midi_file_bytes(
         raise ValueError(f"pitch must be one of {PITCH_MODES}, not {pitch!r}")
     if not 1 <= bend_range <= 96:
         raise ValueError("the bend range must be 1 to 96 semitones")
-    pitched = [p for p in parts if not p.drums]
-    if pitch == "mpe" and (len(pitched) != 1 or len(parts) != 1):
+    pitched = sum(1 for p in parts if not p.drums)
+    if pitch == "mpe" and (pitched != 1 or len(parts) != 1):
         raise ValueError("an MPE file carries one pitched part and nothing else")
+    channels = [c for c in range(16) if c != DRUM_CHANNEL]
+    if pitch == "bend" and pitched > len(channels):
+        raise ValueError(f"bends need a channel per part: at most {len(channels)} pitched parts")
     bpm = bpm if bpm and bpm > 0 else 120.0
     per_second = TICKS_PER_BEAT * bpm / 60.0
 
@@ -220,7 +225,7 @@ def midi_file_bytes(
         return max(0, round(seconds * per_second))
 
     conductor: list[Event] = [
-        (0, 0, b"\xff\x51\x03" + round(60_000_000 / bpm).to_bytes(3, "big")),
+        (0, 0, b"\xff\x51\x03" + min(0xFFFFFF, round(60_000_000 / bpm)).to_bytes(3, "big")),
         (0, 0, b"\xff\x58\x04\x04\x02\x18\x08"),
     ]
     signature = key_signature(key)
@@ -228,7 +233,7 @@ def midi_file_bytes(
         conductor.append((0, 0, b"\xff\x59\x02" + signature))
     tracks = [_track(conductor)]
 
-    channels = [c for c in range(16) if c != DRUM_CHANNEL]
+    seen = 0  # pitched parts so far: past 15 of them, plain parts share channels
     for part in parts:
         events: list[Event] = []
         if part.drums:
@@ -236,30 +241,55 @@ def midi_file_bytes(
         elif pitch == "mpe":
             _mpe_events(part, tick, tuning_cents, events)
         else:
-            channel = channels[pitched.index(part) % len(channels)]
+            channel = channels[seen % len(channels)]
+            seen += 1
             events.append((0, _SETUP, bytes([0xC0 | channel, part.program & 0x7F])))
             if pitch == "plain":
                 _plain_events(part.notes, channel, tick, tuning_cents, events)
             else:
                 events += [(0, _SETUP, m) for m in _rpn(channel, 0, bend_range)]
-                for note in part.notes:
-                    key_ = round_pitch(note.pitch, tuning_cents)[0]
-                    on, off = _note(note, key_, channel, tick, events)
-                    _curve(note, key_, channel, tick, on, off, bend_range, events)
+                for span in _spans(
+                    part.notes, lambda n: round_pitch(n.pitch, tuning_cents)[0], tick
+                ):
+                    _emit(span, channel, events)
+                    _curve(span, channel, tick, bend_range, events)
         tracks.append(_track(events, part.name))
     header = b"MThd" + struct.pack(">IHHH", 6, 1, len(tracks), TICKS_PER_BEAT)
     return header + b"".join(tracks)
 
 
-def _note(
-    note: NoteObject, key: int, channel: int, tick: Callable[[float], int], events: list[Event]
-) -> tuple[int, int]:
-    on = tick(note.start)
-    off = max(on + 1, tick(note.end))
+def _spans(
+    notes: Sequence[NoteObject], key_of: Callable[[NoteObject], int], tick: Callable[[float], int]
+) -> list[Span]:
+    """The notes of one channel in time order, each with its key and ticks, and never two
+    sounding on one key at once: a Note Off names only its key, so the first Off would end
+    them both, or neither. A note still sounding when its key is struck again ends there;
+    of two struck on the same tick the longer one stays."""
+    spans: list[Span] = []
+    sounding: dict[int, int] = {}  # key: where its latest note is in spans
+    for note in sorted(notes, key=lambda n: (n.start, n.end)):
+        key = key_of(note)
+        on = tick(note.start)
+        off = max(on + 1, tick(note.end))
+        i = sounding.get(key)
+        if i is not None:
+            before, _, began, ended = spans[i]
+            if began == on:
+                if off > ended:
+                    spans[i] = (note, key, on, off)
+                continue
+            if ended > on:
+                spans[i] = (before, key, began, on)
+        sounding[key] = len(spans)
+        spans.append((note, key, on, off))
+    return spans
+
+
+def _emit(span: Span, channel: int, events: list[Event]) -> None:
+    note, key, on, off = span
     velocity = min(127, max(1, int(note.velocity)))
     events.append((on, _ON, bytes([0x90 | channel, key, velocity])))
     events.append((off, _OFF, bytes([0x80 | channel, key, 0])))
-    return on, off
 
 
 def _plain_events(
@@ -269,26 +299,21 @@ def _plain_events(
     tuning_cents: float,
     events: list[Event],
 ) -> None:
-    for note in notes:
+    def key_of(note: NoteObject) -> int:
         if channel == DRUM_CHANNEL:
-            key = min(127, max(0, round(note.pitch)))
-        else:
-            key = round_pitch(note.pitch, tuning_cents)[0]
-        _note(note, key, channel, tick, events)
+            return min(127, max(0, round(note.pitch)))
+        return round_pitch(note.pitch, tuning_cents)[0]
+
+    for span in _spans(notes, key_of, tick):
+        _emit(span, channel, events)
 
 
 def _curve(
-    note: NoteObject,
-    key: int,
-    channel: int,
-    tick: Callable[[float], int],
-    on: int,
-    off: int,
-    bend_range: int,
-    events: list[Event],
+    span: Span, channel: int, tick: Callable[[float], int], bend_range: int, events: list[Event]
 ) -> None:
     """The note's bend before its Note On, then a bend wherever the curve's 14-bit value
     changes, up to its Note Off."""
+    note, key, on, off = span
     offset = note.pitch - key
     last = _bend_value(offset + note.bend_at(0.0), bend_range)
     events.append((on, _SETUP, _bend(channel, last)))
@@ -311,19 +336,23 @@ def _mpe_events(
     setup.append(bytes([0xC0 | master, part.program & 0x7F]))
     events += [(0, _SETUP, m) for m in setup]
     ends = dict.fromkeys(MPE_MEMBERS, -1)  # the tick each member's last note ended
+    crowded: list[NoteObject] = []  # notes that found every member sounding
     for note in sorted(part.notes, key=lambda n: (n.start, n.pitch)):
         key = round_pitch(note.pitch, tuning_cents)[0]
         on = tick(note.start)
         free = [c for c in MPE_MEMBERS if ends[c] <= on]
         if not free:  # all 15 members sounding: a plain note on the master channel
-            _note(note, key, master, tick, events)
+            crowded.append(note)
             continue
+        span = (note, key, on, max(on + 1, tick(note.end)))
         channel = min(free, key=lambda c: (ends[c], c))  # the one released longest ago
         events.append((on, _SETUP, _cc(channel, 74, 64)))
         events.append((on, _SETUP, bytes([0xD0 | channel, 0])))
-        on, off = _note(note, key, channel, tick, events)
-        ends[channel] = off
-        _curve(note, key, channel, tick, on, off, MPE_MEMBER_RANGE, events)
+        _emit(span, channel, events)
+        ends[channel] = span[3]
+        _curve(span, channel, tick, MPE_MEMBER_RANGE, events)
+    for span in _spans(crowded, lambda n: round_pitch(n.pitch, tuning_cents)[0], tick):
+        _emit(span, master, events)
 
 
 def read_tracks(data: bytes) -> tuple[int, int, list[list[tuple[int, bytes]]]]:

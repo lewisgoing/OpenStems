@@ -45,12 +45,16 @@ class Note:
             raise DomainError(f"a note must end after it starts ({self.start} to {self.end})")
         if not 0 <= self.pitch <= 127:
             raise DomainError(f"a note's pitch must be within MIDI's range, not {self.pitch}")
+        if isinstance(self.velocity, bool) or not isinstance(self.velocity, int):
+            raise DomainError(f"a note's velocity must be a whole number, not {self.velocity!r}")
         if not 1 <= self.velocity <= 127:
             raise DomainError(f"a note's velocity must be 1 to 127, not {self.velocity}")
         if self.confidence is not None and not 0 <= self.confidence <= 1:
             raise DomainError(f"a note's confidence must be 0 to 1, not {self.confidence}")
         last = -1.0
-        for t, _ in self.bend:
+        for t, semitones in self.bend:
+            if not (math.isfinite(t) and math.isfinite(semitones)):
+                raise DomainError("a note's bend points must be numbers")
             if t < last or t < 0 or t > self.end - self.start + 1e-9:
                 raise DomainError("a note's bend points must be in order and within the note")
             last = t
@@ -116,21 +120,29 @@ def to_sidecar(
     tuning_cents: float = 0.0,
     method: str = "",
 ) -> dict[str, Any]:
-    """The JSON object of ``<stem>.notes.json``. Version 1; readers refuse later versions."""
+    """The JSON object of ``<stem>.notes.json``. Version 1; readers refuse later versions.
+
+    Times are rounded to a tenth of a millisecond. Rounding a note's start and end can
+    shorten it by that much, so its bend points are held within the rounded note: what is
+    written here always reads back."""
     if kind not in KINDS:
         raise DomainError(f"a notes file is for {' or '.join(KINDS)} stems, not {kind!r}")
     out = []
     for n in sorted(notes, key=lambda n: (n.start, n.pitch)):
+        start, end = _number(n.start), _number(n.end)
+        if end <= start:
+            end = _number(start + 0.0001)
+        length = _number(end - start)
         entry: dict[str, Any] = {
-            "start": _number(n.start),
-            "end": _number(n.end),
+            "start": start,
+            "end": end,
             "pitch": _number(n.pitch),
             "velocity": n.velocity,
         }
         if n.confidence is not None:
             entry["confidence"] = _number(n.confidence, 3)
         if n.bend:
-            entry["bend"] = [[_number(t), _number(s)] for t, s in n.bend]
+            entry["bend"] = [[min(_number(t), length), _number(s)] for t, s in n.bend]
         if n.drum:
             entry["drum"] = n.drum
         out.append(entry)

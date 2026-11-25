@@ -495,9 +495,16 @@ condition only. Scores are mir_eval's defaults; "+offset" also needs the note's 
 What this shows:
 
 - **Segmentation matters more than the tracker on vocals.** A better tracker alone moves onset
-  F1 from 0.39 to 0.50; SwiftF0's segmenter takes it to 0.78, level with a second human. M3
-  starts from that segmenter, not from a new HMM. The HMM from the Tony paper stays the
-  fallback if per-note curves need a different split.
+  F1 from 0.39 to 0.50. SwiftF0's segmenter takes it to 0.78, level with a second human, but
+  that row also keeps each note's exact pitch where the rows above it are rounded to keys.
+  Like for like, on keys rounded at A440, the segmenter scores 0.726 (0.606 with note ends):
+  the split is worth 0.23 and exact pitch another 0.05 (re-measured on all 40 clips on
+  2026-11-25). M3 starts from that segmenter, not from a new HMM. The HMM from the Tony paper
+  stays the fallback if per-note curves need a different split.
+- **Keys in the singer's own tuning score lower than keys at A440 on all 40 clips:** 0.646
+  against 0.726. The pack's six clips showed the same (0.639 against 0.718, below). The
+  reference is in Hz and the window is 50 cents, so this measures the scoring as much as the
+  notes; which rounding a producer wants in the file is still the owner's to settle.
 - **SwiftF0 nearly removes octave errors on guitar** (119 to 5).
 - Melodyne's numbers on the baseline pack are below. NeuralNote's are still to come.
 
