@@ -251,7 +251,7 @@ range requests, to see whether `weights_only=True` would accept them.
 | MR-MT3, trained from scratch | MIT | MIT tag on Hugging Face | **Slakh2100-redux only** (CC BY 4.0) | Lightning dict, safe globals; 583 MB | Not checked | Slakh flat onset 67.3. No real-recording results | **A, pending.** Which Hugging Face file is the from-scratch checkpoint is inferred from its name; confirm before relying on it. Lakh MIDI carries the caveat noted under Slakh. The only fully clean multi-instrument candidate; a baseline in M0 |
 | MT3 (PyTorch conversion of Google's checkpoint) | Apache-2.0 | No license stated for Google's checkpoint | Includes MAESTRO | Safe state dict | Not checked | Slakh .76, GuitarSet .90, MAESTRO .95 | Unclear. Not a default |
 | YourMT3+ | **GPL-3.0** | Apache-2.0 (Hugging Face card) | Includes MAESTRO, MIR-ST500 (restricted), ENST (research-only) | Lightning `.ckpt` | Not checked | see section 2 | B weights behind GPL code: an optional, separately installed component at most |
-| Guitar-specific (GAPS, Guitab, FretNet, TabCNN) | — | GAPS weights unreleased; Guitab CC BY-NC-SA; FretNet and TabCNN have none | — | — | — | GAPS: GuitarSet 88.1 zero-shot | None usable. Guitar goes through the general model until M6 |
+| Guitar-specific (GAPS, Guitab, FretNet, TabCNN) | — | GAPS weights: released since, see section 13 (this row said unreleased); Guitab CC BY-NC-SA; FretNet and TabCNN have none | — | — | — | GAPS: GuitarSet 88.1 zero-shot | None usable. Guitar goes through the general model until M6 |
 
 - **No MAESTRO-free, permissively licensed piano model exists.** Authors differ on MAESTRO:
   - Kong and Edwards release MAESTRO-trained weights under CC BY 4.0 without comment.
@@ -315,7 +315,7 @@ notes in the polyphonic model's posterior.
 | `drums` (any recipe without the kit split) | drum mix | Run the DrumSep pass first (the `drum-kit` chain), then as above. Later, a drum transcriber trained on E-GMD | Channel 10 |
 | `other drums`, `percussion`, `congas`, `tambourine`, `triangle` | percussion | Onsets only, one GM percussion note | Channel 10 |
 | `vocals`, `lead vocals`, `lead`, `dry vocals`, `lead-vocal`, `vocal` | monophonic voice | SwiftF0, then the app's own note segmenter (no vocal note model has clean weights) | Plain, plus bends |
-| `bass`, `double-bass`, `tuba` | monophonic bass | f0 with a low range (torchcrepe or pYIN below about 47 Hz). Polyphonic path when chords are found | Plain, plus bends |
+| `bass`, `double-bass`, `tuba` | monophonic bass | f0 with a low range (below about 47 Hz: see section 13, torchcrepe's defaults stop at 50 Hz). Polyphonic path when chords are found | Plain, plus bends |
 | `backing vocals`, `back-vocal`, `backing` | polyphonic voice | Polyphonic path | Plain or MPE |
 | `piano`, `digital-piano`, `keys`, `organ`, `harpsichord` | polyphonic keys | Polyphonic path. Optional piano specialist | Plain (MPE optional) |
 | `guitar`, `acoustic-guitar`, `electric-guitar`, `banjo`, `mandolin`, `ukulele`, `dobro`, `sitar`, `harp` | polyphonic plucked | Polyphonic path. Bends matter | Plain or MPE |
@@ -848,6 +848,19 @@ The owner's answers of 2026-11-23:
 
 - **Tier B weights are allowed.**
 - **Melodyne and NeuralNote** are available for baselines.
+
+The owner's answers of 2026-11-25, after the check in section 13:
+
+- **The guitar and bass note models** (`xavriley/midi-transcription-models`, MIT card) may ship.
+- **dettato** goes in as an experimental choice, behind a setting.
+- **tsumugi** goes in as an experimental choice too, without asking its author for a licence
+  first. Its weights state none, so the app only ever downloads them from the author's own
+  host at the user's request, never bundles or mirrors them, and says so where the choice is
+  offered.
+- **Weights trained on real songs' separated stems with weak labels may ship** (M6).
+- **GPL code stays out:** YourMT3+ is a reference in M0, never shipped.
+- **No Klangio or AnthemScore exports:** the owner would rather not do more exports by hand.
+  The baseline pack stays Melodyne and NeuralNote.
 - **M0 may run** its separation runs on the development PC.
 - **The FL Studio test files** will be checked by hand.
 
@@ -892,6 +905,64 @@ table.
 - **Separated stems against the mix for pitched transcription:** no peer-reviewed measurement.
 - **Learning without labels:** resynthesis-only training still trails supervised training by a
   wide margin.
+
+## 13. The check of 2026-11-25: keep the design, change the models
+
+A second round of research asked whether any other route would give more correct MIDI. The
+full report is `stem-to-midi-alternatives-2026-11.md` beside this file. Its verdict: no
+fundamentally different route beats a specialist per stem, and several model choices above
+are out of date. Every figure in it is reported from the cited pages, none was measured on
+separated stems, and each must be confirmed in M0 before it is relied on.
+
+**Ruled out**, each with a published number: audio language models (all below Basic Pitch
+on notes), foundation encoders and codec tokens as the transcriber's input, one large
+mix-to-MIDI model (MuScriptor: non-commercial weights, weak on single stems), diffusion for
+piano, language-model rescoring, and adapting weights to the user's own song. Harmonica
+(BandLab, 2026-09), the direct successor to Basic Pitch, has no released weights.
+
+**What changes, by stage**
+
+- **M0.** New rows:
+  - the `guitar-gaps`, `guitar-fl` and `filobass` checkpoints (Kong's CRNN, about 99 MB each);
+  - dettato's transcriber (Apache-2.0 code and weights, 15.3M parameters);
+  - tsumugi's per-stem checkpoints (MIT code; weights with no stated licence);
+  - pitch-shift aggregation on top of each polyphonic model (see M4);
+  - a synthetic bass set reaching 30 Hz, since no Slakh bass note is below 46.9 Hz;
+  - drum onsets on the whole kit against onsets per separated part.
+  Released checkpoints are measured as released: the third-party table this document quoted
+  for Transkun and Basic Pitch appears to retrain its baselines. YourMT3+ is no longer the
+  clear leader on guitar (four models sit within two points on GuitarSet).
+- **M2a.** Two published rules to start from: a hi-hat is open when its loudness stays above
+  75% of its peak, and a cymbal hit goes to crash or ride by the louder separated part.
+  Missed hi-hats and rides are mostly hits within 50 ms of another, not quiet ones.
+- **M2b.** STAR Drums (124.5 hours, 18 classes) as training data once its licence is read.
+- **M3.** The bass fallback was wrong as written. torchcrepe's `predict` defaults to
+  `fmin=50.`, above a 4-string's low E (41.2 Hz), and its lowest bin is about 31.7 Hz, above
+  a 5-string's low B (30.9 Hz). M3 picks among pYIN, PENN (MIT, 31 Hz floor) and the
+  `filobass` note model on the 30 Hz set, and passes the range explicitly whichever wins.
+- **M4.**
+  - Basic Pitch is no longer the default for guitar, keys and "other": a 2026 comparison of
+    11 models under one protocol puts it last or near last, at about .39 onset F1 on clean
+    Slakh stems, in line with this document's own 0.42. It stays only where its pitch contour
+    is wanted.
+  - Pitch-shift aggregation moves here from M7: transcribe a few pitch-shifted copies and
+    combine them. No training; about 3 points on out-of-domain piano and guitar in its paper,
+    and a small loss in-domain. The spread across the copies is an input to M5's confidence.
+  - The beat grid and the key count as evidence that a note is there. They never move a note.
+  - Velocity from the GAPS-trained guitar models is not used (their labels are a constant
+    100); it comes from loudness.
+- **M5.** The editor's "unsure" notes are the model's middle band. In one study 99.4% of
+  outputs fell within 0.2 of 0 or 1 and were 98.9% right; the band between was 57.9% right.
+- **M6.** Add fine-tuning on real audio with loose labels (note counts, or unaligned scores):
+  the largest published gains found, about 68 to 83 or 85 note F1 on guitar with no aligned
+  labels, on two older consumer cards. Add pitch-shifted copies with shifted labels.
+- **M7.** Dropped: language-model rescoring (error 21.4% to 21.2% in the one study) and
+  adapting weights per song (predictions collapsed to blank in another). Resynthesis stays
+  only as a per-stem quality score: no paper since 2023 reports a note-level gain from it.
+
+**Experimental models in the app.** dettato and tsumugi are offered behind a setting, off by
+default, each named as experimental where it is chosen. Neither replaces a default until M0
+has measured it on separated stems.
 
 ## Sources
 
