@@ -154,16 +154,7 @@ h1 {
   font-size: clamp(40px, 7.4vw, 66px); line-height: 1.02; letter-spacing: -0.035em;
 }
 h1 .line { display: block; padding: 4px 0 8px; border-bottom: 1px solid var(--line-strong); }
-.specs { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 22px; }
-.specs div { padding: 8px 0; border-bottom: 1px solid var(--line); }
-.specs div + div { padding-left: 12px; border-left: 1px solid var(--line); }
-.specs dt { font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
-.specs dd { font-size: 15px; font-stretch: 108%; }
 .lede { margin: 26px 0 24px; color: var(--muted); font-size: 16.5px; max-width: 46ch; }
-@media (max-width: 480px) {
-  .specs { grid-template-columns: repeat(2, 1fr); }
-  .specs div:nth-child(3) { padding-left: 0; border-left: 0; }
-}
 
 /* The hero's entrance plays once on load: a rare moment, so it may take its time */
 /* the headline leads and travels furthest; what follows starts sooner each time and moves less */
