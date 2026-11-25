@@ -1,6 +1,6 @@
 import { ContextMenu } from '@base-ui/react/context-menu'
-import { ArrowDownToLine, ArrowUpToLine, FileAudio, FolderOpen, Layers, Play, RotateCcw, Scissors, Trash2, X } from 'lucide-react'
-import type { ReactElement, ReactNode } from 'react'
+import { ArrowDownToLine, ArrowUpToLine, FileAudio, FolderOpen, Layers, Pencil, Play, RotateCcw, Scissors, Trash2, X } from 'lucide-react'
+import { type ReactElement, type ReactNode, useRef } from 'react'
 import type { Job, Link } from '@/api/client'
 import { words } from '@/platform'
 
@@ -15,9 +15,15 @@ export interface MenuItem {
   id: string
   label: string
   icon: ReactNode
-  run: () => void
+  /** Given the click: one with no pointer behind it (`detail` 0) came from the keyboard. */
+  run: (event?: { detail?: number }) => void
   /** A line above it: the item that changes the list sits apart from the ones that look. */
   separated?: boolean
+  /**
+   * The item puts the keyboard somewhere itself (Rename opens a field): the closing menu
+   * must not hand the focus back to the row, which would close that field again.
+   */
+  takesFocus?: boolean
 }
 
 /** What a window can do to a job. An action it leaves out is not offered. */
@@ -29,6 +35,8 @@ export interface JobHandlers {
   showStems?: () => void
   /** Open the song in the trimmer (the full window only), when it waits to start or is separated. */
   trim?: () => void
+  /** Type a new name over the song's, in its row. Not while it is being separated. */
+  rename?: () => void
   /** Show the stems in Explorer or Finder. */
   reveal?: () => void
   /** Show the song's own file in Explorer or Finder. */
@@ -50,6 +58,7 @@ export function jobMenuItems(job: Pick<Job, 'state' | 'held' | 'stems' | 'track_
     job.held && on.start && { id: 'start', label: 'Start now', icon: <Play size={13} />, run: on.start },
     hasStems && on.showStems && { id: 'stems', label: 'Show stems', icon: <Layers size={13} />, run: on.showStems },
     (queued || hasStems) && on.trim && { id: 'trim', label: 'Trim', icon: <Scissors size={13} />, run: on.trim },
+    !active && on.rename && { id: 'rename', label: 'Rename', icon: <Pencil size={13} />, run: on.rename, takesFocus: true },
     hasStems && on.reveal && { id: 'reveal', label: `Show in ${fileManager}`, icon: <FolderOpen size={13} />, run: on.reveal },
     Boolean(job.track_path) &&
       on.revealSource && { id: 'source', label: `Show the original in ${fileManager}`, icon: <FileAudio size={13} />, run: on.revealSource },
@@ -95,6 +104,8 @@ export function revealHandlers(job: Pick<Job, 'stems' | 'track_path'>, missing: 
  * right-click in a text field keeps the field's own menu.
  */
 export function RowMenu({ items, render, children, label }: { items: MenuItem[]; render: ReactElement<Record<string, unknown>>; children: ReactNode; label: string }) {
+  // Set by an item that takes the focus itself, read once as the menu closes.
+  const keepFocus = useRef(false)
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger
@@ -110,11 +121,26 @@ export function RowMenu({ items, render, children, label }: { items: MenuItem[];
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Positioner className="z-50 outline-none" collisionPadding={8}>
-          <ContextMenu.Popup className="popup min-w-[200px] p-1" aria-label={label} data-testid="row-menu">
+          <ContextMenu.Popup
+            className="popup min-w-[200px] p-1"
+            aria-label={label}
+            data-testid="row-menu"
+            finalFocus={() => {
+              const kept = keepFocus.current
+              keepFocus.current = false
+              return !kept
+            }}
+          >
             {items.map((item) => (
               <div key={item.id}>
                 {item.separated && <ContextMenu.Separator className="mx-1 my-1 h-px bg-line" />}
-                <ContextMenu.Item className="menu-item" onClick={item.run}>
+                <ContextMenu.Item
+                  className="menu-item"
+                  onClick={(event) => {
+                    keepFocus.current = Boolean(item.takesFocus)
+                    item.run(event)
+                  }}
+                >
                   <span className="grid w-3.5 flex-none place-items-center text-muted">{item.icon}</span>
                   {item.label}
                 </ContextMenu.Item>

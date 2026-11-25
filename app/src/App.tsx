@@ -5,7 +5,7 @@ import type { SetupStatus, TorchVariant } from '../electron/bridge'
 import { VARIANT_CARDS, VARIANT_DOWNLOAD, VARIANT_LABEL, variantsFor } from '../electron/variant'
 import type { Job, Model, Recipe, StemSet } from './api/client'
 import { EngineProvider } from './api/engine'
-import { type NewJobRange, keys, useJobs, useModels, useRecipes, useSetAnalysis, useSetJobRange, useSettings } from './api/queries'
+import { type NewJobRange, keys, useJobs, useModels, useRecipes, useRename, useSetAnalysis, useSetJobRange, useSettings } from './api/queries'
 import { useEngineStatus } from './api/status'
 import { DropOverlay } from './components/DropOverlay'
 import { type PanelMix, StemsPanel, type StemsPanelProps } from './components/StemsPanel'
@@ -348,6 +348,20 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
     setPanel((shown) => (shown?.key === set.directory ? { ...shown, stems: set.stems, analysis: set.analysis, origin: { kind: 'set', set } } : shown))
   }
 
+  const rename = useRename()
+  /**
+   * A song in the history is renamed: its stems are in another folder now, so a panel that
+   * shows them is given them where they are.
+   */
+  const renameSet = async (was: StemSet, name: string | null) => {
+    const set = await rename.stemSet.mutateAsync({ directory: was.directory, name })
+    setPanel((shown) =>
+      shown?.key === was.directory
+        ? { ...shown, key: set.directory, title: set.track_name, directory: set.directory, stems: set.stems, analysis: set.analysis, origin: { kind: 'set', set } }
+        : shown,
+    )
+  }
+
   const setRange = useSetJobRange()
   /** The part of a waiting song that Start separates alone, while the setting says so. */
   const commitRange = async (id: string, range: NewJobRange) => {
@@ -507,6 +521,7 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
             selected={panel?.key ?? null}
             onSelect={showSet}
             onRerun={(trackPath, recipeId) => submit([trackPath], { recipe: recipeId })}
+            onRename={renameSet}
           />
         )}
         {view.id === 'models' && <div className="min-w-0 flex-1"><ModelsView /></div>}
@@ -515,10 +530,15 @@ function Workspace({ recipes, models }: { recipes: Recipe[]; models: Model[] }) 
           <div className="panel flex h-full flex-none" data-settled={panelSettled || undefined}>
           <StemsPanel
             key={panel.key}
-            title={panel.title}
+            // A song renamed in the queue is another name and another folder: the panel follows its job.
+            title={panelJob?.track_name ?? panel.title}
             source={panel.source}
             subtitle={panel.subtitle}
-            directory={panel.directory}
+            directory={panelJob?.output_dir ?? panel.directory}
+            onRename={(name) => {
+              const origin = panel.origin
+              return origin.kind === 'job' ? rename.job.mutateAsync({ id: origin.id, name }) : renameSet(origin.set, name)
+            }}
             stems={panelJob?.stems ?? panel.stems}
             analysis={panelJob?.analysis ?? panel.analysis}
             notes={panelJob?.notes ?? panel.notes}

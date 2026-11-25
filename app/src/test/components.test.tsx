@@ -15,6 +15,7 @@ import { QueueView } from '@/views/QueueView'
 import { bridge } from './setup'
 
 const setAnalysis = { job: { mutateAsync: vi.fn() }, stemSet: { mutateAsync: vi.fn() } }
+const rename = { job: { mutateAsync: vi.fn(async (_change: { id: string; name: string | null }) => undefined) }, stemSet: { mutateAsync: vi.fn(async (_change: { directory: string; name: string | null }) => undefined) } }
 const actions = {
   startAll: { mutate: vi.fn() },
   start: { mutate: vi.fn() },
@@ -47,6 +48,7 @@ vi.mock('@/api/queries', () => ({
   useJobs: () => ({ data: jobs }),
   useJobActions: () => actions,
   useSetAnalysis: () => setAnalysis,
+  useRename: () => rename,
   useLinks: () => ({ data: links }),
   useLinkActions: () => linkActions,
   useCreateMix: () => createMix,
@@ -772,5 +774,113 @@ describe('toasts', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('renaming a song', () => {
+  beforeEach(() => localStorage.setItem(SORT_KEY, 'run'))
+  const queue = (selected: string | null = null) =>
+    wrap(<QueueView recipes={[]} models={[]} selectedJob={selected} onSelect={vi.fn()} onAddFiles={vi.fn()} onPasteLink={vi.fn()} />)
+  const stems = ['vocals', 'drums'].map(stem)
+
+  it('from the menu of a waiting row: the title becomes a field, and Enter saves the name for its run', async () => {
+    jobs = [job({ id: 'w', track_name: 'y2mate - Song' })]
+    queue()
+    const row = screen.getByTestId('job-row')
+    fireEvent.contextMenu(row)
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }))
+    const field = await within(row).findByLabelText<HTMLInputElement>('Song name')
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field.value).toBe('y2mate - Song')
+    expect(field).toHaveAttribute('title', expect.stringContaining('will go by this name'))
+    await userEvent.keyboard('Night Drive{Enter}')
+    expect(rename.job.mutateAsync).toHaveBeenCalledExactlyOnceWith({ id: 'w', name: 'Night Drive' })
+    expect(within(row).queryByLabelText('Song name')).not.toBeInTheDocument()
+    expect(row).toHaveTextContent('Night Drive')
+  })
+
+  it('by a double click on the title of a finished row whose stems are open, which says its files are renamed too', async () => {
+    jobs = [job({ id: 'd', state: 'done', stems, output_dir: 'D:\\out\\Song\\full-song' })]
+    // Not while its stems are closed: the first click opens them, and the row may move.
+    queue()
+    await userEvent.dblClick(within(screen.getByTestId('job-row')).getByTestId('drag-source'))
+    expect(screen.queryByLabelText('Song name')).not.toBeInTheDocument()
+    cleanup()
+    queue('d')
+    const row = screen.getByTestId('job-row')
+    await userEvent.dblClick(within(row).getByTestId('drag-source'))
+    const field = within(row).getByLabelText('Song name')
+    expect(field).toHaveAttribute('title', expect.stringContaining('stem folder and its files are renamed'))
+    await userEvent.keyboard('Dusk{Enter}')
+    expect(rename.job.mutateAsync).toHaveBeenCalledExactlyOnceWith({ id: 'd', name: 'Dusk' })
+  })
+
+  it('one field at a time: opening another row closes the first, saving what was typed', async () => {
+    jobs = [job({ id: 'a', track_name: 'First' }), job({ id: 'b', track_name: 'Second' })]
+    queue()
+    const [first, second] = screen.getAllByTestId('job-row')
+    await userEvent.dblClick(within(first!).getByTestId('drag-source'))
+    await userEvent.keyboard('One')
+    await userEvent.dblClick(within(second!).getByTestId('drag-source'))
+    expect(rename.job.mutateAsync).toHaveBeenCalledExactlyOnceWith({ id: 'a', name: 'One' })
+    expect(screen.getAllByLabelText('Song name')).toHaveLength(1)
+    expect(within(second!).getByLabelText('Song name')).toHaveFocus()
+  })
+
+  it('not while the song is being separated: no item, and a double click does nothing', async () => {
+    jobs = [job({ id: 'r', state: 'running', progress: 0.4 })]
+    queue()
+    const row = screen.getByTestId('job-row')
+    await userEvent.dblClick(within(row).getByTestId('drag-source'))
+    expect(screen.queryByLabelText('Song name')).not.toBeInTheDocument()
+    fireEvent.contextMenu(row)
+    await screen.findByRole('menuitem', { name: 'Cancel' })
+    expect(screen.queryByRole('menuitem', { name: 'Rename' })).not.toBeInTheDocument()
+  })
+
+  it('says why when the engine refuses, and shows the old name again', async () => {
+    rename.job.mutateAsync.mockRejectedValueOnce(new Error('this song is being separated: rename it when it is done'))
+    jobs = [job({ id: 'w' })]
+    queue()
+    const row = screen.getByTestId('job-row')
+    await userEvent.dblClick(within(row).getByTestId('drag-source'))
+    await userEvent.keyboard('Dusk{Enter}')
+    expect(await screen.findByText('this song is being separated: rename it when it is done')).toBeInTheDocument()
+    expect(within(row).getByTestId('drag-source')).toHaveTextContent('Song')
+  })
+
+  describe('in the stems panel', () => {
+    const panel = (onRename: ((name: string | null) => Promise<unknown>) | undefined = vi.fn(async () => undefined)) => {
+      wrap(<StemsPanel title="Song" source="C:/in/Song.mp3" subtitle="Full song" directory="D:\\out\\Song\\full-song" stems={stems} onRename={onRename} onClose={vi.fn()} />)
+      return onRename
+    }
+
+    it('the pencil beside the title opens the field, and goes while it is open', async () => {
+      const onRename = panel()
+      await userEvent.click(screen.getByRole('button', { name: 'Rename' }))
+      const field = screen.getByLabelText('Song name')
+      expect(field).toHaveFocus()
+      expect(field.closest('h2')).not.toBeNull()
+      expect(screen.queryByRole('button', { name: 'Rename' })).not.toBeInTheDocument()
+      await userEvent.keyboard('Night Drive{Enter}')
+      expect(onRename).toHaveBeenCalledExactlyOnceWith('Night Drive')
+      expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument()
+    })
+
+    it('F2 opens it as it does for a file, and Space typed into the name does not play', async () => {
+      const onRename = panel()
+      await userEvent.keyboard('{F2}')
+      expect(screen.getByLabelText('Song name')).toHaveFocus()
+      await userEvent.keyboard('Night Drive{Enter}')
+      expect(onRename).toHaveBeenCalledExactlyOnceWith('Night Drive')
+      expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
+    })
+
+    it('has no pencil and no F2 where the song cannot be renamed', async () => {
+      wrap(<StemsPanel title="Song" subtitle="Full song" directory="D:\\out" stems={stems} onClose={vi.fn()} />)
+      expect(screen.queryByRole('button', { name: 'Rename' })).not.toBeInTheDocument()
+      await userEvent.keyboard('{F2}')
+      expect(screen.queryByLabelText('Song name')).not.toBeInTheDocument()
+    })
   })
 })

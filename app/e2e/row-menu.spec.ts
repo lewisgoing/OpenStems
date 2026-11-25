@@ -17,7 +17,7 @@ test('a finished song: show its stems from the menu, then take it off the list',
   const row = page.locator('[data-testid="job-row"][data-state="done"]')
   await row.click({ button: 'right' })
   const menu = page.getByTestId('row-menu')
-  await expect(menu.getByRole('menuitem')).toHaveText(['Show stems', 'Trim', /^Show in (Explorer|Finder)$/, /^Show the original in/, 'Remove from the list'])
+  await expect(menu.getByRole('menuitem')).toHaveText(['Show stems', 'Trim', 'Rename', /^Show in (Explorer|Finder)$/, /^Show the original in/, 'Remove from the list'])
   await menu.getByRole('menuitem', { name: 'Show stems' }).click()
   await expect(page.getByTestId('stem-row').first()).toBeVisible()
 

@@ -247,6 +247,44 @@ export function useSetAnalysis() {
   }
 }
 
+/**
+ * A song's name, by the user; null gives it its file's name back. The name is the song's:
+ * every row of the same file follows, and stems that are written are renamed on the disk,
+ * their folder and their files. Both resolve with the song as it is now.
+ */
+export function useRename() {
+  const { api } = useEngine()
+  const queryClient = useQueryClient()
+  type Job = Schemas['JobInfo']
+  type StemSet = Schemas['StemSetInfo']
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: keys.jobs })
+    void queryClient.invalidateQueries({ queryKey: ['stemsets'] })
+  }
+  return {
+    job: useMutation({
+      mutationFn: ({ id, name }: { id: string; name: string | null }) =>
+        unwrap(api.POST('/v1/jobs/{job_id}/name', { params: { path: { job_id: id } }, body: { name } })),
+      // The row shows the new name with the answer, before the list is fetched again.
+      onSuccess: (job) => {
+        queryClient.setQueryData<Job[]>(keys.jobs, (list) => list?.map((other) => (other.id === job.id ? job : other)))
+        refresh()
+      },
+    }),
+    /** Stems that are written, by their folder: the answer is where they are now. */
+    stemSet: useMutation({
+      mutationFn: ({ directory, name }: { directory: string; name: string | null }) =>
+        unwrap(api.POST('/v1/stemsets/name', { body: { directory, name } })),
+      onSuccess: (set, { directory }) => {
+        queryClient.setQueriesData<StemSet[]>({ queryKey: ['stemsets'] }, (list) =>
+          list?.map((other) => (other.directory === directory ? set : other)),
+        )
+        refresh()
+      },
+    }),
+  }
+}
+
 /** A part of a waiting song as the trimmer chose it, or null for the whole song. */
 export type NewJobRange = Schemas['JobRangeRequest'] | null
 

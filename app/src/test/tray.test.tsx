@@ -41,6 +41,7 @@ import { bridge } from './setup'
 
 const createJobs = { mutate: vi.fn() }
 const setAnalysis = { job: { mutateAsync: vi.fn() }, stemSet: { mutateAsync: vi.fn() } }
+const rename = { job: { mutateAsync: vi.fn(async (_change: { id: string; name: string | null }) => undefined) }, stemSet: { mutateAsync: vi.fn(async (_change: { directory: string; name: string | null }) => undefined) } }
 const actions = {
   startAll: { mutate: vi.fn() },
   start: { mutate: vi.fn() },
@@ -83,6 +84,7 @@ vi.mock('@/api/queries', () => ({
   useJobs: () => ({ data: jobs }),
   useJobActions: () => actions,
   useSetAnalysis: () => setAnalysis,
+  useRename: () => rename,
   useLinks: () => ({ data: links }),
   useLinkActions: () => linkActions,
   useCreateMix: () => createMix,

@@ -514,3 +514,44 @@ test('screenshots of the trimmer', async () => {
     await app.close()
   }
 })
+
+test('screenshots of renaming', async () => {
+  const out = process.env.SHOTS_DIR ?? join(import.meta.dirname, '..', 'test-results', 'shots')
+  mkdirSync(out, { recursive: true })
+  for (const theme of ['dark', 'light'] as const) {
+    const prefix = theme === 'light' ? 'light-' : ''
+    const ctx = await launch({ OPENSTEMS_AUTO_START: '' })
+    const { app, page, fixtures } = ctx
+    try {
+      if (theme === 'light') await page.getByRole('radiogroup', { name: 'Theme' }).getByRole('radio', { name: 'Light' }).click()
+      await page.getByTestId('file-input').setInputFiles(['First Song.mp3', 'Second Song.flac'].map((name) => join(fixtures, name)))
+      const waiting = page.locator('[data-testid="job-row"][data-state="queued"]')
+      await expect(waiting).toHaveCount(2)
+      await waiting.first().click({ button: 'right' })
+      await expect(page.getByTestId('row-menu')).toBeVisible()
+      await page.waitForTimeout(300)
+      await page.screenshot({ path: join(out, `${prefix}rename-1-menu.png`) })
+      await page.getByTestId('row-menu').getByRole('menuitem', { name: 'Rename' }).click()
+      await expect(page.getByLabel('Song name')).toBeFocused()
+      await page.waitForTimeout(300)
+      await page.screenshot({ path: join(out, `${prefix}rename-2-row.png`) })
+      await page.keyboard.type('Night Drive')
+      await page.screenshot({ path: join(out, `${prefix}rename-3-typed.png`) })
+      await page.keyboard.press('Enter')
+      await page.getByRole('button', { name: 'Start 2 songs' }).click()
+      const done = page.locator('[data-testid="job-row"][data-state="done"]')
+      await expect(done).toHaveCount(2)
+      await done.first().click()
+      const panel = page.getByLabel('Stems')
+      await panel.getByRole('heading').hover()
+      await page.waitForTimeout(500)
+      await page.screenshot({ path: join(out, `${prefix}rename-4-panel-pencil.png`) })
+      await panel.getByRole('button', { name: 'Rename' }).click()
+      await page.waitForTimeout(200)
+      await page.screenshot({ path: join(out, `${prefix}rename-5-panel-field.png`) })
+      await page.keyboard.press('Escape')
+    } finally {
+      await app.close()
+    }
+  }
+})

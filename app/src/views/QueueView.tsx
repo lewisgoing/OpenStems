@@ -2,12 +2,12 @@ import { useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Check, GripVertical, Layers, Play, RotateCcw, Scissors, Search, Trash2, X, Zap } from 'lucide-react'
 import { type RefObject, useEffect, useRef, useState } from 'react'
 import type { Job, Link, Model, Recipe } from '@/api/client'
-import { keys, useJobActions, useJobs, useSetAnalysis, useSettings } from '@/api/queries'
+import { keys, useJobActions, useJobs, useRename, useSetAnalysis, useSettings } from '@/api/queries'
 import { JobNotes } from '@/components/Fit'
 import { LinkRow, useOpenLinks } from '@/components/LinkRow'
 import { RecipeBar } from '@/components/RecipeBar'
 import { type MenuItem, RowMenu, jobMenuItems, revealHandlers } from '@/components/RowMenu'
-import { SourceTitle } from '@/components/SourceTitle'
+import { SongName } from '@/components/SongName'
 import { TempoKey } from '@/components/TempoKey'
 import { useToast } from '@/components/toast'
 import { Button, IconButton, ProgressBar, Select, Tooltip } from '@/components/ui'
@@ -66,6 +66,8 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
   const search = useRef<HTMLInputElement>(null)
   const [dragged, setDragged] = useState<string | null>(null)
   const [over, setOver] = useState<string | null>(null)
+  // The song whose name is being typed over, if any: one field at a time.
+  const [renaming, setRenaming] = useState<string | null>(null)
   // The cascade plays once per session, the first time the queue is shown. Coming back
   // to this view, or adding a job later, shows rows without the stagger.
   const cascade = useRef(!queueShownOnce)
@@ -197,6 +199,7 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
                 showStems: job.id === selectedJob ? undefined : () => onSelect(job),
                 // Chosen from the keyboard (a click with no pointer behind it), it opens at once.
                 trim: trim && ((event?: { detail?: number }) => trim(event?.detail === 0)),
+                rename: () => setRenaming(job.id),
                 ...revealHandlers(job, (message) => toast.show(message)),
                 // Only where there is somewhere to move it.
                 moveTop: queuedIds.indexOf(job.id) > 0 ? () => moveTo(job.id, 0) : undefined,
@@ -213,6 +216,8 @@ export function QueueView({ recipes, models, selectedJob, onSelect, onAddFiles, 
                 menu={menu}
                 index={cascade.current ? index : 0}
                 selected={job.id === selectedJob}
+                renaming={renaming === job.id}
+                onRenaming={(open) => setRenaming((current) => (open ? job.id : current === job.id ? null : current))}
                 dropTarget={over === job.id && dragged !== job.id}
                 onSelect={() => onSelect(job.state === 'done' ? job : null)}
                 onStart={() => actions.start.mutate(job.id, { onError: toast.error })}
@@ -366,6 +371,9 @@ interface JobRowProps {
   menu: MenuItem[]
   index: number
   selected: boolean
+  /** Its name is being typed over. */
+  renaming: boolean
+  onRenaming: (open: boolean) => void
   dropTarget: boolean
   onSelect: () => void
   onStart: () => void
@@ -380,7 +388,7 @@ interface JobRowProps {
   onDrop: () => void
 }
 
-function JobRow({ job, separatePart, reorderable, enter, menu, index, selected, dropTarget, onSelect, onStart, onCancel, onRetry, onRemove, onTrim, onDragStart, onDragEnd, onDragOver, onDrop }: JobRowProps) {
+function JobRow({ job, separatePart, reorderable, enter, menu, index, selected, renaming, onRenaming, dropTarget, onSelect, onStart, onCancel, onRetry, onRemove, onTrim, onDragStart, onDragEnd, onDragOver, onDrop }: JobRowProps) {
   const active = ACTIVE.has(job.state)
   const done = job.state === 'done'
   const queued = job.state === 'queued'
@@ -388,6 +396,7 @@ function JobRow({ job, separatePart, reorderable, enter, menu, index, selected, 
   // The tempo and key the user gave this song ahead of its run, if any.
   const given = tempoKeyOf(job.options)
   const setAnalysis = useSetAnalysis()
+  const rename = useRename()
   const toast = useToast()
   const [entering] = useState(enter)
 
@@ -447,7 +456,20 @@ function JobRow({ job, separatePart, reorderable, enter, menu, index, selected, 
 
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
-            <SourceTitle name={job.track_name} source={job.track_path} className="min-w-0 font-medium" />
+            <SongName
+              name={job.track_name}
+              source={job.track_path}
+              className="min-w-0 font-medium"
+              editing={renaming}
+              onEditing={onRenaming}
+              // A song that is being separated keeps its name until it is done.
+              onRename={active ? undefined : (name) => rename.job.mutateAsync({ id: job.id, name })}
+              onError={toast.error}
+              hint={renameHint(done && job.stems.length > 0)}
+              // A click on a finished row opens its stems beside the list, which can move the
+              // row: only once they are open is a double click sure to land twice on the title.
+              doubleClick={!done || selected}
+            />
             <span className="min-w-0 shrink-[4] truncate text-[12px] text-faint">
               {job.recipe_name} · {job.quality}
             </span>
@@ -544,6 +566,13 @@ function JobRow({ job, separatePart, reorderable, enter, menu, index, selected, 
       )}
     </RowMenu>
   )
+}
+
+/** What a rename does, said in the field: stems that are written are renamed with the song. */
+export function renameHint(written: boolean): string {
+  return written
+    ? 'The stem folder and its files are renamed too. Empty it for the name of the file.'
+    : 'The stems will go by this name. Empty it for the name of the file.'
 }
 
 export function StateIcon({ job }: { job: Job }) {

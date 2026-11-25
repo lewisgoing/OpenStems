@@ -3,7 +3,8 @@ import { useDeferredValue, useState } from 'react'
 import type { Recipe, StemSet } from '@/api/client'
 import { useStemSets } from '@/api/queries'
 import { FitChip } from '@/components/Fit'
-import { SourceTitle } from '@/components/SourceTitle'
+import { SongName } from '@/components/SongName'
+import { useToast } from '@/components/toast'
 import { Button, Select, Tooltip } from '@/components/ui'
 import { cn, stemColor } from '@/lib/format'
 import { useTheme } from '@/lib/theme'
@@ -13,10 +14,15 @@ interface HistoryViewProps {
   selected: string | null
   onSelect: (set: StemSet | null) => void
   onRerun: (trackPath: string, recipeId: string) => void
+  /** Name a song; null gives it its file's name back. Its stem folder and files are renamed. */
+  onRename: (set: StemSet, name: string | null) => Promise<unknown>
 }
 
-export function HistoryView({ recipes, selected, onSelect, onRerun }: HistoryViewProps) {
+export function HistoryView({ recipes, selected, onSelect, onRerun, onRename }: HistoryViewProps) {
   const theme = useTheme()
+  const toast = useToast()
+  // The stem folder of the song whose name is being typed over, if any.
+  const [renaming, setRenaming] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const deferred = useDeferredValue(query)
   const { data: sets = [], isFetched } = useStemSets(deferred)
@@ -55,7 +61,16 @@ export function HistoryView({ recipes, selected, onSelect, onRerun }: HistoryVie
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
-                  <SourceTitle name={set.track_name} source={set.source_exists ? set.track_path : null} className="min-w-0 font-medium" />
+                  <SongName
+                    name={set.track_name}
+                    source={set.source_exists ? set.track_path : null}
+                    className="min-w-0 font-medium"
+                    editing={renaming === set.directory}
+                    onEditing={(open) => setRenaming((current) => (open ? set.directory : current === set.directory ? null : current))}
+                    onRename={(name) => onRename(set, name)}
+                    onError={toast.error}
+                    hint="The stem folder and its files are renamed too. Empty it for the name of the file."
+                  />
                   <span className="flex-none text-[12px] text-faint">
                     {set.recipe_name} · {formatDate(set.created_at)}
                   </span>

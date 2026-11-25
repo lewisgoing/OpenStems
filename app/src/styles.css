@@ -746,6 +746,53 @@
     text-decoration-color: var(--color-faint);
   }
 }
+/* A song's name being typed over. The field stands exactly where the title did, in the
+   title's own type: its margin takes back its padding, so the words do not move and the row
+   keeps its height. It is as wide as what is in it, up to the room there is. It appears at
+   once: typing follows it, and a key may have opened it. */
+.name-input {
+  field-sizing: content;
+  max-width: calc(100% + 10px);
+  margin: -2px -5px;
+  padding: 2px 5px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  letter-spacing: inherit;
+  outline: none;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent-fg) 60%, transparent);
+}
+.name-input::placeholder {
+  color: var(--color-faint);
+  font-weight: 400;
+}
+/* The pencil beside the stems panel's title: small and quiet, there on hover or focus. */
+.rename-btn {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-faint);
+}
+/* Easier to hit than it looks. */
+.rename-btn::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .rename-btn:hover {
+    background: var(--color-raised);
+    color: var(--color-text);
+  }
+}
 .chip {
   display: inline-flex;
   align-items: center;
