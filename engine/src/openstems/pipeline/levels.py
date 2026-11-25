@@ -9,12 +9,15 @@ own figure is from before it).
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
+from openstems.domain.errors import DomainError
 from openstems.domain.levels import empty_stems
+from openstems.domain.stem import MANIFEST_NAME
 
 
 def measure_peak(audio: np.ndarray) -> float:
@@ -47,3 +50,40 @@ def mark_empty(stems: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for n, stem in enumerate(stems):
         stem["empty"] = n in empty
     return stems
+
+
+def set_hidden(directory: Path, choices: dict[str, bool | None]) -> dict[str, Any]:
+    """Keep the user's choice for stems of the set in ``directory``: True leaves a stem out
+    of the app's lists, False keeps it in though it is empty, None takes the choice away.
+
+    ``choices`` maps stem names to it; stems it does not name stay as they are. Only the
+    manifest changes, so the choice goes wherever the stems go. Returns the new manifest.
+    """
+    from openstems.pipeline.run import read_manifest
+
+    manifest = read_manifest(directory)
+    if manifest is None:
+        raise DomainError("that folder does not hold a set of stems")
+    stems = {str(stem["name"]): stem for stem in manifest.get("stems", [])}
+    unknown = [name for name in choices if name not in stems]
+    if unknown:
+        raise DomainError(f"not a stem of this song: {unknown[0]}")
+    changed = False
+    for name, choice in choices.items():
+        if stems[name].get("hidden") == choice:
+            continue
+        changed = True
+        if choice is None:
+            stems[name].pop("hidden", None)
+        else:
+            stems[name]["hidden"] = bool(choice)
+    if not changed:
+        return manifest
+    tmp = directory / (MANIFEST_NAME + ".tmp")
+    try:
+        tmp.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, directory / MANIFEST_NAME)
+    except OSError as exc:
+        tmp.unlink(missing_ok=True)
+        raise DomainError(f"cannot save the choice: {exc.strerror or exc}") from exc
+    return manifest
