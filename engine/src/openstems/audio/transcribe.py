@@ -63,6 +63,28 @@ THREADS = 2  # SwiftF0 is small; more threads buy little and this machine shares
 # clips 0.59, and 0.80 tells 95 percent of each rightly (360 clips, and the figure was chosen
 # on them). Every vocal clip and 141 of 142 bass stems read as a line.
 LINE_CLARITY = 0.80
+# A pure tone is read from its spectrum. SwiftF0 was trained on sounds with harmonics, and of
+# a clean sub-bass or a clean 808 it is unsure: of eleven sine notes from B0 to E4 it showed
+# 9 held and 7 dying away, none of them under its floor, and of eight notes of 110 ms none.
+# But a lone sine is the one sound whose pitch the peak of a spectrum tells beyond doubt, at
+# any pitch. So in a stem that is mostly pure tone, a frame in which SwiftF0 hears no pitch
+# takes the frequency of its one partial (`with_pure_tones`).
+#
+# Only in such a stem. A kick drum's low tail is the same sound as an 808, and where one
+# leaked into a bass that has harmonics it must stay unheard: read frame by frame wherever a
+# frame was pure, a kick as loud as the bass, between its notes, came out as a note each
+# time. And on the benchmark's real basses the fill, let loose on every stem, cost 0.0025
+# with the rest of the song 15 dB under them (onset F1); kept to stems that are mostly pure
+# tone it changed none of the 142, alone or under their songs.
+TONE_WINDOW = 2048  # 128 ms of 16 kHz: four periods of a 5-string's low B
+TONE_FFT = 4096  # padded: bins of 4 Hz, set finer by the shape of the peak
+TONE_RANGE = (25.0, 400.0)  # Hz: where a frame's partial is looked for
+TONE_TOP = 4000.0  # Hz: a frame's energy is counted up to here
+TONE_PURE = 0.95  # of that energy, the share in the one partial: all else 13 dB under it
+TONE_LOUD = 0.01  # a frame's RMS, of a stem read at LEVEL: a quieter frame is not asked
+TONE_SHARE = 0.5  # of a stem's loud frames, the share that must be pure for any to be taken
+TONE_CONFIDENCE = 0.95  # what a pure frame's pitch weighs, as SwiftF0's surest frames do
+TONE_EDGE = 4  # frames either side of a pure one that are its note's own start or end: 64 ms
 
 
 @dataclass(frozen=True)
@@ -197,11 +219,14 @@ def peak_level(audio16: np.ndarray) -> float:
 class Frames:
     """SwiftF0's answer per 16 ms frame: pitch in semitones (0 where there is none), its
     confidence as a weight (0 where there is no pitch, and where SwiftF0 calls the frame
-    silent: it keeps a pitch there), and the level in dB."""
+    silent: it keeps a pitch there), and the level in dB. In a stem that is mostly pure
+    tone, a frame SwiftF0 heard no pitch in holds the tone's own (`with_pure_tones`)."""
 
     m: np.ndarray
     w: np.ndarray
     level: np.ndarray
+    # In a stem that is mostly pure tone: which frames are a pure tone. None in any other.
+    pure: np.ndarray | None = None
 
     @property
     def valid(self) -> np.ndarray:
@@ -222,6 +247,14 @@ def _to_frames(pitch_hz: np.ndarray, confidence: np.ndarray, level: np.ndarray) 
 
 
 def pitch_frames(audio16: np.ndarray, profile: Profile) -> Frames:
+    """The pitch of every frame of 16 kHz mono, 16 ms apart: SwiftF0's (`swift_frames`), and
+    for a profile with ``low`` the pitch of a pure tone where SwiftF0 heard none
+    (`with_pure_tones`)."""
+    frames = swift_frames(audio16, profile)
+    return with_pure_tones(frames, audio16) if profile.low else frames
+
+
+def swift_frames(audio16: np.ndarray, profile: Profile) -> Frames:
     """SwiftF0 over 16 kHz mono, within the profile's range. For a profile with ``low``, a
     second pass at double speed fills in what lies under SwiftF0's floor: at twice the speed
     a 41 Hz low E is an 82 Hz note."""
@@ -246,6 +279,66 @@ def pitch_frames(audio16: np.ndarray, profile: Profile) -> Frames:
         pitch[take] = up_pitch[take]
         confidence[take] = up_conf[take]
     return _to_frames(pitch, confidence, first.loudness_db)
+
+
+def pure_tones(audio16: np.ndarray, frames: int) -> tuple[np.ndarray, np.ndarray]:
+    """For each of ``frames`` frames 16 ms apart, as SwiftF0's are: the frequency in Hz of
+    the frame's one partial if the frame is a pure tone, else 0; and whether the frame is
+    loud enough to be asked at all (`TONE_LOUD`). A pure tone has `TONE_PURE` of its energy
+    up to `TONE_TOP` in its strongest partial within `TONE_RANGE`."""
+    tone = np.zeros(frames)
+    if frames <= 0:
+        return tone, np.zeros(0, dtype=bool)
+    need = (frames - 1) * HOP + TONE_WINDOW
+    x = np.zeros(max(need, audio16.size + TONE_WINDOW), dtype=np.float64)
+    x[TONE_WINDOW // 2 : TONE_WINDOW // 2 + audio16.size] = audio16  # frame i is centred on i * HOP
+    total = np.concatenate([[0.0], np.cumsum(x * x)])
+    starts = np.arange(frames) * HOP
+    loud = np.sqrt((total[starts + TONE_WINDOW] - total[starts]) / TONE_WINDOW) >= TONE_LOUD
+    step = RATE / TONE_FFT
+    low, high = (int(v / step) for v in TONE_RANGE)
+    low, top = max(low, 2), int(TONE_TOP / step)
+    half = max(2, round(2.5 * TONE_FFT / TONE_WINDOW))  # past the window's main lobe
+    # Single precision from here: it is the spectrum's shape that is asked, and a long
+    # stem has tens of thousands of frames.
+    window = np.hanning(TONE_WINDOW).astype(np.float32)
+    single = x.astype(np.float32)
+    asked = np.flatnonzero(loud)
+    for at in range(0, asked.size, 256):
+        some = asked[at : at + 256]
+        rows = np.arange(some.size)
+        block = single[starts[some, None] + np.arange(TONE_WINDOW)] * window
+        power = np.abs(np.fft.rfft(block, TONE_FFT, axis=1)[:, : top + 1]) ** 2
+        peak = low + np.argmax(power[:, low:high], axis=1)
+        summed = np.concatenate([np.zeros((some.size, 1)), np.cumsum(power, axis=1)], axis=1)
+        inside = (
+            summed[rows, np.minimum(peak + half + 1, top)]
+            - summed[rows, np.maximum(peak - half, 1)]
+        )
+        pure = inside >= TONE_PURE * np.maximum(summed[rows, top] - summed[rows, 1], 1e-30)
+        # The peak lies between two bins: a parabola through it and its neighbours says where.
+        a, b, c = (np.log(power[rows, peak + k] + 1e-30) for k in (-1, 0, 1))
+        bend = a - 2.0 * b + c
+        off = np.where(bend < 0, 0.5 * (a - c) / np.where(bend < 0, bend, -1.0), 0.0)
+        tone[some] = np.where(pure, (peak + np.clip(off, -0.5, 0.5)) * step, 0.0)
+    return tone, loud
+
+
+def with_pure_tones(frames: Frames, audio16: np.ndarray) -> Frames:
+    """``frames`` with a pure tone's own pitch where SwiftF0 heard none, if the stem is
+    mostly pure tone (`TONE_SHARE` of its loud frames): a clean sub-bass, a clean 808. Any
+    other stem's frames are returned as they are."""
+    tone, loud = pure_tones(audio16, len(frames.w))
+    pure = tone > 0
+    if not pure.any() or pure.sum() < TONE_SHARE * loud.sum():
+        return frames
+    # Only where SwiftF0 heard none: where it is sure, its pitch stands. It hears the note
+    # of a sound whose fundamental is weak, which a spectrum's peak would put an octave up.
+    take = pure & (frames.w < 0.5)
+    m, w = frames.m.copy(), frames.w.copy()
+    m[take] = 69.0 + 12.0 * np.log2(tone[take] / 440.0)
+    w[take] = TONE_CONFIDENCE
+    return Frames(m, w, frames.level, pure)
 
 
 # -- notes: SwiftF0's segmenter, with onsets ------------------------------------------------
@@ -697,7 +790,10 @@ def _placed(
 
 def clarity(frames: Frames) -> float:
     """How sure SwiftF0 is of one pitch while a stem sounds, 0 to 1: its mean confidence
-    over the louder frames. Chords leave it unsure. 1 for a stem with no frames.
+    over the louder frames. Chords leave it unsure. 1 for a stem with no frames. In a stem
+    of pure tone, a frame that is a pure tone is one pitch for certain, whatever SwiftF0
+    made of it, and so are the few frames either side: a pure note's start (an 808's click
+    and glide) and its end. An 808 read as chords without.
 
     The louder frames are the loudest 60 percent of those within 20 dB of the stem's tenth
     loudest frame. Counted that way neither silence nor quiet bleed between phrases is among
@@ -710,7 +806,11 @@ def clarity(frames: Frames) -> float:
     nth = min(10, len(level))
     sounding = level >= np.partition(level, -nth)[-nth] - 20.0
     loud = sounding & (level >= np.percentile(level[sounding], 40))
-    return float(frames.w[loud].mean())
+    sure = frames.w
+    if frames.pure is not None:
+        beside = np.convolve(frames.pure, np.ones(2 * TONE_EDGE + 1), mode="same") > 0
+        sure = np.where(beside, np.maximum(sure, TONE_CONFIDENCE), sure)
+    return float(sure[loud].mean())
 
 
 def tuning_strength(pitches: list[float], weights: list[float]) -> float:

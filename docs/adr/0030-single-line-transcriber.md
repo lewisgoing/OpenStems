@@ -33,6 +33,15 @@ writes what it finds.
 - **Low bass:** SwiftF0 reports nothing under 46.9 Hz. A bass is tracked a second time at
   double speed, where every pitch is an octave up, and the frames that pass finds under
   58 Hz replace the first pass's.
+- **Pure tones:** a clean sub-bass or a clean 808 is a sine with nothing above it, and
+  SwiftF0, trained on sounds with harmonics, is unsure of one. But a lone sine's pitch is
+  the peak of its spectrum, at any pitch. So in a bass that is mostly pure tone (half its
+  loud frames or more hold one partial, with all else at least 13 dB under it), a frame
+  SwiftF0 hears no pitch in takes that partial's frequency (`with_pure_tones`). Where
+  SwiftF0 is sure, its pitch stands. Such a stem also reads as a line: an 808 read as
+  chords. Never frame by frame in any stem: a kick drum's low tail is the same sound as an
+  808, and one that had leaked into a bass with harmonics, as loud as the bass, came out as
+  a note each time.
 - **Starts:** on a bass and on any other plucked line, a note's start moves back to where
   its level rises fastest. A pitch takes a few periods to settle, and on Slakh's basses the
   pitch alone came 28 ms late. A voice's starts are left where the pitch starts.
@@ -282,13 +291,16 @@ chords, tuning, velocity) is in `docs/research/stem-to-midi.md`, section 14.
 - **The lock on a folder goes by its path as it is spelled.** Two spellings of one folder
   (another case on a Mac, a link) would be two locks. The app has one spelling, the one the
   API gave it.
-- **A pure sine is read poorly.** SwiftF0 was trained on sounds with harmonics. Of ten
-  notes from E1 to E4 as steady pure sines the bass reading shows 9, and of the same notes
-  dying away as an 808's do, 6; with a second harmonic 30 dB under the sine, all 10. A clean
-  sub-bass or a clean 808 may lose notes. A second look, with a little distortion added and
-  only where the first look heard no pitch, showed 9 of the 10 dying sines and left real
-  recordings as they were, with bleed too (section 14). It is not in the engine: it reads a
-  pure low B as the B above, doubles the tracker's work, and wants real 808s first.
+- **Pure tones are proven on made sounds only.** Sines held, dying away, gliding, driven,
+  under noise, ducking under a kick and in notes of 110 ms were all made here (section 14).
+  A real clean 808 or sub-bass has not been read. Of the benchmark's 142 real basses three
+  count as mostly pure tone, and SwiftF0 reads those well already: there the fill takes 2
+  to 16 frames of some 16,800 and moves a stem's score by 0.003 at most, and the mean over
+  the 142 by 0.00005, alone or under their songs. Three things it does not do: a bass that
+  is pure tone only here and there (under half of it) is read as before; a sub that ducks
+  12 dB or more under a kick is cut at the beats, less than before, where it is one held
+  note; and a stem that holds nothing but a kick's low end gives a note for each kick, a
+  short kick too, which gave none (such a stem is bleed: the last limit here).
 - **The chords mark errs under heavy bleed.** With the rest of its song 15 dB under it, a
   bass is mostly called chords (section 14): SwiftF0 is less sure of any pitch.
 - **A stem that is only bleed** but louder than the 45 dB that counts as empty (ADR 0027) is
@@ -304,7 +316,8 @@ chords, tuning, velocity) is in `docs/research/stem-to-midi.md`, section 14.
   needs the Visual C++ runtime (`msvcp140.dll`), as PyTorch's own files do: neither brings
   it, so it asks nothing of a machine that a separation did not ask already.
 - A stem of 6 minutes 26 seconds takes about 2 seconds on two CPU threads of the development
-  PC. Nothing runs on the GPU, so there is no memory to plan for and no MPS path.
+  PC, a bass 2.5. Nothing runs on the GPU, so there is no memory to plan for and no MPS
+  path.
 - A song separated before this version gets the new notes the next time it is queued with
   "Write MIDI" on, from the cache.
 - The API process may transcribe: the module imports no torch (a test holds it to that).

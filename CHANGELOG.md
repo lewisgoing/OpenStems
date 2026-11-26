@@ -13,6 +13,9 @@
     a quiet sound between the notes is less often taken for one.
   - Notes below a bass's low G are found by listening a second time at double speed. Tested
     on test tones down to a 5-string's low B and on a slowed-down bass, not on a real one.
+  - A clean sub-bass or a clean 808 gives its notes. A pure tone with nothing above it lost
+    notes, most of all short ones, low ones and ones that die away. Tried on tones made for
+    the test, not yet on a real 808.
   - Each stem also gets a `.notes.json` file beside its `.mid`, with every note found and how
     sure the app is of it. Nothing shows it yet: it is what a note editor will open.
   - The MIDI file follows the song when you change its tempo or key, or rename it.

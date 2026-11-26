@@ -61,6 +61,38 @@ def keys(notes) -> list[int]:
     return [round(n.pitch) for n in notes]
 
 
+def pure_tone(
+    note: float, seconds: float = 0.5, decay: float = 0.0, glide: float = 0.0, click: float = 0.0
+) -> np.ndarray:
+    """One sine note with nothing above its fundamental, as a clean sub-bass plays it.
+    ``decay`` lets it die away and ``glide`` starts it that many semitones up, falling in a
+    few ms, as an 808 does; ``click`` is the short noise of its attack."""
+    t = np.arange(int(seconds * RATE)) / RATE
+    phase = 2 * np.pi * np.cumsum(hz(note + glide * np.exp(-t / 0.015))) / RATE
+    wave = np.sin(phase) * np.minimum(1.0, np.minimum(t / 0.004, (seconds - t) / 0.02))
+    wave = wave * np.exp(-decay * t)
+    if click:
+        noise = np.random.default_rng(int(note)).standard_normal(len(t))
+        wave = wave + click * noise * np.exp(-t / 0.003)
+    return wave
+
+
+def pure(notes: Sequence[float], gap: float = 0.08, **how: float) -> np.ndarray:
+    parts = []
+    for note in notes:
+        parts += [pure_tone(note, **how), np.zeros(int(gap * RATE))]
+    return (np.concatenate(parts) * 0.4).astype(np.float32)
+
+
+def kick(seconds: float = 0.35, tail: float = 0.12) -> np.ndarray:
+    """A kick drum: a sine that falls from 160 to 50 Hz in a few ms and dies away, with the
+    noise of the beater. Its tail is a pure low tone, as an 808's is."""
+    t = np.arange(int(seconds * RATE)) / RATE
+    wave = np.sin(2 * np.pi * np.cumsum(50.0 + 110.0 * np.exp(-t / 0.03)) / RATE)
+    noise = np.random.default_rng(1).standard_normal(len(t)) * np.exp(-t / 0.002)
+    return wave * np.exp(-t / tail) + 0.2 * noise
+
+
 def test_a_sung_melody_becomes_its_notes() -> None:
     wanted = [60, 64, 67, 72, 67]
     found = transcribe_line(sung(wanted), RATE, "vocals")
@@ -90,6 +122,125 @@ def test_a_bass_is_heard_under_swiftf0s_floor() -> None:
     assert keys(transcribe_line(audio, RATE, "bass").shown()) == wanted
     # Any other stem is read once: the two notes under the floor are not there.
     assert keys(transcribe_line(audio, RATE, "guitar").shown()) == [31, 36]
+
+
+def test_a_bass_of_pure_tone_is_read_from_its_spectrum(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A clean sub-bass or a clean 808 is a sine with nothing above it. SwiftF0 was trained
+    # on sounds with harmonics and is unsure of one, most of all when it dies away, and it
+    # hears none under its floor. But a lone sine's pitch is the peak of its spectrum.
+    wanted = [23, 28, 33, 36, 40, 45, 48, 52]  # B0 (30.9 Hz) to E3
+    for name, audio in (
+        ("held", pure(wanted)),
+        ("dying away", pure(wanted, decay=4.0)),
+        (
+            "an 808: a glide down, a click, dying away",
+            pure(wanted, decay=4.0, glide=12.0, click=0.3),
+        ),
+        ("run together", pure(wanted, gap=0.0)),
+    ):
+        found = transcribe_line(audio, RATE, "bass")
+        assert keys(found.shown()) == wanted, name
+        assert all(abs(n.pitch - round(n.pitch)) < 0.1 for n in found.shown()), name
+        assert found.texture == "line", name  # one pitch at a time, for certain
+    # Notes too short for SwiftF0 to make anything of: sixteenths at 136 bpm.
+    short = [33, 33, 36, 36, 40, 40, 33, 33]
+    quick = np.concatenate(
+        [np.concatenate([pure_tone(n, 0.11, decay=6.0), np.zeros(int(0.03 * RATE))]) for n in short]
+    )
+    found = transcribe_line((quick * 0.4).astype(np.float32), RATE, "bass")
+    assert keys(found.shown()) == short and found.texture == "line"
+    # Why it is there: SwiftF0's frames alone lose notes of each of these.
+    monkeypatch.setattr(T, "pitch_frames", T.swift_frames)
+    assert len(transcribe_line(pure(wanted, decay=4.0), RATE, "bass").shown()) < len(wanted)
+    assert transcribe_line(pure(wanted, decay=4.0), RATE, "bass").texture == "chords"
+    assert not transcribe_line((quick * 0.4).astype(np.float32), RATE, "bass").shown()
+
+
+def test_a_kick_that_leaked_into_a_bass_stays_unheard() -> None:
+    # A kick drum's low tail is the same sound as an 808: a pure tone that dies away. Where
+    # one leaked into a bass that has harmonics, it is not a note. So a pure tone is read
+    # from its spectrum only in a stem that is mostly pure tone. Read wherever a frame was
+    # pure, each of these kicks, as loud as the bass and between its notes, came out as one.
+    wanted = [33, 36, 40, 43, 40, 36]
+    total = np.zeros(int(3.2 * RATE))
+    for i, note in enumerate(wanted):
+        t = np.arange(int(0.22 * RATE)) / RATE
+        tone = sum(np.sin(2 * np.pi * hz(note) * k * t) / k for k in range(1, 6))
+        tone *= np.minimum(1.0, np.minimum(t, 0.22 - t) / 0.02)
+        at = int(i * 0.5 * RATE)
+        total[at : at + len(tone)] += tone / np.abs(tone).max()
+        hit = kick()
+        at = int((i * 0.5 + 0.25) * RATE)
+        total[at : at + len(hit)] += hit / np.abs(hit).max()
+    audio = (total * 0.3).astype(np.float32)
+    found = transcribe_line(audio, RATE, "bass")
+    assert keys(found.shown()) == wanted
+    # The frames are SwiftF0's own, untouched: the very same object comes back.
+    audio16 = T.mono16(audio, RATE)
+    audio16 = audio16 * np.float32(T.LEVEL / T.peak_level(audio16))
+    frames = T.swift_frames(audio16, T.PROFILES["bass"])
+    assert T.with_pure_tones(frames, audio16) is frames
+    tone, loud = T.pure_tones(audio16, len(frames.w))
+    assert 0 < (tone > 0).sum() < T.TONE_SHARE * loud.sum()  # some frames are pure: the tails
+
+
+def test_pure_tones_are_told_frame_by_frame() -> None:
+    # `pure_tones`: the frequency of a frame's one partial, 0 for a frame that is not a pure
+    # tone, and which frames are loud enough to be asked.
+    t = np.arange(2 * T.RATE) / T.RATE
+    frames = len(t) // T.HOP
+    one = (0.3 * np.sin(2 * np.pi * 55.0 * t)).astype(np.float32)
+    tone, loud = T.pure_tones(one, frames)
+    inner = slice(8, frames - 8)  # clear of the ends, where a frame is half silence
+    assert loud[inner].all() and np.allclose(tone[inner], 55.0, atol=0.05)
+    low_b = (0.3 * np.sin(2 * np.pi * hz(23) * t)).astype(np.float32)  # 30.87 Hz
+    assert np.allclose(T.pure_tones(low_b, frames)[0][inner], hz(23), atol=0.1)
+    # Two tones at once are not one, nor is a tone with harmonics, nor noise.
+    two = one + (0.3 * np.sin(2 * np.pi * 82.4 * t)).astype(np.float32)
+    assert not T.pure_tones(two, frames)[0][inner].any()
+    harmonics = [0.2 * np.sin(2 * np.pi * 55.0 * k * t) / k for k in range(1, 6)]
+    rich = np.sum(harmonics, axis=0).astype(np.float32)
+    assert not T.pure_tones(rich, frames)[0][inner].any()
+    noise = (0.1 * np.random.default_rng(2).standard_normal(len(t))).astype(np.float32)
+    assert not T.pure_tones(noise, frames)[0].any()
+    # A frame too quiet is not asked, however pure.
+    quiet = (one * np.float32(0.01)).astype(np.float32)
+    tone, loud = T.pure_tones(quiet, frames)
+    assert not loud.any() and not tone.any()
+    assert T.pure_tones(one, 0)[0].size == 0
+
+
+def test_where_swiftf0_is_sure_its_pitch_stands() -> None:
+    # In a stem of pure tone, only the frames SwiftF0 heard no pitch in take the tone's.
+    # Where it is sure, its own pitch stands: SwiftF0 hears the note of a sound whose
+    # fundamental is weak, which the peak of a spectrum would put an octave up.
+    t = np.arange(2 * T.RATE) / T.RATE
+    audio16 = (0.3 * np.sin(2 * np.pi * 110.0 * t)).astype(np.float32)  # A2, a pure tone
+    n = len(t) // T.HOP
+    sure, unsure = np.arange(n) < n // 2, np.arange(n) >= n // 2
+    heard = T.Frames(np.where(sure, 33.0, 0.0), np.where(sure, 0.9, 0.0), np.full(n, -20.0))
+    got = T.with_pure_tones(heard, audio16)
+    assert got is not heard and got.pure is not None and got.pure[8 : n - 8].all()
+    assert (got.m[sure] == 33.0).all() and (got.w[sure] == 0.9).all()  # A1, as SwiftF0 said
+    inner = unsure & (np.arange(n) < n - 8)
+    assert np.allclose(got.m[inner], 45.0, atol=0.02)  # A2, from the spectrum
+    assert (got.w[inner] == T.TONE_CONFIDENCE).all()
+    # And the frames given are not written into.
+    assert (heard.m[unsure] == 0.0).all() and heard.pure is None
+
+
+def test_only_a_stem_read_for_low_notes_is_asked_for_pure_tones(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # SwiftF0 reads a sine well from about 130 Hz up, so only a bass is read this way.
+    def never(*_: Any) -> Any:
+        raise AssertionError("pure tones were asked for")
+
+    monkeypatch.setattr(T, "pure_tones", never)
+    assert keys(transcribe_line(pure([57, 60, 64]), RATE, "guitar").shown()) == [57, 60, 64]
+    assert keys(transcribe_line(pure([57, 60, 64]), RATE, "vocals").shown()) == [57, 60, 64]
+    with pytest.raises(AssertionError, match="pure tones were asked for"):
+        transcribe_line(pure([57, 60, 64]), RATE, "bass")
 
 
 def test_a_note_struck_again_is_two_notes() -> None:

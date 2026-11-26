@@ -28,10 +28,11 @@ it is not.
   editor's "check these notes" needs. Then precision, recall and F1 with bleed.
 
 A note counts as right when mir_eval pairs it with a reference note: onset within 50 ms and
-pitch within 50 cents. Each clip's 16 kHz audio and the engine's pitch frames for it are
-kept under ``<bench>/cache/f0``, per reading, so a second run takes seconds per set. Delete
-that folder after changing how frames are made (the level a stem is read at, a profile's
-range, the double-speed pass).
+pitch within 50 cents. Each clip's 16 kHz audio and SwiftF0's frames for it
+(``transcribe.swift_frames``, the slow part) are kept under ``<bench>/cache/f0``, per
+reading, so a second run takes seconds per set. Delete that folder after changing how those
+are made (the level a stem is read at, a profile's range, the double-speed pass). What is
+laid over them for a pure tone is worked out each time.
 """
 
 from __future__ import annotations
@@ -137,19 +138,20 @@ def _rest(item: mb.Item, profile: str, bench: Path, samples: int) -> np.ndarray:
     return rest[:samples]
 
 
-_pitch_frames = T.pitch_frames
+_pitch_frames = T.swift_frames
 
 
 def _frames(audio16: np.ndarray, profile: T.Profile) -> T.Frames:
-    """`transcribe.pitch_frames`, its answer kept beside the clip's audio per profile and
-    per reading."""
+    """`transcribe.pitch_frames`, with SwiftF0's part of it (the slow part) kept beside the
+    clip's audio per profile and per reading."""
     path = _now["path"].with_suffix(f".{profile.name}{_now['tag']}.npz")
     if path.is_file():
         with np.load(path) as z:
-            return T.Frames(z["m"], z["w"], z["level"])
-    frames = _pitch_frames(audio16, profile)
-    np.savez(path, m=frames.m, w=frames.w, level=frames.level)
-    return frames
+            frames = T.Frames(z["m"], z["w"], z["level"])
+    else:
+        frames = _pitch_frames(audio16, profile)
+        np.savez(path, m=frames.m, w=frames.w, level=frames.level)
+    return T.with_pure_tones(frames, audio16) if profile.low else frames
 
 
 def transcribe(

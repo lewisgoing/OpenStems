@@ -1262,23 +1262,54 @@ column; the first row that fits):
 - **Velocity.** A note's level says something of how hard it was played, and not much: on
   27 Slakh bass stems the two agree in rank at 0.42 (Spearman), and the velocity-aware score
   is 0.60 with it against 0.51 with every velocity the same (the notes alone score 0.92).
-- **Time.** A stem of 6 minutes 26 seconds takes 2.1 s as a bass and 1.7 s as a voice, on
-  two CPU threads.
-- **Pure sines.** SwiftF0 was trained on voices and instruments, which have harmonics, and
-  a pure sine has none. Ten notes from E1 to E4 as steady pure sines, read as a bass: 9 are
-  shown (not the E1, at 41 Hz). The same notes dying away as an 808's do: 6. With a second
-  harmonic 30 dB under the sine: all 10. So a clean sub-bass or a clean 808 may lose notes;
-  a bass with any grit does not.
-  - Two remedies were tried and neither is in the engine yet. A little even-harmonic
-    distortion in front of the pitch tracker read the dying sines, and cost real recordings
-    (guitar solos 0.840 to 0.835, bass 0.946 to 0.945, the first pass on the development
-    half). A second look does better: the tracker run again on the distorted stem, its
-    frames taken only where the first look heard no pitch. That shows 9 of the 10 dying
-    sines and all 10 steady ones, and leaves real recordings as they were (0.784, 0.840 and
-    0.945 against 0.784, 0.840 and 0.946), with bleed too (a bass with the rest of its song
-    25 dB under it: 0.941 shown either way). It reads a pure low B, under SwiftF0's floor,
-    as the B above, and it doubles the tracker's work. It wants real 808s and clean
-    sub-basses before it goes in.
+- **Time.** A stem of 6 minutes 26 seconds takes 2.5 s as a bass and 1.7 s as a voice, on
+  two CPU threads. The bass's figure holds 0.4 s for the spectrum that pure tones are told
+  by.
+- **Pure tones.** SwiftF0 was trained on voices and instruments, which have harmonics, and
+  a pure sine has none: a clean sub-bass, a clean 808. In a bass that is mostly pure tone
+  the engine now takes a frame's pitch from its spectrum where SwiftF0 hears none. Made
+  tones, read as a bass, notes shown of notes played (B0 to E4 unless said):
+
+  | Sound | SwiftF0's frames alone | With the pure tone's own pitch |
+  | --- | --- | --- |
+  | Sines, held | 9 of 11 | 11 of 11 |
+  | Sines dying away, as an 808 does | 7 of 11 | 11 of 11 |
+  | The six lowest notes, B0 to G1 | 3 of 6, and one wrong | 6 of 6 |
+  | An 808: a glide down, a click, dying away | 7 of 11 | 11 of 11 |
+  | Eight notes of 110 ms | 0 of 8 | 8 of 8 |
+  | One sub gliding through four notes | 3 of 4 | 4 of 4 |
+  | A sub with a kick on each note, 6 dB under it | 3 of 6, and two wrong | 6 of 6, and one wrong |
+  | A sub under noise, 15 dB under it | 6 of 6 | 6 of 6 |
+  | Sines with five harmonics | 11 of 11 | 11 of 11 (not touched) |
+
+  For the pure sounds the pitch of what is shown is within 5 cents (it was within 29).
+  SwiftF0's two faults with a sine show there: under its floor it hears nothing or the
+  octave above, and of one that dies away it is unsure.
+  - **Only in a stem that is mostly pure tone.** A kick drum's low tail is a sine that dies
+    away, as an 808 is. Taken frame by frame in any stem, the fill read a kick that had
+    leaked into a bass with harmonics as a note each time (six bass notes and six kicks
+    between them, as loud: 12 notes shown), and on the benchmark's basses it cost 0.0025
+    with the rest of the song 15 dB under them (shown, the development half: 0.9039 to
+    0.9014; 0.0004 alone). Kept to stems of which half the loud frames or more are pure,
+    the same six notes and six kicks give six notes.
+  - **On real basses it changes next to nothing,** which is what it should do there: they
+    have harmonics. Of the 142, three count as mostly pure tone when read alone, two with
+    the rest of the song 25 dB under them and one at 15 dB. SwiftF0 reads those well, so
+    the fill takes 2 to 16 frames of some 16,800 alone (up to 391 under bleed), and a
+    stem's score moves by 0.003 at most alone (down in two, the same in one), by +0.006 in
+    one at 25 dB and by -0.008 in one at 15 dB. The mean over the 142 moves by 0.00005 at
+    most, and every figure in the tables above is what it was, the slowed bass too.
+  - **What it leaves.** A sub that ducks under a kick is still cut at the beats: two held
+    notes ducking 12 dB four times each come out as 3 notes (6 before), and ducking 20 dB
+    as 8 (8 before, with one missing). A stem that is nothing but kicks gives a note per
+    kick, also for a kick with a tail of 60 ms, which gave none. And none of this has met a
+    real 808.
+  - Two other remedies were tried first. A little even-harmonic distortion in front of the
+    pitch tracker read the dying sines and cost real recordings (guitar solos 0.840 to
+    0.835, bass 0.946 to 0.945, the first pass on the development half). The tracker run a
+    second time on the distorted stem, taken only where the first look heard no pitch, left
+    real recordings alone but read a pure low B as the B above, and doubled the tracker's
+    work.
 
 ### Not measured
 

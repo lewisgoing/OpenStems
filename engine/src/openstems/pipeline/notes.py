@@ -46,7 +46,7 @@ log = logging.getLogger(__name__)
 # What wrote a notes file: SwiftF0's version and this transcriber's own. A cached song whose
 # notes say otherwise is read again (`stale`), so raise the last number whenever the notes a
 # stem gives change: a new weight, a new rule.
-METHOD = f"swift-f0 {version('swift-f0')}, line segmenter 3"
+METHOD = f"swift-f0 {version('swift-f0')}, line segmenter 4"
 # A song's MIDI is rounded to keys in the song's own tuning only when the notes of a stem
 # with fixed pitches (not a voice) agree on one this tightly. Otherwise keys are at A440.
 TUNING_STRENGTH = 0.7
