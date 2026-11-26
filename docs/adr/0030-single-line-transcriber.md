@@ -309,6 +309,8 @@ chords, tuning, velocity) is in `docs/research/stem-to-midi.md`, section 14.
   "Write MIDI" on, from the cache.
 - The API process may transcribe: the module imports no torch (a test holds it to that).
 - **A Mac:** the code is the same on both systems and nothing in it or its tests is
-  Windows-only. No test of this change has run on a Mac: CI runs on pull requests and on
-  `main`, and this branch has neither yet. onnxruntime's arm64 wheel going in through
-  first-run setup has not been seen. ADR 0014 has the steps.
+  Windows-only. Its tests ran on a Mac for the first time in CI on 2026-11-26 (pull request
+  48, `macos-15` on Apple Silicon: 605 passed, and the 2 that are skipped there are older,
+  Windows-only ones), so SwiftF0 through onnxruntime's arm64 wheel gives the notes the tests
+  expect there. Nothing has been seen on a Mac by hand: not that wheel going in through
+  first-run setup, and not a real stem. ADR 0014 has the steps.
