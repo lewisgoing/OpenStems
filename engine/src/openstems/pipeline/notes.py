@@ -161,6 +161,7 @@ def find_notes(directory: Path, files: list[str]) -> dict[str, Any]:
     tuning = _tuning_in_use(directory, stems.values()) or song_tuning(found)
 
     written: list[Path] = []
+    there = {path.name for path in directory.iterdir()}
     try:
         for stem in chosen:
             name = str(stem["name"])
@@ -199,8 +200,12 @@ def find_notes(directory: Path, files: list[str]) -> dict[str, Any]:
             written,
         )
     except OSError as exc:
+        # Leave the folder as its manifest describes it: no half-written file, and no new
+        # file the manifest does not name (it would be in the way the next time).
         for path in written:
             path.with_name(path.name + ".tmp").unlink(missing_ok=True)
+            if path.name not in there:
+                path.unlink(missing_ok=True)
         which = Path(str(exc.filename)).name if exc.filename else str(exc)
         raise DomainError(
             f"a file is open in another program, so its notes were not written ({which})"

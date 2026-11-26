@@ -43,9 +43,12 @@ Engine (run from `engine/`):
     sets into `D:\lew-stems\bench`. Slakh's archive is shuffled, so it is downloaded whole to D:
     (104 GB free needed; it resumes after a drop or a restart), checked, the test songs
     extracted and the archive deleted.
-  - `uv run --no-sync --with mido==1.3.3 --with mir_eval==0.8.2 --with swift-f0==0.3.0 python ../scripts/midi_bench.py score|pack`:
+  - `uv run --with mido==1.3.3 --with mir_eval==0.8.2 python ../scripts/midi_bench.py score|pack`:
     score transcribers with mir_eval, or build the audio pack the owner runs through Melodyne
-    and NeuralNote. `score --pack-only --methods ...,swiftf0-midi,melodyne` compares with
+    and NeuralNote. `--methods openstems,openstems-midi` is the engine's own transcriber, at
+    exact pitch and as the keys its MIDI holds; `yin` is the tracker it replaced.
+    `--sets slakh-low` is Slakh's bass played 7 semitones lower, for notes under SwiftF0's
+    floor. `score --pack-only --methods ...,openstems-midi,melodyne` compares with
     Melodyne on the same clips. Melodyne's notes file says 120 BPM, but its notes sit on the
     tempo in the `<document>.tempo.mid` it writes beside it. The scorer pairs each export with
     the tempo file written at the same moment (`melodyne_tempo`). The owner's exports go in
@@ -53,6 +56,10 @@ Engine (run from `engine/`):
     from the `<clip>.mid` Melodyne names them; the originals are left as they are.
   - `python ../scripts/make_midi_import_tests.py`: the MIDI files that show how a DAW imports
     bends, MPE and tempo maps.
+  - `uv run --with mir_eval==0.8.2 --with mido==1.3.3 python ../scripts/midi_calibrate.py fit|report`:
+    fit the transcriber's confidence model on every other clip and print the `weights` and
+    `threshold` for `PROFILES` (`fit`), or say how far the weights now in the code can be
+    trusted on the clips between (`report`). Frames are cached in `<bench>/cache/f0`
 - `python ../scripts/compare_builds.py run --out DIR MODEL...` in each environment, then
   `compare DIR DIR`: the same stems from two PyTorch builds (on the CPU)
 - `uv run pytest tests/test_links_mixes.py`: links and mixes, with a stand-in for the fetch
@@ -67,6 +74,9 @@ Engine (run from `engine/`):
   measures, stems from before it, the setting), with the FakeEngine
 - `uv run pytest tests/test_swiftf0.py`: SwiftF0 (the pitch tracker stem to MIDI uses, pinned
   with `onnxruntime` in `pyproject.toml`) is installed with its model and hears a tone on the CPU
+- `uv run pytest tests/test_transcribe.py tests/test_notes_pipeline.py tests/test_notes_midi.py`:
+  stem to MIDI: the transcriber on synthetic lines, the files a run writes, `POST /v1/notes`,
+  and the notes file and MIDI writer
 - `uv run openstems serve`: start the local API (prints a JSON line with port and token)
 - `uv run openstems openapi --out openapi.json`: export the schema after any API change, then
   `pnpm gen:api` in `app/` (a test fails if `engine/openapi.json` is stale)
@@ -550,6 +560,28 @@ song's selection as its part once it settles (`useSetJobRange`; again when a new
 it differently, `null` when it is cleared), its readout says "Start separates only
 <label>.", and the queue rows of both windows add "<label> only" (`statusText`, `jobRange`).
 Off, the editor sends nothing and nothing mentions a part. `docs/adr/0023-trimmer.md`.
+
+Stem to MIDI: with `write_midi` on (off by default), or through `POST /v1/notes` for stems
+already written, a stem that plays one note at a time is read by `audio/transcribe.py`
+(`transcribe_line`: no torch, so the API process may call it). SwiftF0 gives a pitch every
+16 ms; its own segmenter, ported there, cuts them into notes. The stem's name picks one of
+three profiles (`domain/notes.line_kind`): `voice`, `bass` (a second pass at double speed for
+notes under SwiftF0's 46.9 Hz floor, starts moved back to the attack) and `line` for any
+other pitched stem; drums and mixtures are not read. `MIDI_STEMS` is what the setting reads
+by itself: voices, basses and `melody`. Every note has a confidence from a logistic model
+whose weights are in `PROFILES` (fitted by `scripts/midi_calibrate.py`: never typed by hand);
+a profile's `threshold` is where a note counts. `pipeline/notes.py` writes two files beside
+the stem: `<stem>.notes.json` (`domain/notes.py`: every note, the threshold, the tuning, and
+`texture`, `chords` for a stem that plays several notes at once and was read as one line)
+and `<stem>.mid`, the notes that count, one track, on the song's tempo and key. A stem with
+no notes gets the notes file alone. `Stem.notes` and `StemFile.notes` carry it; `STEM_FILES`
+(`domain/stem.py`) names the files a rename or a replaced run must take along. A retag
+writes the MIDI again from the notes file (`retag._rewrite_midi`). The keys are at A440
+unless a stem with fixed pitches agrees firmly on another tuning (`notes.song_tuning`).
+A song that comes from the cache with MIDI asked for and stems that have no notes file (the
+old tracker's) is read again where it lies, not separated again (`Pipeline._with_notes`).
+Measured on clean recordings only; separated stems wait for the GPU.
+`docs/adr/0028-single-line-transcriber.md`, `docs/research/stem-to-midi.md` section 14.
 
 Dependencies point inward: `domain` imports nothing from the other packages and never imports
 torch. `cli` and `api` are the only entry points.

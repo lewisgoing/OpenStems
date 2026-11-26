@@ -26,7 +26,7 @@ from openstems.domain.grid import SongPart, clean_selection, part_downbeat
 from openstems.domain.memory import CPU_NOTE
 from openstems.domain.model import ModelSpec
 from openstems.domain.naming import DEFAULT_TEMPLATE, render_name, safe_component
-from openstems.domain.notes import MIDI_SUFFIX, NOTES_SUFFIX, TRANSCRIBER_VERSION
+from openstems.domain.notes import MIDI_SUFFIX, NOTES_SUFFIX
 from openstems.domain.quality import RunSettings, resolve_settings
 from openstems.domain.recipe import MIX, Recipe, check_against_models, split_ref
 from openstems.domain.stem import (
@@ -84,8 +84,6 @@ class RunOptions:
             "normalize": self.normalize,
             "tempo_key": self.detect_tempo_key,
             "midi": sorted(self.midi_stems),
-            # Only with MIDI on, so every other run keeps its key: the transcriber's version.
-            **({"notes": TRANSCRIBER_VERSION} if self.midi_stems else {}),
             # Only when on, so the cache key of every earlier run stays what it was.
             **({"tempo_sync": True} if self.tempo_sync else {}),
             # Only for a part, so every other run keeps its key: the frames separated.
@@ -217,6 +215,26 @@ class Pipeline:
             return cached
         return stem_set_from_manifest(out_dir, set_analysis(out_dir, changes)) or cached
 
+    @staticmethod
+    def _with_notes(out_dir: Path, cached: StemSet, options: RunOptions) -> StemSet:
+        """A cached result whose MIDI an earlier transcriber wrote, read again. Its stems
+        have a MIDI file and no notes file. They are read as they lie on the disk: the song
+        is not separated again for it."""
+        if not options.midi_stems:
+            return cached
+        from openstems.pipeline.notes import find_notes, readable
+
+        peaks = {s.name: s.peak for s in cached.stems}
+        names = readable([s.name for s in cached.stems], options.midi_stems, peaks)
+        files = [s.file for s in cached.stems if s.name in names and not s.notes]
+        if not files:
+            return cached
+        try:
+            manifest = find_notes(out_dir, files)
+        except DomainError:  # a file in the way, or one open elsewhere: the old MIDI stays
+            return cached
+        return stem_set_from_manifest(out_dir, manifest) or cached
+
     def run(
         self,
         track_path: str | Path,
@@ -261,6 +279,7 @@ class Pipeline:
                 cached = stem_set_from_manifest(out_dir, existing)
                 if cached is not None:
                     cached = self._retagged(out_dir, cached, options)
+                    cached = self._with_notes(out_dir, cached, options)
                     cached.cached = True
                     report("done", 1.0, "From cache")
                     return cached

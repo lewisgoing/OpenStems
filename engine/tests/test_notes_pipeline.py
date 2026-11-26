@@ -17,7 +17,7 @@ from openstems.audio.transcribe import Transcription
 from openstems.audio.write import write_audio
 from openstems.domain import OutputStem, PassSpec, Recipe
 from openstems.domain.errors import DomainError
-from openstems.domain.notes import TRANSCRIBER_VERSION, Note, from_sidecar
+from openstems.domain.notes import Note, from_sidecar
 from openstems.pipeline.notes import find_notes, midi_from_sidecar, readable, song_tuning
 from openstems.pipeline.rename import rename_song
 from openstems.pipeline.retag import set_analysis
@@ -140,9 +140,33 @@ def test_times_are_the_written_files_own(catalog, store, tmp_path) -> None:
     assert cut == pytest.approx(first - offset, abs=0.03)
 
 
-def test_the_transcriber_is_in_the_cache_key_only_with_midi_on() -> None:
-    assert "notes" not in RunOptions().key_dict()
-    assert RunOptions(midi_stems=["bass"]).key_dict()["notes"] == TRANSCRIBER_VERSION
+def test_a_cached_song_with_the_old_trackers_midi_is_read_again(catalog, store, tmp_path) -> None:
+    # Before the notes file there was only the MIDI. The same song queued again comes from
+    # the cache, and its stems are read where they lie: nothing is separated again.
+    pipeline = Pipeline(catalog, store)
+    options = RunOptions(midi_stems=["vocals"])
+    first = pipeline.run(tune(tmp_path), vocals_only(), tmp_path / "out", options)
+    folder = Path(first.directory)
+    manifest = read_manifest(folder)
+    assert manifest is not None
+    del manifest["stems"][0]["notes"]  # as an earlier version wrote it
+    (folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (folder / "Tune - vocals.notes.json").unlink()
+    (folder / "Tune - vocals.mid").write_bytes(b"the old tracker's notes")
+    written = (folder / "Tune - vocals.wav").stat().st_mtime_ns
+
+    again = pipeline.run(tune(tmp_path), vocals_only(), tmp_path / "out", options)
+    assert again.cached and (folder / "Tune - vocals.wav").stat().st_mtime_ns == written
+    assert again.stems[0].notes == "Tune - vocals.notes.json"
+    assert keys_of(folder / "Tune - vocals.mid") == WANTED
+    # Once read, a third time changes nothing.
+    held = (folder / "Tune - vocals.notes.json").read_bytes()
+    assert pipeline.run(tune(tmp_path), vocals_only(), tmp_path / "out", options).cached
+    assert (folder / "Tune - vocals.notes.json").read_bytes() == held
+    # Without MIDI asked for, a cached song is left as it is.
+    plain = pipeline.run(tune(tmp_path), vocals_only(), tmp_path / "plain")
+    assert pipeline.run(tune(tmp_path), vocals_only(), tmp_path / "plain").stems[0].notes is None
+    assert plain.stems[0].midi is None
 
 
 def test_a_new_tempo_rewrites_the_midi_from_the_notes_file(catalog, store, tmp_path) -> None:

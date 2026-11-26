@@ -257,7 +257,9 @@ already uses the stems will need to find them again.
 - **Watch folder.** New files that appear in a folder are queued with the default recipe and
   quality once they have finished copying.
 - **Stem to MIDI.** A draggable `.mid` next to vocal, bass and melody stems ("Write MIDI" in
-  Settings). It tracks one note at a time, so it suits single lines, not chords.
+  Settings), on the song's tempo and key. It follows one note at a time, so it suits single
+  lines, not chords: a bass down to a 5-string's low B, a voice, a lead. A notes file beside
+  it (`.notes.json`) keeps every note found with how sure the app is of it.
 - **Trim silence and normalize**, per stem. Both are off by default, because trimmed stems no
   longer line up at bar 1 and normalized stems no longer sit at their level in the mix.
 - **Keyboard.** Ctrl+1 to Ctrl+4 switch between Queue, History, Models and Settings; Ctrl+V

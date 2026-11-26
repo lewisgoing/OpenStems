@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- **Better MIDI from vocals and bass.** "Write MIDI" now finds notes with a new transcriber.
+  On test recordings it gets about twice as many notes right as the old one (vocals 0.78
+  against 0.39, guitar lines 0.85 against 0.32, on a scale where 1 is every note right).
+  - A bass is followed down to a 5-string's low B; the old one lost notes under a low G.
+  - A note struck twice in a row comes out as two notes, not one long one.
+  - Each stem also gets a `.notes.json` file beside its `.mid`, with every note found and how
+    sure the app is of it. Nothing shows it yet: it is what a note editor will open.
+  - The MIDI file follows the song when you change its tempo or key, or rename it.
+  - A stem with chords still gives one line only, and the song now says so.
+  - A song separated before this gets the new MIDI the next time it is queued with "Write
+    MIDI" on. It is not separated again for that.
+  - Measured on clean recordings, not yet on separated stems. The same on Windows and a
+    Mac, where it has not been seen yet.
+
 ## 0.4.4 (2026-11-25)
 
 - **Rename a song.** A song no longer has to go by its file's name. Right-click it in the

@@ -20,9 +20,6 @@ SIDECAR_VERSION = 1
 KINDS = ("pitched", "drums")
 NOTES_SUFFIX = ".notes.json"  # after the stem file's own name, without its extension
 MIDI_SUFFIX = ".mid"
-# The transcriber's version. It is in a run's cache key while MIDI is on, so a song read by
-# an earlier transcriber is read again instead of keeping its old MIDI. 1 was YIN.
-TRANSCRIBER_VERSION = 2
 
 
 @dataclass(frozen=True)

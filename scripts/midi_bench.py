@@ -272,10 +272,49 @@ def load_slakh(bench: Path, ids: list[str] | None) -> list[Item]:
     return items
 
 
+# Low bass. No Slakh bass note lies under SwiftF0's 46.9 Hz floor, so the set does not test
+# what a real bass does there: a 4-string's low E is 41.2 Hz and a 5-string's low B 30.9 Hz.
+# This set is Slakh's own bass stems played slower, as a tape would: every pitch moves down
+# by LOW_SHIFT semitones (a G1 becomes a C1, 32.7 Hz) and every time stretches by the same
+# ratio, reference included. A slowed bass is harder than a real low one, since every error
+# in time stretches too: read its scores against each other, not against the plain set's.
+LOW_SHIFT = 7
+
+
+def load_slakh_low(bench: Path, ids: list[str] | None) -> list[Item]:
+    import soundfile as sf
+    import soxr
+
+    ratio = 2 ** (-LOW_SHIFT / 12)
+    conditions, kinds = list(SLAKH_CONDITIONS), set(SLAKH_KINDS)
+    SLAKH_CONDITIONS[:] = ["oracle"]
+    SLAKH_KINDS.clear()
+    SLAKH_KINDS.add("bass")
+    try:
+        source = load_slakh(bench, ids)
+    finally:
+        SLAKH_CONDITIONS[:] = conditions
+        SLAKH_KINDS.clear()
+        SLAKH_KINDS.update(kinds)
+    items = []
+    for item in source:
+        song = item.id.split("/")[0]
+        target = bench / "slakh-low" / f"{song}.flac"
+        if not target.is_file():
+            audio, rate = sf.read(item.audio, dtype="float32", always_2d=True)
+            mono = soxr.resample(audio.mean(axis=1), rate, 16000)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            sf.write(target, soxr.resample(mono, 16000, 16000 / ratio), 16000, subtype="PCM_16")
+        notes = [(s / ratio, e / ratio, n - LOW_SHIFT, v) for s, e, n, v in item.reference]
+        items.append(Item("slakh-low", song, "bass", target, notes))
+    return items
+
+
 LOADERS: dict[str, Callable[[Path, list[str] | None], list[Item]]] = {
     "guitarset": load_guitarset,
     "vocadito": load_vocadito,
     "slakh": load_slakh,
+    "slakh-low": load_slakh_low,
 }
 
 
