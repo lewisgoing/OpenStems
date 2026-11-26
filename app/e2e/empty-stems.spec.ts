@@ -124,7 +124,18 @@ test('a stem hidden by hand stays hidden: after the panel is left, in the histor
   // Hide waits on the row until the pointer is there.
   const drums = panel.getByTestId('stem-row').filter({ hasText: 'drums' })
   await drums.hover()
-  await drums.getByRole('button', { name: 'Hide drums' }).click()
+  // It says it can be pressed: the pointer, and a lift under it. Solo and Mute do the same.
+  const hide = drums.getByRole('button', { name: 'Hide drums' })
+  await expect(hide).toHaveCSS('cursor', 'pointer')
+  await expect(hide).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await hide.hover()
+  await expect(hide).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  const solo = drums.getByRole('button', { name: 'Solo drums' })
+  await expect(solo).toHaveCSS('cursor', 'pointer')
+  await solo.hover()
+  await expect(solo).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await shot(page, 'hide-0-hover')
+  await hide.click()
   await expect(panel.getByTestId('stem-row')).toHaveCount(5)
   await expect(panel.getByTestId('empty-stems')).toContainText('1 hidden: drums')
   await expect.poll(hiddenIn).toEqual(['drums'])
@@ -165,4 +176,32 @@ test('a stem hidden by hand stays hidden: after the panel is left, in the histor
   await expect(panel.getByTestId('stem-row')).toHaveCount(6)
   await expect.poll(hiddenIn).toEqual([])
   await expect(row.getByTestId('quick-stem')).toHaveCount(6)
+})
+
+test('Trim stands in one column down the queue, whatever each song\'s stems handle says', async () => {
+  // One stem, two stems and six: the handles' words differ in length.
+  ctx = await launch()
+  const { page } = ctx
+  await page.getByTestId('file-input').setInputFiles(['First Song.mp3', 'Second Song.flac'].map((name) => join(ctx.fixtures, name)))
+  const done = page.locator('[data-testid="job-row"][data-state="done"]')
+  await expect(done).toHaveCount(2, { timeout: 30_000 })
+  // Hide five stems of one song, so its handle reads "1 stem" beside the other's "6 stems".
+  await done.first().click()
+  const panel = page.getByRole('complementary', { name: 'Stems' })
+  for (const name of ['drums', 'bass', 'guitar', 'piano', 'other']) {
+    const row = panel.getByTestId('stem-row').filter({ hasText: name }).first()
+    await row.hover()
+    await row.getByRole('button', { name: `Hide ${name}` }).click()
+    await expect(panel.getByRole('button', { name: `Hide ${name}` })).toHaveCount(0)
+  }
+  const handles = done.getByRole('button', { name: /^Drag all stems of/ })
+  await expect(handles.first()).toHaveText('1 stem')
+  await expect(handles.nth(1)).toHaveText('6 stems')
+
+  const boxes = async (locator: typeof handles) => Promise.all([0, 1].map(async (n) => await locator.nth(n).boundingBox()))
+  const [short, long] = await boxes(handles)
+  expect(Math.abs((short?.width ?? 0) - (long?.width ?? 1))).toBeLessThan(0.5)
+  const [first, second] = await boxes(done.getByTestId('row-trim'))
+  expect(Math.abs((first?.x ?? 0) - (second?.x ?? 1))).toBeLessThan(0.5)
+  await shot(page, 'align-1-queue')
 })

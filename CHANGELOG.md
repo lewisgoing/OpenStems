@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Trim lines up down the queue.** The handle that drags a song's stems is now the same
+  width whether it reads "1 stem" or "11 stems", so the Trim buttons before it stand in one
+  column. The same in History, on Windows and a Mac.
+- **Solo, Mute and Hide answer the pointer.** The small buttons at the end of a stem's row
+  show the hand cursor and light up under it.
+
 ## 0.4.5 (2026-11-25)
 
 - **Hide a stem.** Each stem in the stems panel has a Hide button, beside Solo and Mute when

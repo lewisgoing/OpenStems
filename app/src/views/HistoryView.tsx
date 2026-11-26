@@ -127,7 +127,7 @@ export function HistoryView({ recipes, selected, onSelect, onRerun, onRename }: 
                   role="button"
                   tabIndex={0}
                   aria-label={`Drag all stems of ${set.track_name}`}
-                  className="btn btn-sm pressable stem-handle flex-none"
+                  className="btn btn-sm pressable stem-handle stems-handle flex-none"
                   onClick={(event) => event.stopPropagation()}
                   onDragStart={(event) => {
                     event.preventDefault()
