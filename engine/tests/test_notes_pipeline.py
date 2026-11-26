@@ -259,9 +259,14 @@ def test_a_separation_is_never_lost_to_its_midi(catalog, store, tmp_path, monkey
     assert (Path(result.directory) / stem.file).is_file()
     assert stem.midi is None and stem.notes is None
     assert "vocals: its notes could not be read, so it has no MIDI" in result.manifest["notes"]
-    # From the cache the same: the stems are returned, whatever became of the notes.
+    # From the cache the same: the stems are returned, whatever became of the notes, and
+    # the job says why it has none. The manifest on the disk is not touched for that.
+    held = (Path(result.directory) / "manifest.json").read_bytes()
     again = pipeline.run(tune(tmp_path), vocals_only(), tmp_path / "out", options)
     assert again.cached and again.stems[0].notes is None
+    (said,) = [n for n in again.manifest["notes"] if n.startswith("MIDI was not written")]
+    assert "cannot read the notes of Tune - vocals.wav" in said
+    assert (Path(result.directory) / "manifest.json").read_bytes() == held
 
 
 def test_a_new_tempo_rewrites_the_midi_from_the_notes_file(catalog, store, tmp_path) -> None:
@@ -675,6 +680,16 @@ def test_a_reading_takes_back_what_was_said_of_the_stem(catalog, store, tmp_path
         failed_note("vocals"),
         "something else",
     ]
+
+
+def test_notes_are_found_in_stems_that_are_not_wav(catalog, store, tmp_path) -> None:
+    folder = separated(catalog, store, tmp_path, output_format="flac")
+    manifest = find_notes(folder, ["Tune - bass.flac", "Tune - vocals.flac"])
+    stems = by_name(manifest)
+    assert stems["bass"]["notes"] == "Tune - bass.notes.json"
+    assert stems["bass"]["midi"] == "Tune - bass.mid"
+    assert keys_of(folder / "Tune - bass.mid") == WANTED
+    assert keys_of(folder / "Tune - vocals.mid") == WANTED
 
 
 def test_a_stem_with_chords_says_so(catalog, store, tmp_path) -> None:

@@ -102,6 +102,11 @@ def failed_note(stem: str) -> str:
     return f"{stem}: its notes could not be read, so it has no MIDI"
 
 
+def unwritten_note(why: str) -> str:
+    """What a job says when a song came from the cache and its notes could not be written."""
+    return f"MIDI was not written this time: {why}"
+
+
 def stale(notes_file: Path) -> bool:
     """Whether a notes file is another transcriber's work (or cannot be read)."""
     try:

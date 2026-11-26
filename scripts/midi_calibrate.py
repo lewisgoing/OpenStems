@@ -21,7 +21,8 @@ This script fits that model on the benchmark's clean stems and says how far it c
 A note counts as right when mir_eval pairs it with a reference note: onset within 50 ms and
 pitch within 50 cents. Each clip's 16 kHz audio and the engine's pitch frames for it are
 kept under ``<bench>/cache/f0``, so a second run takes seconds per set. Delete that folder
-after changing how frames are made (a profile's range, the double-speed pass).
+after changing how frames are made (the level a stem is read at, a profile's range, the
+double-speed pass).
 """
 
 from __future__ import annotations

@@ -560,7 +560,8 @@ prints one JSON line with both. Everything the CLI does is there, with live prog
 | --- | --- |
 | Jobs | `POST /v1/jobs`, `POST /v1/jobs/batch`, `GET /v1/jobs`, `POST /v1/jobs/{id}/cancel`, `.../retry`, `POST /v1/jobs/reorder`, `DELETE /v1/jobs/{id}`, `POST /v1/jobs/clear-finished`, `POST /v1/jobs/{id}/analysis` (tempo, key and bar 1 by hand), `.../range` (the part of a waiting song to separate alone), `.../name` (the song's name, in place of its file's) |
 | Tracks and recipes | `POST /v1/tracks` (register paths, probe metadata), `GET /v1/recipes` |
-| Links and mixes | `POST /v1/links` (fetch a song from a web address, then queue it), `GET /v1/links`, `POST /v1/links/{id}/retry`, `DELETE /v1/links/{id}`, `POST /v1/mixes` (some stems as one file), `POST /v1/notes` (find the notes in stems that are written: a notes file and a MIDI file beside each) |
+| Links and mixes | `POST /v1/links` (fetch a song from a web address, then queue it), `GET /v1/links`, `POST /v1/links/{id}/retry`, `DELETE /v1/links/{id}`, `POST /v1/mixes` (some stems as one file) |
+| Stem to MIDI | `POST /v1/notes` (find the notes in stems that are already written: a notes file and a MIDI file beside each) |
 | Clips and previews | `POST /v1/clips` (a stretch of a song's own file or of its stems, as WAV files), `POST /v1/sources/preview` (a song's own file to play and draw before it is separated, with its tempo and bar 1) |
 | Models | `GET /v1/models`, `POST /v1/models/{id}/pull`, `.../cancel`, `.../verify`, `DELETE /v1/models/{id}`, `POST /v1/models/import` |
 | Settings and system | `GET` and `PATCH /v1/settings`, `GET /v1/system`, `GET /v1/health`, `POST /v1/diagnostics` |

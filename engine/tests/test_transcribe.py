@@ -344,6 +344,15 @@ def test_a_bad_sample_is_silence_and_not_a_fault() -> None:
         assert keys(transcribe_line(np.stack([audio, audio]), RATE, "bass").shown()) == wanted
         assert np.isfinite(T.mono16(np.stack([audio, audio]), RATE)).all()
     assert np.abs(T.mono16(np.full((2, 100), np.finfo(np.float32).max), RATE)).max() == 0.0
+    # Integer samples are sound, not defects: full scale is 1 whatever the width.
+    pcm = np.array([0, 16384, -16384], dtype=np.int16)
+    assert T.mono16(pcm, T.RATE).tolist() == [0.0, 0.5, -0.5]
+    assert T.mono16(np.array([128, 255, 0], dtype=np.uint8), T.RATE).tolist() == [
+        0.0,
+        127 / 128,
+        -1.0,
+    ]
+    assert T.mono16(np.zeros((2, 0), dtype=np.float32), RATE).size == 0
     # The same for what SwiftF0 answers: every weight and level is a number.
     odd = np.array([0.9, np.nan, np.inf, 0.8])
     frames = T._to_frames(np.full(4, 110.0), odd, np.array([-20.0, np.nan, -np.inf, np.inf]))
@@ -392,3 +401,32 @@ def test_any_sample_rate_is_read_alike() -> None:
         shown = transcribe_line(other, rate, "vocals").shown()
         assert keys(shown) == wanted, rate
         assert [n.start for n in shown] == pytest.approx([0.0, 0.58, 1.16, 1.74], abs=0.04)
+
+
+def test_a_curve_lies_inside_a_note_whose_start_moved() -> None:
+    # A plucked note with vibrato on the bass profile: its start moves back to the strike,
+    # before the first frame with a pitch, and its curve is counted from that start.
+    seconds, at = 1.2, 0.2
+    t = np.arange(int(seconds * RATE)) / RATE
+    cents = 50 * np.sin(2 * np.pi * 5.0 * t)
+    phase = 2 * np.pi * np.cumsum(hz(40) * 2 ** (cents / 1200)) / RATE
+    ring = np.exp(-t * 1.5) * np.minimum(1.0, t / 0.003)
+    wave = sum(np.sin(k * phase) / k for k in range(1, 12)) * ring
+    audio = np.zeros(int((at + seconds + 0.3) * RATE))
+    audio[int(at * RATE) : int(at * RATE) + len(wave)] = wave
+    (note,) = transcribe_line((audio * 0.25).astype(np.float32), RATE, "bass").shown()
+    assert round(note.pitch) == 40 and abs(note.start - at) < 0.02
+    assert len(note.bend) > 8
+    times = [point[0] for point in note.bend]
+    assert times == sorted(set(times)) and times[0] >= 0 and times[-1] <= note.duration
+    assert max(v for _, v in note.bend) > 0.25 and min(v for _, v in note.bend) < -0.25
+
+
+def test_a_short_sound_is_read_on_every_profile() -> None:
+    # Just over the quarter second that is read at all: the bass's second pass at double
+    # speed has half as many frames to work with.
+    short = sung([45], seconds=0.3, gap=0.0)
+    for stem in ("vocals", "bass", "guitar"):
+        found = transcribe_line(short, RATE, stem)
+        assert [round(n.pitch) for n in found.shown()] in ([45], []), stem
+    assert transcribe_line(short[: int(0.2 * RATE)], RATE, "bass").notes == ()  # too short

@@ -592,25 +592,36 @@ Off, the editor sends nothing and nothing mentions a part. `docs/adr/0023-trimme
 
 Stem to MIDI: with `write_midi` on (off by default), a stem that plays one note at a time is
 read by `audio/transcribe.py` (`transcribe_line`: no torch, so the API process may call it).
+Every stem is read at one level (`LEVEL`; its peak is its 32nd largest sample, `peak_level`),
+so the notes do not depend on its gain, and a sample that is no number counts as silence.
 SwiftF0 gives a pitch every 16 ms; its own segmenter, ported there, cuts them into notes. The
 stem's name picks one of three profiles (`domain/notes.line_kind`): `voice`, `bass` (a second
 pass at double speed for notes under SwiftF0's 46.9 Hz floor) and `line` for any other pitched
 stem; `bass` and `line` cut a note where it is struck again and move each start back to the
 attack. Drums, mixtures and empty stems are not read. `MIDI_STEMS` is what the setting reads
-by itself: voices, basses and `melody`. Every note has a confidence from a logistic model
-whose weights are in `PROFILES` (printed by `scripts/midi_calibrate.py fit`: never typed by
-hand); a profile's `threshold` is where a note counts. `pipeline/notes.py` writes two files
+by itself: voices, basses and `melody`. A second, more willing pass adds candidates, which
+never move a note of the first pass (`_placed`). Every note has a confidence from a logistic
+model whose weights are in `PROFILES` (printed by `scripts/midi_calibrate.py fit`: never typed
+by hand); a profile's `threshold` is where a note counts. `pipeline/notes.py` writes two files
 beside the stem: `<stem>.notes.json` (`domain/notes.py`: every note, the threshold, the
 tuning, what wrote it, and `texture`, `chords` for a stem that plays several notes at once
-and was read as one line) and `<stem>.mid`, the notes that count, one track, on the song's
-tempo and key. A stem in which no note counts gets the notes file alone. `Stem.notes` and
-`StemFile.notes` carry it; `STEM_FILES` (`domain/stem.py`) names the files a rename or a
-replaced run must take along. A retag writes the MIDI again from the notes file
-(`retag._rewrite_midi`). The keys are at A440 unless a stem with fixed pitches agrees firmly
-on another tuning (`pipeline/notes.song_tuning`). If reading a stem fails the stems are still
-written and the job says so (`extras._read_notes`). `POST /v1/notes` reads stems that are
-already written; nothing in the app calls it yet. The cache: `KEYED_MIDI_STEMS` are the
-only names in a run's key, written as 0.4.x wrote them, and a song from the cache whose
+and was read as one line: `transcribe.clarity`) and `<stem>.mid`, the notes that count, one
+track, on the song's tempo and key. A stem in which no note counts gets the notes file alone.
+`Stem.notes` and `StemFile.notes` carry it; `STEM_FILES` (`domain/stem.py`) names the files a
+rename or a replaced run must take along. A retag writes the MIDI again from the notes file
+and a rename puts the song's new name inside it (`retag.rewrite_midi`); a damaged or missing
+notes file stops neither. The keys are at A440 unless a stem with fixed pitches agrees firmly
+on another tuning, one tuning for the song over every stem whose notes are known
+(`pipeline/notes.song_tuning`): a stem read later can settle it, and the MIDI of the stems
+read before is then rounded again from their notes files. If reading a stem fails the stems
+are still written and the job says so (`extras._read_notes`). `POST /v1/notes` reads stems
+that are already written; nothing in the app calls it yet. It is two steps: `read_stems`
+(seconds, writes nothing) and `write_notes`, which starts from the manifest as it is then,
+writes everything or puts every file back, and knows a notes and MIDI file left by a write
+cut short as the stem's own (`_in_the_way`). In the API process whatever rewrites a stem
+folder's manifest (notes, a tempo or key, hidden stems, a rename) holds `Service._folder`,
+one lock per folder: take it in anything new that does. The cache: `KEYED_MIDI_STEMS` are
+the only names in a run's key, written as 0.4.x wrote them, and a song from the cache whose
 stems have no notes file, or notes from another transcriber, is read where it lies, not
 separated again (`Pipeline._with_notes`, `notes.stale`). Raise the number in `METHOD`
 (`pipeline/notes.py`) whenever the notes a stem gives change. Measured on clean recordings

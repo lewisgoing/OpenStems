@@ -47,9 +47,10 @@ CANDIDATE_BIAS = 1.0  # and frames that count as a little more voiced than they 
 # the cheapest path always starts one there: any figure above NOTE_COST gives the same notes.
 ONSET_COST = 10.0
 # Every stem is read at this peak level. SwiftF0 calls a frame under a fixed level silent, so
-# a quiet stem lost notes: at a peak of 0.01 a third of a guitar line's. Which level hardly
-# matters on clean recordings (0.25, 0.35 and 0.5 score within 0.003 of each other on all
-# three sets); 0.35 is near where the benchmark's own stems peak.
+# a quiet stem lost notes: read at a peak of 0.01, a guitar solo agreed with its own notes at
+# its own level by only 0.62 to 0.90 (onset F1), and at 0.003 by under a third. Which level
+# hardly matters on clean recordings (0.25, 0.35 and 0.5 score within 0.003 of each other on
+# all three sets); 0.35 is near where the benchmark's own stems peak.
 LEVEL = 0.35
 PEAK_SAMPLES = 32  # a stem's peak is its 32nd largest sample (2 ms): no click sets its level
 LIMIT = 4.0  # a sample further from zero than this is a defect in the file, not sound
@@ -163,6 +164,10 @@ def mono16(audio: np.ndarray, sample_rate: int) -> np.ndarray:
     import soxr
 
     audio = np.asarray(audio)
+    if np.issubdtype(audio.dtype, np.integer):  # PCM as it is stored: full scale becomes 1
+        half = 2.0 ** (8 * audio.dtype.itemsize - 1)
+        middle = 0.0 if np.issubdtype(audio.dtype, np.signedinteger) else half
+        audio = ((audio.astype(np.float64) - middle) / half).astype(np.float32)
     if audio.ndim == 2:
         # Channel by channel, each divided first: two samples at float32's largest value
         # would overflow in a sum.

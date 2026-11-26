@@ -227,7 +227,7 @@ class Pipeline:
         song is not separated again for it."""
         if not options.midi_stems:
             return cached
-        from openstems.pipeline.notes import find_notes, readable, stale
+        from openstems.pipeline.notes import find_notes, readable, stale, unwritten_note
 
         peaks = {s.name: s.peak for s in cached.stems}
         names = readable([s.name for s in cached.stems], options.midi_stems, peaks)
@@ -240,12 +240,18 @@ class Pipeline:
             return cached
         try:
             manifest = find_notes(out_dir, files)
-        except DomainError:  # a file in the way, or one open elsewhere: what is there stays
-            return cached
+        except DomainError as exc:
+            # A file in the way, one open in another program, a stem that cannot be read:
+            # what is there stays, and the job says why it has no new notes. Only the job:
+            # the manifest on the disk is as it was.
+            why = str(exc)
         except Exception:  # the cached stems are good whatever became of their notes
             log.exception("stem to MIDI failed on the cached stems in %s", out_dir)
-            return cached
-        return stem_set_from_manifest(out_dir, manifest) or cached
+            why = "something went wrong (engine.log has it)"
+        else:
+            return stem_set_from_manifest(out_dir, manifest) or cached
+        said = [*(cached.manifest.get("notes") or []), unwritten_note(why)]
+        return StemSet(cached.directory, {**cached.manifest, "notes": said}, cached.stems)
 
     def run(
         self,

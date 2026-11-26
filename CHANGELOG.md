@@ -3,11 +3,12 @@
 ## Unreleased
 
 - **MIDI from vocals and bass, rewritten.** "Write MIDI" finds notes with a new transcriber.
-  On test recordings it scores about twice as high on vocals as the old one (CL_VOC against
-  CL_VOC_OLD) and well above it on bass (CL_BASS against CL_BASS_OLD), on a scale where 1
-  means every note found, with none wrong.
+  On test recordings it scores about twice as high on vocals as the old one (0.73 against
+  0.39) and well above it on bass (0.94 against 0.66), on a scale where 1 means every note
+  found, with none wrong.
   - A note struck twice in a row comes out as two notes, not one long one.
-  - A bass note starts where it was struck. The old file had each one a little late.
+  - A bass note starts where it was struck, not a moment later where its pitch settles.
+  - A quiet stem gives the same notes as a loud one.
   - Notes below a bass's low G are found by listening a second time at double speed. Tested
     on test tones down to a 5-string's low B and on a slowed-down bass, not on a real one.
   - Each stem also gets a `.notes.json` file beside its `.mid`, with every note found and how

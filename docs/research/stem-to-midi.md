@@ -749,6 +749,11 @@ Effort: S is days, M one to two weeks, L several weeks.
 
 ### M3: monophonic expressive (M)
 
+- **Status (2026-11-25):** built for single lines and measured on clean recordings: section
+  14 and `docs/adr/0030-single-line-transcriber.md`. Not done: the run on separated stems
+  (it needs the GPU), and offering pitch bends (the writer has them; the option waits for
+  the editor and the FL Studio import test).
+
 - **Replaces** `track_notes` (YIN) with:
   - a neural f0 tracker: SwiftF0 for vocals and leads, with torchcrepe or pYIN for bass below
     about 47 Hz (section 4). SwiftF0 runs on ONNX Runtime on the CPU, so it needs no GPU
@@ -981,6 +986,246 @@ piano, language-model rescoring, and adapting weights to the user's own song. Ha
 **Experimental models in the app.** dettato and tsumugi are offered behind a setting, off by
 default, each named as experimental where it is chosen. Neither replaces a default until M0
 has measured it on separated stems.
+
+## 14. M3 as built: the single-line transcriber, measured (2026-11-25)
+
+`audio/transcribe.py` (`transcribe_line`) is what "Write MIDI" now runs. The decisions are in
+`docs/adr/0030-single-line-transcriber.md`; this section holds the measurements. Everything
+is on clean recordings and on the CPU. Scores are mir_eval's: a note is right when its start
+is within 50 ms and its pitch within 50 cents. Every table is the code as it is after the
+engine review's fixes of the same day.
+
+### What each piece is worth
+
+On every other clip of each set (the clips between were kept for the figures further down),
+the first pass's notes alone, with no confidence model (onset F1):
+
+| Step | Vocals | Guitar solos | Bass |
+| --- | --- | --- | --- |
+| SwiftF0's own segmenter | 0.784 | 0.804 | 0.865 |
+| + a note struck again starts a new note | 0.778 (not used) | 0.834 | 0.880 |
+| + the start moved back to the attack | 0.735 (not used) | 0.834 | 0.942 |
+
+- **Bass starts were 28 ms late on average**, 11 to 49 ms
+  depending on the song: the pitch settles after the string is struck. Of the notes found
+  within 100 ms of their place, 7.2 percent lay outside the 50 ms a right note is allowed.
+  Moving each start to where the level rises fastest leaves 0.6 percent outside, 13 ms
+  late on average. On guitar the starts were already right (3.0 percent outside before,
+  2.5 after); on a voice the attack is a consonant, not the note, so a voice's starts are
+  left alone.
+- **Splitting at onsets** finds the repeated notes that pitch alone runs together. On a voice
+  it found as many wrong cuts as right ones.
+- **The note cost** (SwiftF0's 80 ms) was the best value for all three when it was tried: 3,
+  4, 6.5 and 8 frames all scored lower or the same. That, and how far an onset must stand
+  out, were settled earlier in the work, before every stem was read at one level.
+- **Not tuned to the test:** every setting was chosen on this half of the clips.
+
+### The level a stem is read at
+
+SwiftF0 calls a frame silent under a fixed level, so what it finds depends on how loud the
+stem is. Before the level was fixed, three clips of each set were read again at lower peaks
+and scored against their own notes at their own level (onset F1):
+
+| Read at a peak of | Vocals | Guitar solos | Bass |
+| --- | --- | --- | --- |
+| 0.03 | 0.87 to 1.00 | 0.83 to 0.97 | 0.99 to 1.00 |
+| 0.01 | 0.73 to 0.94 | 0.62 to 0.90 | 0.95 to 0.99 |
+| 0.003 | 0.36 to 0.64 | 0.08 to 0.32 | 0.87 to 0.93 |
+
+So every stem is brought to one level before it is read. Which level, on the same halves as
+above (the first pass's notes, onset F1):
+
+| Read at a peak of | Vocals | Guitar solos | Bass |
+| --- | --- | --- | --- |
+| each clip's own | 0.784 | 0.831 | 0.943 |
+| 0.25 | 0.781 | 0.835 | 0.942 |
+| **0.35** (the engine's) | 0.784 | 0.834 | 0.942 |
+| 0.5 | 0.787 | 0.833 | 0.940 |
+
+It hardly matters on clean recordings, whose own peaks lie near there (medians 0.62, 0.45 and
+0.27). A lower level gives fewer wrong notes and a higher one finds more quiet ones; with
+bleed under the notes a separated stem may prefer another, which the run on separated stems
+has to say. The peak is the stem's 32nd largest sample, so one click does not set the level.
+
+### The whole transcriber, through the code a run uses
+
+`scripts/midi_bench.py`, methods `yin` (the tracker "Write MIDI" used until now),
+`swiftf0-notes`, `openstems` (exact pitch) and `openstems-midi` (the keys in the MIDI file).
+Every clip of each set, the tuned-on half included:
+
+| Stem | Method | Clips | Onset P | Onset R | Onset F1 | +Offset F1 | Octave errors |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Vocals (vocadito) | Old tracker | 40 | 0.372 | 0.422 | 0.392 | 0.240 | 12 |
+|  | SwiftF0's segmenter | 40 | 0.876 | 0.706 | 0.778 | 0.646 | 1 |
+|  | **This transcriber** | 40 | 0.868 | 0.719 | **0.783** | **0.653** | 1 |
+|  | The same as MIDI keys | 40 | 0.810 | 0.671 | 0.731 | 0.613 | 1 |
+|  | A second human annotator | 40 | 0.812 | 0.685 | 0.740 | 0.642 | 0 |
+| Guitar solos (GuitarSet) | Old tracker | 180 | 0.324 | 0.328 | 0.324 | 0.220 | 798 |
+|  | SwiftF0's segmenter | 180 | 0.895 | 0.738 | 0.801 | 0.636 | 15 |
+|  | **This transcriber** | 180 | 0.892 | 0.819 | **0.850** | **0.695** | 30 |
+|  | The same as MIDI keys | 180 | 0.889 | 0.816 | 0.847 | 0.694 | 29 |
+| Bass (Slakh's own stems) | Old tracker | 142 | 0.771 | 0.597 | 0.658 | 0.388 | 1324 |
+|  | SwiftF0's segmenter | 142 | 0.888 | 0.806 | 0.838 | 0.723 | 8 |
+|  | **This transcriber** | 142 | 0.963 | 0.921 | **0.938** | **0.831** | 50 |
+|  | The same as MIDI keys | 142 | 0.963 | 0.921 | 0.938 | 0.831 | 50 |
+
+On the half of the clips nothing was fitted on (`scripts/midi_calibrate.py report`): vocals
+0.774, guitar solos 0.849, bass 0.927.
+
+- **Part of what is left is not the transcriber's to find.** A single-line reader finds one
+  note at a time, and the references hold more: 20 percent of GuitarSet's "solo" notes
+  start while another sounds (double stops), 12 percent of Slakh's bass notes (two bass
+  parts, or one doubled). Recall on notes that sound alone is 0.87 on guitar and
+  0.94 on bass, against 0.51 and 0.46 on the ones that overlap.
+- **Two Slakh songs were scored wrong until now.** The bass of Track01931 and Track01937
+  sounds 14 semitones under its MIDI, not 12; scored an octave down, every one of their
+  notes counted as two semitones off. The scorer now reads them as they sound
+  (`SOUNDS_AT_SONG`).
+- **Vocals as MIDI keys score lower than at exact pitch** (0.731 against 0.783), as section
+  7 found: singers sit between the keys, and the window is 50 cents.
+
+### Low bass
+
+Slakh has no bass note under SwiftF0's 46.9 Hz floor, so `--sets slakh-low` plays its bass
+stems 7 semitones lower, as a slowed tape would, with the reference moved the same way: the
+lowest note becomes a D1 at 36.7 Hz, and 23 percent of the notes lie under the floor. A
+slowed bass is harder than a real low one (every error in time stretches by half as well),
+so these figures are read against each other, not against the table above.
+
+| Method | Songs | Onset P | Onset R | Onset F1 | +Offset F1 |
+| --- | --- | --- | --- | --- | --- |
+| Old tracker | 60 | 0.786 | 0.674 | 0.710 | 0.448 |
+| SwiftF0's segmenter | 60 | 0.693 | 0.514 | 0.580 | 0.512 |
+| **This transcriber** | 60 | 0.800 | 0.773 | **0.782** | **0.683** |
+
+Of the 6,437 notes under the floor, SwiftF0's segmenter finds 9 percent and the
+transcriber, with its second pass at double speed, 82 percent; at or above the floor
+they find 56 and 68 percent.
+
+On steady test tones the picture is cleaner: SwiftF0 calls a tone at 43.7 Hz or below
+unvoiced (under 2 percent of frames voiced, for tones from 30.9 to 43.7 Hz), and at double
+speed it follows every one of them within a cent or two, down to 30.9 Hz, a 5-string's low
+B, with the fundamental at full level or 16 dB down.
+
+### How far the confidence can be trusted
+
+Each note's confidence comes from a logistic model fitted on one half of the clips. On the
+other half:
+
+| | Vocals | Guitar solos | Bass |
+| --- | --- | --- | --- |
+| Notes found, candidates included | 864 | 8,457 | 33,594 |
+| Ranks a right note above a wrong one (AUC) | 0.723 | 0.870 | 0.814 |
+| F1 showing notes by confidence | 0.774 | 0.849 | 0.927 |
+| F1 of the segmenter's own choice | 0.771 | 0.833 | 0.922 |
+
+What a confidence means, on the held-out clips (share of notes that were right, and how many
+notes there were):
+
+| Confidence said | Vocals | Guitar solos | Bass |
+| --- | --- | --- | --- |
+| 0.9 to 1.0 | 0.93 (286) | 0.95 (4,968) | 0.97 (30,515) |
+| 0.8 to 0.9 | 0.87 (435) | 0.87 (1,482) | 0.84 (1,289) |
+| 0.7 to 0.8 | 0.84 (86) | 0.75 (518) | 0.63 (351) |
+| 0.5 to 0.7 | 0.46 (39) | 0.58 (518) | 0.46 (393) |
+| under 0.5 | 0.17 (18) | 0.20 (971) | 0.16 (1,046) |
+
+- **It is honest at the top and usable in the middle.** A note it calls 0.9 or more is right
+  93 to 97 times in 100. On bass the middle bands say more than they deliver (0.7 to
+  0.8 is right 63 times in 100); there are few notes there.
+- **For the editor's sensitivity control it works:** on guitar, moving the line from 0.2 to
+  0.9 takes precision from 0.87 to 0.95 and recall from 0.83 to 0.58.
+- **For a "check these notes" list it is only half the answer.** Marking the shown notes
+  under 0.8 marks 14 percent of a guitar line and catches 47 percent of its wrong notes;
+  about 35 in 100 of the marked notes are wrong. On a voice it marks 15 percent and catches
+  31 percent. On bass almost nothing is marked (1.3 percent, 12 percent of the wrong
+  notes): most of its wrong notes are ones it is sure of.
+  - So a "check these notes" bar in the editor cannot be the way to a correct file by
+    itself. The marks are worth showing; a view of what differs from the audio and the
+    sensitivity control have to carry the rest.
+- **A voice's confidence ranks weakly** because what counts as wrong there is mostly how a
+  phrase is written down: a note a key or two from the reference's, or one cut where the
+  annotator held it (the tables below). The second annotator disagrees with the first about
+  as often (0.740).
+- The model will be fitted again on separated stems, where bleed changes what a wrong note
+  looks like. `scripts/midi_calibrate.py fit` prints the numbers to paste.
+
+### What the wrong notes are
+
+The shown notes of the held-out clips that mir_eval does not pair with a reference note, and
+the reference notes it pairs with nothing, by what lies there instead (percent of each
+column; the first row that fits):
+
+| A wrong note is | Vocals | Guitar solos | Bass |
+| --- | --- | --- | --- |
+| *(wrong, of the notes shown)* | *13.2* | *10.8* | *4.3* |
+| The right pitch, cut out of a longer note | 29 | 41 | 38 |
+| The right pitch, its start over 50 ms off | 3 | 4 | 28 |
+| One or two keys from a note that starts there | 51 | 14 | 14 |
+| An octave or two from it | 1 | 4 | 2 |
+| Another pitch, same start | 0 | 12 | 7 |
+| While a note of another pitch sounds | 11 | 15 | 5 |
+| Where the reference has nothing | 6 | 11 | 5 |
+
+| A missed note is | Vocals | Guitar solos | Bass |
+| --- | --- | --- | --- |
+| *(missed, of the reference's notes)* | *31.5* | *20.5* | *12.8* |
+| Run into the note before it, of the same pitch | 38 | 22 | 22 |
+| Found, its start over 50 ms off | 10 | 16 | 27 |
+| Found at another pitch | 31 | 26 | 29 |
+| Starts while another note sounds | 0 | 18 | 10 |
+| Under a found note of another pitch | 15 | 12 | 2 |
+| Nothing found there | 6 | 7 | 10 |
+
+- **Where one note ends and the next begins is the largest part of it.** 29, 41 and 38
+  percent of the wrong notes are a piece cut out of a longer note, and 38, 22 and 22 percent
+  of the missed ones were run into the note before them. Split and join are the edits an
+  editor needs first.
+- **A voice's wrong notes are otherwise a key or two off:** 51 percent of them start where
+  a reference note does, one or two keys from it. Scoops and ornaments: the two annotators
+  write those down differently as well.
+- **Octave mistakes are rare:** 1, 4 and 2 percent of the wrong notes are an octave or two
+  off. So the notes file holds no second guess at a note's pitch: SwiftF0 gives one pitch
+  per frame, the frames hold no evidence for another, and a "which octave?" question would
+  nearly always be asked of a right note.
+- **What an editor's questions can use is in the file:** the exact pitch and the tuning (a
+  note between two keys), the confidence, and the candidates.
+
+### Other measurements
+
+- **Chords or a line.** How sure SwiftF0 is of one pitch over a stem's louder frames tells
+  GuitarSet's 180 chord clips from its 180 solos 99 times in 100 (AUC 0.988). At the line the
+  engine draws (0.80, chosen on these clips), 95 percent of the solos and 95 percent of the
+  chord clips are named rightly; every vocal clip and 141 of 142 bass stems read as a line.
+  - The louder frames are counted among those within 20 dB of the stem's tenth loudest
+    frame. Counted over all frames, as at first, a line that sounds a quarter of the time
+    read as chords: 0 of 18 solos followed by three times their length of hiss 70 dB down
+    were called a line. Now 18 of 18 are, and as many with chords 20 dB down in the gap.
+- **Tuning.** Slakh's bass played 35 cents sharp (20 songs) is read as 39 cents sharp with a
+  strength of 0.97. Its MIDI keys, against the notes that were meant: 0.927 rounded at A440,
+  0.951 rounded in the song's own tuning, which is what the engine does when a stem with
+  fixed pitches is that sure. A voice never sets the tuning: singers drift.
+- **Velocity.** A note's level says something of how hard it was played, and not much: on
+  27 Slakh bass stems the two agree in rank at 0.42 (Spearman), and the velocity-aware score
+  is 0.60 with it against 0.52 with every velocity the same (the notes alone score 0.92).
+- **Time.** A stem of 6 minutes 26 seconds takes 1.9 s as a bass and 1.6 s as a voice, on
+  two CPU threads.
+
+### Not measured
+
+- **Separated stems.** Everything above is clean audio. Phase 7's acceptance is on separated
+  stems, and that run needs the GPU. The thresholds, the weights and the level a stem is
+  read at all wait for it.
+  - The transcriber was run on the separated stems of the project's three test songs, to
+    see that it behaves; there is no reference to score them against. The stems the app
+    calls empty hold no notes. The basses give lines in a bass's range, one of them from a
+    stem that peaks at 0.09. The guitar and "other" stems mostly read as chords. One piano
+    stem that is only bleed, 41 dB under its song's loudest stem and so not empty, gives one
+    stray note: read at full level, bleed can.
+- **Melodyne on the same clips with this transcriber.** The pack's comparison in section 7
+  used SwiftF0's segmenter; the new exports the owner was asked for are not in yet.
+- **A real low bass.** The low set is a slowed one.
+- **Real songs' tuning.** The tuning check used a synthetic detune.
 
 ## Sources
 
