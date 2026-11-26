@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import os
@@ -577,30 +578,53 @@ class Service:
 
     def find_notes(self, paths: list[str]) -> dict[str, Any]:
         """Read stems that are already written and write each one's notes and MIDI beside
-        it. Returns the stem set as the index now holds it."""
-        from openstems.pipeline.notes import find_notes
-        from openstems.pipeline.run import stem_set_from_manifest
+        it. Returns the stem set as the index now holds it.
+
+        Reading takes seconds, so the folder is locked only for the writing after it, which
+        starts from the manifest as it is then: a tempo typed or a stem hidden meanwhile is
+        kept."""
+        from openstems.pipeline.notes import read_stems, write_notes
 
         files = [Path(p) for p in paths]
         if not files:
             raise DomainError("name the stems to find notes in")
         directory = self._stem_folder(files, "notes are found in stems of one song")
         where = os.path.normpath(str(directory))
+        busy = "this song is being separated again: wait until it is done"
         if self.jobs.writing_to(where):
-            raise DomainError("this song is being separated again: wait until it is done")
-        with self._lock("notes", where):
-            manifest = find_notes(directory, [file.name for file in files])
+            raise DomainError(busy)
+        with self._lock("notes", _path_key(where)):  # one reading of a folder at a time
+            reading = read_stems(directory, [file.name for file in files])
+            with self._folder(where):
+                if self.jobs.writing_to(where):
+                    raise DomainError(busy)
+                self._stems_changed(where, directory, write_notes(directory, reading))
+        return self._indexed(where)
+
+    def _folder(self, where: str) -> threading.Lock:
+        """The lock on one stem folder, for whatever rewrites its manifest in this process:
+        notes, a tempo or key, hidden stems, a rename. Without it two of them at once would
+        each write the manifest they read, and one change would be lost."""
+        return self._lock("folder", _path_key(where))
+
+    def _stems_changed(
+        self, where: str, directory: Path, manifest: dict[str, Any], said: bool = True
+    ) -> None:
+        """Have the index, the queue and the windows follow a manifest that was rewritten.
+        ``said`` is false when what the song's notes say cannot have changed."""
+        from openstems.pipeline.run import stem_set_from_manifest
+
         self.index.save_stem_set(where, manifest)
         result = stem_set_from_manifest(directory, manifest)
         if result is not None:
-            self.jobs.output_changed(
-                where,
-                _job_stems(where, result),
-                manifest.get("analysis") or {},
-                list(manifest.get("notes") or []),
-            )
+            analysis = manifest.get("analysis") or {}
+            if said:
+                self.jobs.output_changed(
+                    where, _job_stems(where, result), analysis, list(manifest.get("notes") or [])
+                )
+            else:
+                self.jobs.output_changed(where, _job_stems(where, result), analysis)
         self.bus.publish("stemsets.changed")
-        return self._indexed(where)
 
     # -- clips ----------------------------------------------------------------
 
@@ -811,7 +835,6 @@ class Service:
         """The tempo, key and bar 1 of stems that are written, by the user: in the
         manifest, in file names that hold them and in the tempo FL Studio reads."""
         from openstems.pipeline.retag import set_analysis
-        from openstems.pipeline.run import stem_set_from_manifest
 
         folder = Path(directory)
         if not self.is_served(folder) or not folder.is_dir():
@@ -819,17 +842,8 @@ class Service:
         where = os.path.normpath(str(folder))
         if self.jobs.writing_to(where):
             raise DomainError("this song is being separated again: wait until it is done")
-        manifest = set_analysis(folder, changes)
-        self.index.save_stem_set(where, manifest)
-        result = stem_set_from_manifest(folder, manifest)
-        if result is not None:
-            self.jobs.output_changed(
-                where,
-                _job_stems(where, result),
-                manifest.get("analysis") or {},
-                list(manifest.get("notes") or []),
-            )
-        self.bus.publish("stemsets.changed")
+        with self._folder(where):
+            self._stems_changed(where, folder, set_analysis(folder, changes))
         return self._indexed(where)
 
     def _indexed(self, where: str) -> dict[str, Any]:
@@ -843,7 +857,6 @@ class Service:
         """The user's choice of stems to leave out of the app's lists, or to keep in them,
         for the stems in ``directory``. Kept in the manifest: no file is touched."""
         from openstems.pipeline.levels import set_hidden
-        from openstems.pipeline.run import stem_set_from_manifest
 
         folder = Path(directory)
         if not self.is_served(folder) or not folder.is_dir():
@@ -851,14 +864,8 @@ class Service:
         where = os.path.normpath(str(folder))
         if self.jobs.writing_to(where):
             raise DomainError("this song is being separated again: wait until it is done")
-        manifest = set_hidden(folder, choices)
-        self.index.save_stem_set(where, manifest)
-        result = stem_set_from_manifest(folder, manifest)
-        if result is not None:
-            self.jobs.output_changed(
-                where, _job_stems(where, result), manifest.get("analysis") or {}
-            )
-        self.bus.publish("stemsets.changed")
+        with self._folder(where):
+            self._stems_changed(where, folder, set_hidden(folder, choices), said=False)
         return self._indexed(where)
 
     # -- a song's name --------------------------------------------------------
@@ -945,7 +952,15 @@ class Service:
         busy = self.jobs.running()
         if busy is not None and song_folder.name.lower() in _folders_of(busy):
             raise DomainError(RENAME_BUSY)
-        moved = rename_song(directory, full)
+        try:
+            sets = sorted(str(p) for p in song_folder.iterdir() if p.is_dir())
+        except OSError:
+            sets = []
+        with contextlib.ExitStack() as held:
+            # Nothing else rewrites a manifest of this song while its folders move.
+            for one in sets:
+                held.enter_context(self._folder(os.path.normpath(one)))
+            moved = rename_song(directory, full)
 
         under = _path_key(str(song_folder)) + os.sep
         for known in self.index.stem_set_dirs():

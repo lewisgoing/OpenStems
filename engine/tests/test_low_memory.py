@@ -959,6 +959,16 @@ def test_the_api_process_does_not_import_torch() -> None:
         "sys.exit(1 if 'torch' in sys.modules else 0)"
     )
     assert subprocess.run([sys.executable, "-c", code], check=False).returncode == 0
+    # Nor does finding notes, which the API does itself (POST /v1/notes): the transcriber,
+    # run on each kind of stem, and what writes its files.
+    code = (
+        "import sys, numpy as np, openstems.pipeline.notes as n; "
+        "t = np.arange(16000) / 16000; x = np.sin(2 * np.pi * 220 * t).astype('float32'); "
+        "found = [n.transcribe_line(x, 16000, s) for s in ('vocals', 'bass', 'guitar')]; "
+        "assert all(f.notes for f in found); "
+        "sys.exit(1 if 'torch' in sys.modules else 0)"
+    )
+    assert subprocess.run([sys.executable, "-c", code], check=False).returncode == 0
 
 
 def test_the_doctor_report_round_trips_through_json() -> None:

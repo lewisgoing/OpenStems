@@ -22,7 +22,7 @@ from typing import Any
 from openstems.domain.errors import DomainError
 from openstems.domain.naming import DEFAULT_TEMPLATE, render_name, safe_component
 from openstems.domain.stem import MANIFEST_NAME, STEM_FILES
-from openstems.pipeline.retag import tokens_of
+from openstems.pipeline.retag import rewrite_midi, tokens_of, undo_midi
 from openstems.pipeline.run import read_manifest
 
 
@@ -87,8 +87,9 @@ def rename_song(directory: Path, name: str) -> list[Moved]:
     """Name the song whose stems are in ``directory`` ``name``, on the disk.
 
     ``directory`` is one stem folder, ``<output>/<song>/<recipe>``. The song's folder is
-    renamed, with every stem folder in it: their stems and MIDI files where the naming
-    template holds ``{track}``, and the name in each manifest. Returns every stem folder of
+    renamed, with every stem folder in it: their stems, notes and MIDI files where the
+    naming template holds ``{track}``, the name in each manifest, and the track name inside
+    each MIDI file that has its notes file beside it. Returns every stem folder of
     the song, before and after. Nothing is written over: a folder or a file that already
     has the new name stops the rename before anything is changed, and a step that fails
     undoes the ones before it.
@@ -128,6 +129,7 @@ def rename_song(directory: Path, name: str) -> list[Moved]:
     moved_folder = False
     files: list[tuple[Path, Path]] = []
     written: list[tuple[Path, dict[str, Any]]] = []
+    rewritten: list[tuple[Path, bytes]] = []
     out: list[Moved] = []
     try:
         if move_folder:
@@ -140,10 +142,12 @@ def rename_song(directory: Path, name: str) -> list[Moved]:
                     os.replace(here / was, here / now)
                     files.append((here / was, here / now))
             updated = _renamed(manifest, moves, name)
+            rewrite_midi(here, updated, updated.get("analysis") or {}, rewritten)
             _write_manifest(here, updated)
             written.append((here, manifest))
             out.append(Moved(folder, here, updated))
     except OSError as exc:
+        undo_midi(rewritten)
         for here, manifest in reversed(written):
             with contextlib.suppress(OSError):
                 _write_manifest(here, manifest)

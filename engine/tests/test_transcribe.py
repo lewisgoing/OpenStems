@@ -161,27 +161,55 @@ def test_the_segmenter_is_swiftf0s_own_without_onsets() -> None:
     # frames into the same notes, or the benchmark's figures no longer describe it.
     from swift_f0 import PitchResult, segment_notes
 
-    rng = np.random.default_rng(5)
-    n = 900
-    pitch = np.zeros(n)
-    conf = np.zeros(n)
-    at = 0
-    while at < n - 40:
-        length = int(rng.integers(8, 60))
-        note = rng.uniform(40, 80)
-        pitch[at : at + length] = hz(note + rng.normal(0, 0.15, min(length, n - at)))
-        conf[at : at + length] = rng.uniform(0.55, 0.99, min(length, n - at))
-        at += length + int(rng.integers(0, 12))
-    level = -30 + 10 * conf + rng.normal(0, 1.5, n)
-    theirs = segment_notes(PitchResult(np.arange(n) * T.FRAME_S, pitch, conf, level))
-    frames = T._to_frames(pitch, conf, level)
-    mine = T._segment(frames, T._frame_cost(frames))
-    assert len(mine) == len(theirs) > 10
-    for (a, b, mu), note in zip(mine, theirs, strict=True):
-        assert a * T.FRAME_S == pytest.approx(note.start) and b * T.FRAME_S == pytest.approx(
-            note.end
-        )
-        assert hz(mu) == pytest.approx(note.pitch_hz, rel=1e-9)
+    for seed in range(5, 13):
+        rng = np.random.default_rng(seed)
+        n = 900
+        pitch = np.zeros(n)
+        conf = np.zeros(n)
+        at = 0
+        while at < n - 40:
+            length = int(rng.integers(8, 60))
+            note = rng.uniform(40, 80)
+            pitch[at : at + length] = hz(note + rng.normal(0, 0.15, min(length, n - at)))
+            conf[at : at + length] = rng.uniform(0.55, 0.99, min(length, n - at))
+            at += length + int(rng.integers(0, 12))
+        # SwiftF0 keeps a pitch on a frame it calls silent and gives it no confidence: in
+        # the gaps, and here and there inside a note. Its segmenter counts those pitches
+        # among the ones a note may take, and so must the port.
+        silent = rng.random(n) < 0.3
+        gaps = (pitch == 0) & silent
+        pitch[gaps] = hz(rng.uniform(40, 80, int(gaps.sum())))
+        conf[(rng.random(n) < 0.08) | gaps] = 0.0
+        level = -30 + 10 * conf + rng.normal(0, 1.5, n)
+        theirs = segment_notes(PitchResult(np.arange(n) * T.FRAME_S, pitch, conf, level))
+        frames = T._to_frames(pitch, conf, level)
+        mine = T._segment(frames, T._frame_cost(frames))
+        assert len(mine) == len(theirs) > 10, seed
+        for (a, b, mu), note in zip(mine, theirs, strict=True):
+            assert a * T.FRAME_S == pytest.approx(note.start), seed
+            assert b * T.FRAME_S == pytest.approx(note.end), seed
+            assert hz(mu) == pytest.approx(note.pitch_hz, rel=1e-9), seed
+
+
+def test_a_strike_ends_a_note_that_is_old_enough(monkeypatch: pytest.MonkeyPatch) -> None:
+    n = 60
+    frames = T._to_frames(np.full(n, hz(45.0)), np.full(n, 0.9), np.full(n, -20.0))
+    cost = T._frame_cost(frames)
+
+    def cuts(struck: np.ndarray | None) -> list[tuple[int, int]]:
+        return [(a, b) for a, b, _ in T._segment(frames, cost, struck=struck)]
+
+    assert cuts(None) == [(0, n)]  # one pitch throughout: one note
+    again = np.zeros(n, dtype=bool)
+    again[30] = True
+    assert cuts(again) == [(0, 30), (30, n)]
+    own = np.zeros(n, dtype=bool)
+    own[2] = True  # the note's own strike, heard two frames late: it carries on
+    assert cuts(own) == [(0, n)]
+    # It is a rule, not a price: anything above a new note's cost cuts in the same place.
+    for price in (T.NOTE_COST + 0.01, 1e9):
+        monkeypatch.setattr(T, "ONSET_COST", price)
+        assert cuts(again) == [(0, 30), (30, n)]
 
 
 def test_candidates_lie_where_the_first_pass_found_nothing() -> None:
@@ -193,6 +221,60 @@ def test_candidates_lie_where_the_first_pass_found_nothing() -> None:
     # A candidate that leans a little on a note is cut back to the gap.
     assert T._outside(default, [(18, 29, 61.0)]) == [(20, 29, 61.0)]
     assert T._outside([], [(3, 9, 50.0)]) == [(3, 9, 50.0)]
+    # One that holds a short note of the first pass keeps its longest free stretch,
+    # whichever side of that note it lies on.
+    long = [(0, 100, 61.0)]
+    assert T._outside([(1, 11, 60.0)], long) == [(11, 100, 61.0)]
+    assert T._outside([(60, 70, 60.0)], long) == [(0, 60, 61.0)]
+    assert T._outside([(10, 20, 60.0), (30, 40, 60.0)], long) == [(40, 100, 61.0)]
+    # Up to three tenths of it may lie under the first pass's notes, no more.
+    assert T._outside([(10, 40, 60.0)], long) == [(40, 100, 61.0)]
+    assert T._outside([(10, 41, 60.0)], long) == []
+
+
+def test_a_candidate_never_moves_a_note_of_the_first_pass() -> None:
+    # A note struck at 1.0 s whose pitch settles three frames later. Alone, its start moves
+    # back to the strike. The more willing pass calls the unsettled frames a note of their
+    # own: that candidate must not hold the real note's start where the pitch settled.
+    env = np.full(1000, -60.0)
+    env[250:] = -20.0  # the level steps up at 1.0 s
+    note = (64, 90, 40.0)  # pitch from 1.024 s
+    _, alone = T._placed([note], [], env, snap=True)
+    assert alone[0][0] == pytest.approx(1.0, abs=0.012) and alone[0][1] == 90 * T.FRAME_S
+    spans, times = T._placed([note], [(61, 64, 43.0)], env, snap=True)
+    assert spans == [((61, 64, 43.0), True), (note, False)]
+    assert times[1] == alone[0]
+    # The candidate takes what is left before the note, and nothing of it.
+    assert times[0][0] == pytest.approx(61 * T.FRAME_S) and times[0][1] == times[1][0]
+    # Without attacks to move to, every note keeps its frames' times.
+    _, plain = T._placed([note], [(61, 64, 43.0)], env, snap=False)
+    assert plain == [[61 * T.FRAME_S, 64 * T.FRAME_S], [64 * T.FRAME_S, 90 * T.FRAME_S]]
+
+
+def test_the_first_passs_notes_are_the_same_with_and_without_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rng = np.random.default_rng(11)
+    for stem in ("bass", "guitar"):
+        for _ in range(3):
+            line = [int(k) for k in rng.integers(40, 62, size=9)]
+            audio, _ = plucked(line, every=float(rng.uniform(0.2, 0.4)))
+            scraps = (rng.standard_normal(len(audio)) * 0.004).astype(np.float32)
+            both = transcribe_line(audio + scraps, RATE, stem)
+            # In time order, none over the next, every curve inside its note.
+            assert all(a.end <= b.start + 1e-6 for a, b in itertools.pairwise(both.notes))
+            for n in both.notes:
+                assert all(0 <= at <= n.duration for at, _ in n.bend)
+                assert [at for at, _ in n.bend] == sorted({at for at, _ in n.bend})
+            first = [
+                (n.start, n.end, n.pitch)
+                for n, x in zip(both.notes, both.features, strict=True)
+                if not x[T.CANDIDATE]
+            ]
+            with monkeypatch.context() as patched:
+                patched.setattr(T, "_outside", lambda default, relaxed, most=0.3: [])
+                alone = transcribe_line(audio + scraps, RATE, stem)
+            assert [(n.start, n.end, n.pitch) for n in alone.notes] == first
 
 
 def test_onset_peaks_and_attacks() -> None:
@@ -235,3 +317,78 @@ def test_which_stems_are_read_how() -> None:
     for profile in T.PROFILES.values():
         assert len(profile.weights) == len(T.FEATURES) + 1 and 0 < profile.threshold < 1
     assert math.isclose(T.FRAME_S, 0.016)
+
+
+def test_the_notes_do_not_depend_on_a_stems_gain() -> None:
+    # SwiftF0 calls a frame under a fixed level silent, so a quiet stem used to lose notes.
+    audio, _ = plucked([45, 47, 48, 50, 52])
+    loud = transcribe_line(audio, RATE, "guitar").shown()
+    assert keys(loud) == [45, 47, 48, 50, 52]
+    for gain in (2.0, 0.1, 0.01, 0.002):
+        quiet = transcribe_line(audio * np.float32(gain), RATE, "guitar").shown()
+        assert keys(quiet) == keys(loud), gain
+        assert [n.start for n in quiet] == pytest.approx([n.start for n in loud], abs=0.002)
+        assert [n.velocity for n in quiet] == [n.velocity for n in loud], gain
+
+
+def test_a_bad_sample_is_silence_and_not_a_fault() -> None:
+    # A decoder or a model can leave a sample that is no number, or float32's largest. SwiftF0
+    # refuses such audio outright, and one frame without a confidence would poison the
+    # segmenter's costs from there on.
+    clean, _ = plucked([45, 47, 48, 50])
+    wanted = keys(transcribe_line(clean, RATE, "bass").shown())
+    assert wanted == [45, 47, 48, 50]
+    for bad in (np.nan, np.inf, -np.inf, float(np.finfo(np.float32).max), 1e30):
+        audio = clean.copy()
+        audio[int(0.05 * RATE)] = bad  # in the silence before the first note
+        assert keys(transcribe_line(np.stack([audio, audio]), RATE, "bass").shown()) == wanted
+        assert np.isfinite(T.mono16(np.stack([audio, audio]), RATE)).all()
+    assert np.abs(T.mono16(np.full((2, 100), np.finfo(np.float32).max), RATE)).max() == 0.0
+    # The same for what SwiftF0 answers: every weight and level is a number.
+    odd = np.array([0.9, np.nan, np.inf, 0.8])
+    frames = T._to_frames(np.full(4, 110.0), odd, np.array([-20.0, np.nan, -np.inf, np.inf]))
+    assert frames.w.tolist() == [0.9, 0.0, 0.0, 0.8]
+    assert np.isfinite(frames.level).all() and frames.valid.all()
+    assert np.isfinite(T._frame_cost(frames)).all()
+
+
+def test_a_click_does_not_set_the_level_a_stem_is_read_at() -> None:
+    audio, _ = plucked([45, 47, 48, 50])
+    level = T.peak_level(T.mono16(audio, RATE))
+    clicked = audio.copy()
+    clicked[int(0.05 * RATE)] = 3.0  # one sample, far over everything else
+    assert T.peak_level(T.mono16(clicked, RATE)) == pytest.approx(level, rel=0.05)
+    assert keys(transcribe_line(clicked, RATE, "bass").shown()) == [45, 47, 48, 50]
+    assert T.peak_level(np.zeros(0, dtype=np.float32)) == 0.0
+    assert T.peak_level(np.array([0.5, -0.25], dtype=np.float32)) == 0.25  # fewer than 32
+
+
+def test_a_line_that_seldom_sounds_is_still_a_line() -> None:
+    # Four notes, then four times as long with only hiss 70 dB down, as a separated stem
+    # has between phrases. Counted over all its louder frames such a stem read as chords.
+    melody = sung([60, 64, 67, 72])
+    hiss = np.random.default_rng(6).standard_normal(4 * len(melody)) * 1e-4
+    dense = transcribe_line(melody, RATE, "vocals")
+    sparse = transcribe_line(np.concatenate([melody, hiss.astype(np.float32)]), RATE, "vocals")
+    assert dense.texture == sparse.texture == "line"
+    assert sparse.clarity == pytest.approx(dense.clarity, abs=0.03)
+    assert keys(sparse.shown()) == [60, 64, 67, 72]
+    # Chords with as much hiss after them are chords all the same.
+    triads = np.concatenate(
+        [sum(sung([root + k], seconds=1.0, gap=0.05) for k in (0, 4, 7, 12)) for root in (48, 53)]
+    ).astype(np.float32)
+    tail = (np.random.default_rng(7).standard_normal(4 * len(triads)) * 1e-4).astype(np.float32)
+    assert transcribe_line(np.concatenate([triads, tail]), RATE, "guitar").texture == "chords"
+    assert T.clarity(T.Frames(np.zeros(0), np.zeros(0), np.zeros(0))) == 1.0
+
+
+def test_any_sample_rate_is_read_alike() -> None:
+    import soxr
+
+    wanted = [57, 60, 64, 69]
+    audio = sung(wanted)
+    for rate in (48000, 22050, 16000, 8000):
+        other = soxr.resample(audio, RATE, rate).astype(np.float32)
+        shown = transcribe_line(other, rate, "vocals").shown()
+        assert keys(shown) == wanted, rate
+        assert [n.start for n in shown] == pytest.approx([0.0, 0.58, 1.16, 1.74], abs=0.04)

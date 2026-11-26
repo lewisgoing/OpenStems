@@ -124,8 +124,12 @@ def set_analysis(directory: Path, changes: dict[str, Any]) -> dict[str, Any]:
     targets = [name.lower() for name in moves.values()]
     if len(set(targets)) != len(targets) or taken & set(targets):
         raise DomainError("a file with the new name is already in the stem folder")
+    # A stem that is gone stops the change. A notes or MIDI file the user took away does
+    # not: its entry in the manifest takes the new name, and there is nothing to move.
+    audio = {str(stem["file"]) for stem in manifest.get("stems", [])}
+    there = {was: now for was, now in moves.items() if (directory / was).is_file()}
     for name in moves:
-        if not (directory / name).is_file():
+        if name in audio and name not in there:
             raise DomainError(f"{name} is missing from the stem folder")
 
     # Every step is undone if a later one fails, so the folder is never left half changed:
@@ -140,7 +144,7 @@ def set_analysis(directory: Path, changes: dict[str, Any]) -> dict[str, Any]:
             for file in _marked_files(manifest, directory):
                 set_tempo(file, new.get("bpm"))
                 marked.append(file)
-        for was, now in moves.items():
+        for was, now in there.items():
             os.replace(directory / was, directory / now)
             moved.append((directory / was, directory / now))
         updated = json.loads(json.dumps(manifest))
@@ -149,16 +153,14 @@ def set_analysis(directory: Path, changes: dict[str, Any]) -> dict[str, Any]:
                 if stem.get(field) in moves:
                     stem[field] = moves[stem[field]]
         if any(new.get(name) != old.get(name) for name in ("bpm", "key")):
-            _rewrite_midi(directory, updated, new, rewritten)
+            rewrite_midi(directory, updated, new, rewritten)
         updated["analysis"] = new
         updated["notes"] = notes_after_retag(list(updated.get("notes") or []), new.get("bpm"))
         tmp = directory / (MANIFEST_NAME + ".tmp")
         tmp.write_text(json.dumps(updated, indent=2, ensure_ascii=False), encoding="utf-8")
         os.replace(tmp, directory / MANIFEST_NAME)
-    except OSError as exc:
-        for file, data in reversed(rewritten):
-            with contextlib.suppress(OSError):
-                file.write_bytes(data)
+    except Exception as exc:
+        undo_midi(rewritten)
         for was, now in reversed(moved):
             with contextlib.suppress(OSError):
                 os.replace(now, was)
@@ -168,6 +170,8 @@ def set_analysis(directory: Path, changes: dict[str, Any]) -> dict[str, Any]:
                 set_tempo(file, old.get("bpm"))
         with contextlib.suppress(OSError):
             (directory / (MANIFEST_NAME + ".tmp")).unlink(missing_ok=True)
+        if not isinstance(exc, OSError):
+            raise  # not a file in the way: a fault, with the folder as it was
         which = Path(str(exc.filename)).name if exc.filename else str(exc)
         raise DomainError(
             "a stem is open in another program, so nothing was changed. Close it there "
@@ -176,16 +180,17 @@ def set_analysis(directory: Path, changes: dict[str, Any]) -> dict[str, Any]:
     return updated
 
 
-def _rewrite_midi(
+def rewrite_midi(
     directory: Path,
     manifest: dict[str, Any],
     analysis: dict[str, Any],
     rewritten: list[tuple[Path, bytes]],
 ) -> None:
-    """Write each stem's MIDI file again from its notes file, on the new tempo and key: a
-    MIDI file places its notes in beats, so the old one would hold them at the old tempo's.
-    ``rewritten`` collects each file with what it held, for the undo. A stem whose notes
-    file is missing or unreadable keeps its MIDI file as it is."""
+    """Write each stem's MIDI file again from its notes file, on the manifest's song name
+    and the given tempo and key: a MIDI file places its notes in beats, so the old one would
+    hold them at the old tempo's, and it names its track after the song. ``rewritten``
+    collects each file with what it held, for `undo_midi`. A stem whose notes file is
+    missing, unreadable or damaged keeps its MIDI file as it is."""
     from openstems.pipeline.notes import midi_from_sidecar
 
     title = str((manifest.get("source") or {}).get("name") or "")
@@ -201,13 +206,26 @@ def _rewrite_midi(
                 bpm=analysis.get("bpm"),
                 key=analysis.get("key"),
             )
-        except (ValueError, DomainError, FileNotFoundError):
+        except Exception:  # whatever is wrong with a notes file, the MIDI file is not at fault
             continue
         if data is None or not target.is_file():
             continue
-        before = target.read_bytes()
-        target.write_bytes(data)
-        rewritten.append((target, before))
+        # What it held is kept before it is touched, and it is replaced whole: a write that
+        # fails halfway leaves the old file, and a reader never sees half of the new one.
+        rewritten.append((target, target.read_bytes()))
+        tmp = target.with_name(target.name + ".tmp")
+        tmp.write_bytes(data)
+        os.replace(tmp, target)
+
+
+def undo_midi(rewritten: list[tuple[Path, bytes]]) -> None:
+    """Put back what `rewrite_midi` replaced, the last file first."""
+    for file, data in reversed(rewritten):
+        with contextlib.suppress(OSError):
+            file.with_name(file.name + ".tmp").unlink(missing_ok=True)
+        with contextlib.suppress(OSError):
+            if file.read_bytes() != data:
+                file.write_bytes(data)
 
 
 def _marked_files(manifest: dict[str, Any], directory: Path) -> list[Path]:

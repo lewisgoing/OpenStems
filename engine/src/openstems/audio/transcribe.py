@@ -43,13 +43,23 @@ LOW_BELOW_HZ = 58.0
 NOTE_COST = 5.0  # what a note must earn: 80 ms of frames (SwiftF0's default)
 CANDIDATE_COST = 3.0  # the more willing pass: cheaper notes,
 CANDIDATE_BIAS = 1.0  # and frames that count as a little more voiced than they scored
-ONSET_COST = 10.0  # what carrying a note through a struck onset costs: two notes' worth
+# What carrying a note through a struck onset costs. It is more than a new note costs, so
+# the cheapest path always starts one there: any figure above NOTE_COST gives the same notes.
+ONSET_COST = 10.0
+# Every stem is read at this peak level. SwiftF0 calls a frame under a fixed level silent, so
+# a quiet stem lost notes: at a peak of 0.01 a third of a guitar line's. Which level hardly
+# matters on clean recordings (0.25, 0.35 and 0.5 score within 0.003 of each other on all
+# three sets); 0.35 is near where the benchmark's own stems peak.
+LEVEL = 0.35
+PEAK_SAMPLES = 32  # a stem's peak is its 32nd largest sample (2 ms): no click sets its level
+LIMIT = 4.0  # a sample further from zero than this is a defect in the file, not sound
 ENV_HOP = 64  # the level envelope's step: 4 ms
 THREADS = 2  # SwiftF0 is small; more threads buy little and this machine shares its cores
 # A stem is a single line when SwiftF0 is this sure of a pitch, on average, over its louder
-# frames. Chords leave it unsure: GuitarSet's solos average 0.88 and its chord clips 0.60, and
-# 0.78 tells 94 percent of the solos and 93 percent of the chord clips rightly (360 clips).
-LINE_CLARITY = 0.78
+# frames (`clarity`). Chords leave it unsure: GuitarSet's solos average 0.89 and its chord
+# clips 0.59, and 0.80 tells 95 percent of each rightly (360 clips, and the figure was chosen
+# on them). Every vocal clip and 141 of 142 bass stems read as a line.
+LINE_CLARITY = 0.80
 
 
 @dataclass(frozen=True)
@@ -80,22 +90,22 @@ PROFILES = {
     "voice": Profile(
         "voice", onsets=None, superflux=True, snap=False, low=False, program=53,
         lowest=65.0, highest=1100.0,  # C2 to about C6
-        weights=(1.0847, 0.2914, -0.6388, -0.3196, 1.0705, -1.7529,
-                 -0.6489, -0.7184, -1.5137, 0.0629, 0.1429),
-        threshold=0.45,
+        weights=(0.9661, 0.3286, -0.6874, -0.3919, 1.0151, -1.5681,
+                 -0.6671, -0.5707, -1.2409, -0.0051, 0.0028),
+        threshold=0.49,
     ),
     "bass": Profile(
         "bass", onsets=2.0, superflux=False, snap=True, low=True, program=33,
         highest=800.0,  # every Slakh bass note lies under 784 Hz
-        weights=(-7.4650, 0.2179, 0.2220, 0.2641, 0.0846, -3.8522,
-                 1.3998, -1.1136, -0.0304, 9.2834, 12.2245),
-        threshold=0.68,
+        weights=(-8.0903, 0.2717, 0.2123, 0.1735, 0.2217, -3.8071,
+                 1.4444, -1.0175, 0.0722, 9.1096, 12.3451),
+        threshold=0.67,
     ),
     "line": Profile(
         "line", onsets=2.5, superflux=True, snap=True, low=False, program=0,
-        weights=(1.5437, -0.2816, 0.9475, 1.3377, 0.8386, -2.9020,
-                 -0.5748, -0.4031, -2.7832, 1.2124, 3.9553),
-        threshold=0.52,
+        weights=(1.2887, -0.2374, 0.9165, 1.2574, 1.6319, -2.9245,
+                 -0.7868, -0.2941, -2.7959, 1.2443, 3.0694),
+        threshold=0.46,
     ),
 }
 # fmt: on
@@ -147,20 +157,40 @@ def _swiftf0() -> Any:
 
 
 def mono16(audio: np.ndarray, sample_rate: int) -> np.ndarray:
-    """Any audio, ``(channels, samples)`` or mono, as float32 mono at 16 kHz."""
+    """Any audio, ``(channels, samples)`` or mono, as float32 mono at 16 kHz. A sample that
+    is not a number, or lies far outside full scale, is a defect in the file (a decoder's
+    answer to one, or a model's): it counts as silence, where SwiftF0 would refuse the stem."""
     import soxr
 
-    mono = audio.mean(axis=0) if audio.ndim == 2 else audio
-    mono = np.ascontiguousarray(mono, dtype=np.float32)
+    audio = np.asarray(audio)
+    if audio.ndim == 2:
+        # Channel by channel, each divided first: two samples at float32's largest value
+        # would overflow in a sum.
+        mono = np.zeros(audio.shape[1], dtype=np.float32)
+        for channel in audio:
+            mono += channel.astype(np.float32, copy=False) / np.float32(len(audio))
+    else:
+        mono = np.array(audio, dtype=np.float32)
+    np.nan_to_num(mono, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+    mono[np.abs(mono) > LIMIT] = 0.0
     if sample_rate != RATE and mono.size:
         mono = soxr.resample(mono, sample_rate, RATE).astype(np.float32)
     return mono
 
 
+def peak_level(audio16: np.ndarray) -> float:
+    """A stem's peak: its ``PEAK_SAMPLES``-th largest sample, so that a click or a few bad
+    samples do not decide how loud the rest is read. Silence between phrases does not move
+    it either. 0 for no audio."""
+    n = min(PEAK_SAMPLES, audio16.size)
+    return float(np.partition(np.abs(audio16), -n)[-n]) if n else 0.0
+
+
 @dataclass
 class Frames:
     """SwiftF0's answer per 16 ms frame: pitch in semitones (0 where there is none), its
-    confidence as a weight (0 where there is no pitch), and the level in dB."""
+    confidence as a weight (0 where there is no pitch, and where SwiftF0 calls the frame
+    silent: it keeps a pitch there), and the level in dB."""
 
     m: np.ndarray
     w: np.ndarray
@@ -168,14 +198,20 @@ class Frames:
 
     @property
     def valid(self) -> np.ndarray:
-        return self.w > 0
+        """Frames with a pitch, as SwiftF0's segmenter counts them: a silent frame's pitch
+        is one a note may take, though the frame itself weighs nothing."""
+        return self.m > 0
 
 
 def _to_frames(pitch_hz: np.ndarray, confidence: np.ndarray, level: np.ndarray) -> Frames:
     valid = np.isfinite(pitch_hz) & (pitch_hz > 0)
     m = np.zeros(len(pitch_hz))
     m[valid] = 69.0 + 12.0 * np.log2(pitch_hz[valid] / 440.0)
-    return Frames(m, np.where(valid, confidence, 0.0), np.asarray(level, dtype=np.float64))
+    # One number that is not finite would poison every cost after it in the segmenter.
+    w = np.where(valid & np.isfinite(confidence), confidence, 0.0)
+    floor = -140.0  # SwiftF0's own floor for the level
+    level = np.nan_to_num(np.asarray(level, dtype=np.float64), nan=floor, neginf=floor, posinf=0.0)
+    return Frames(m, w, level)
 
 
 def pitch_frames(audio16: np.ndarray, profile: Profile) -> Frames:
@@ -253,7 +289,9 @@ def _segment(
     programming. A note costs ``note_cost`` plus its frames' costs plus how far each frame's
     pitch lies from the note's (capped at 2 semitones, weighted by confidence); a gap costs
     nothing. ``struck`` marks frames where something was struck: a note at least ``min_age``
-    frames old pays ``ONSET_COST`` to carry on through one, so it ends there instead."""
+    frames old pays ``ONSET_COST`` to carry on through one. That is more than a new note
+    costs, so it always ends there and a new one starts; a younger note carries on (the
+    strike is its own, heard a little late)."""
     m, w = frames.m, frames.w
     n = len(m)
     valid = frames.valid
@@ -299,24 +337,26 @@ def _segment(
 
 def _outside(default: list[Span], relaxed: list[Span], most: float = 0.3) -> list[Span]:
     """The relaxed pass's notes that lie where the default pass found nothing: at most
-    ``most`` of each under a default note. Those are trimmed to the gap they sit in."""
+    ``most`` of each under default notes. Each is cut back to the longest stretch of it
+    that no default note covers."""
     out: list[Span] = []
     j = 0
     for a, b, mu in relaxed:
         while j < len(default) and default[j][1] <= a:
             j += 1
         covered = 0
+        lo, hi = a, a  # the longest free stretch so far
+        at = a  # where the next free stretch would start
         k = j
-        lo, hi = a, b
         while k < len(default) and default[k][0] < b:
             da, db = default[k][0], default[k][1]
             covered += min(b, db) - max(a, da)
-            # keep the larger free side of the overlap
-            if da <= lo < db:
-                lo = db
-            elif lo < da < hi:
-                hi = da
+            if da - at > hi - lo:
+                lo, hi = at, da
+            at = max(at, db)
             k += 1
+        if b - at > hi - lo:
+            lo, hi = at, b
         if covered <= most * (b - a) and hi - lo >= 2:
             out.append((lo, hi, mu))
     return out
@@ -512,8 +552,10 @@ def transcribe_line(audio: np.ndarray, sample_rate: int, stem: str = "") -> Tran
     prominent line."""
     profile = PROFILES[line_kind(stem) or "line"]
     audio16 = mono16(audio, sample_rate)
-    if audio16.size < RATE // 4 or float(np.abs(audio16).max()) < 1e-4:
+    peak = peak_level(audio16)
+    if audio16.size < RATE // 4 or peak < 1e-4:
         return Transcription(profile=profile.name, threshold=profile.threshold)
+    audio16 = audio16 * np.float32(LEVEL / peak)  # the notes do not depend on a stem's gain
     frames = pitch_frames(audio16, profile)
     if not frames.valid.any():
         return Transcription(profile=profile.name, threshold=profile.threshold)
@@ -524,30 +566,14 @@ def transcribe_line(audio: np.ndarray, sample_rate: int, stem: str = "") -> Tran
         struck = onset_peaks(strength, profile.onsets)
     default = _segment(frames, cost, NOTE_COST, struck)
     relaxed = _segment(frames, cost - CANDIDATE_BIAS, CANDIDATE_COST, struck)
-    spans = sorted([(s, False) for s in default] + [(s, True) for s in _outside(default, relaxed)])
+    env = envelope_db(audio16)
+    spans, times = _placed(default, _outside(default, relaxed), env, profile.snap)
     if not spans:
         return Transcription(profile=profile.name, threshold=profile.threshold)
 
-    env = envelope_db(audio16)
     step = ENV_HOP / RATE
     voiced_level = frames.level[frames.w >= 0.5]
     top_level = float(np.percentile(voiced_level, 95)) if voiced_level.size else 0.0
-    # Starts and ends in seconds. A start may move back to the attack, never past the note
-    # before it; that note then ends where this one starts.
-    times: list[list[float]] = []
-    for (a, b, _), candidate in spans:
-        start, end = a * FRAME_S, b * FRAME_S
-        if profile.snap:
-            found = attack(env, start)
-            floor = times[-1][0] + 0.03 if times else 0.0
-            if found is not None and floor <= found[0] < end - 0.03:
-                start = found[0]
-        if times and times[-1][1] > start:
-            if candidate:  # a candidate never shortens the note before it
-                start = times[-1][1]
-            else:
-                times[-1][1] = start
-        times.append([start, end])
     peaks = []
     for start, end in times:
         lo, hi = (
@@ -585,16 +611,80 @@ def transcribe_line(audio: np.ndarray, sample_rate: int, stem: str = "") -> Tran
     sure = [n for n in notes if (n.confidence or 0.0) >= profile.threshold] or notes
     weights = [n.duration for n in sure]
     cents = estimate_tuning([n.pitch for n in sure], weights)
-    loud = frames.level > np.percentile(frames.level, 60)
     return Transcription(
         notes=tuple(notes),
         threshold=profile.threshold,
         tuning_cents=round(cents, 1),
         tuning_strength=round(tuning_strength([n.pitch for n in sure], weights), 3),
         profile=profile.name,
-        clarity=round(float(frames.w[loud].mean()), 3) if loud.any() else 1.0,
+        clarity=round(clarity(frames), 3),
         features=tuple(features),
     )
+
+
+def _placed(
+    default: list[Span], candidates: list[Span], env: np.ndarray, snap: bool
+) -> tuple[list[tuple[Span, bool]], list[list[float]]]:
+    """Every note in time order, each with whether it is a candidate, and its start and end
+    in seconds.
+
+    With ``snap`` a start moves back to the note's attack, never to within 30 ms of the
+    start of the note before it, and that note then ends where this one starts. The default
+    pass's notes are placed first, among themselves: a candidate never moves one of them. It
+    takes what is left of the gap it lies in, between the notes placed around it.
+    """
+    placed: list[list[float]] = []
+    for a, b, _ in default:
+        start, end = a * FRAME_S, b * FRAME_S
+        if snap:
+            found = attack(env, start)
+            floor = placed[-1][0] + 0.03 if placed else 0.0
+            if found is not None and floor <= found[0] < end - 0.03:
+                start = found[0]
+        if placed and placed[-1][1] > start:
+            placed[-1][1] = start
+        placed.append([start, end])
+    order = sorted(
+        [(span, False, at) for span, at in zip(default, placed, strict=True)]
+        + [(span, True, [span[0] * FRAME_S, span[1] * FRAME_S]) for span in candidates],
+        key=lambda item: item[0][0],
+    )
+    ahead = math.inf  # where the next default note starts, for each note from the last back
+    limits = []
+    for _, candidate, at in reversed(order):
+        limits.append(ahead)
+        if not candidate:
+            ahead = at[0]
+    limits.reverse()
+    behind = 0.0  # where the note before ends
+    for (_, candidate, at), limit in zip(order, limits, strict=True):
+        if candidate:
+            if snap:
+                found = attack(env, at[0])
+                if found is not None and behind <= found[0] < at[1] - 0.03:
+                    at[0] = found[0]
+            at[0] = max(at[0], behind)
+            at[1] = min(at[1], limit)
+        behind = max(behind, at[1])
+    return [(span, candidate) for span, candidate, _ in order], [at for _, _, at in order]
+
+
+def clarity(frames: Frames) -> float:
+    """How sure SwiftF0 is of one pitch while a stem sounds, 0 to 1: its mean confidence
+    over the louder frames. Chords leave it unsure. 1 for a stem with no frames.
+
+    The louder frames are the loudest 60 percent of those within 20 dB of the stem's tenth
+    loudest frame. Counted that way neither silence nor quiet bleed between phrases is among
+    them: a line that sounds a quarter of the time reads as clearly as one that never stops
+    (counted over all frames, such a line read as chords).
+    """
+    level = frames.level
+    if not len(level):
+        return 1.0
+    nth = min(10, len(level))
+    sounding = level >= np.partition(level, -nth)[-nth] - 20.0
+    loud = sounding & (level >= np.percentile(level[sounding], 40))
+    return float(frames.w[loud].mean())
 
 
 def tuning_strength(pitches: list[float], weights: list[float]) -> float:

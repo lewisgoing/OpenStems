@@ -217,6 +217,14 @@ def from_sidecar(data: Any) -> tuple[list[Note], dict[str, Any]]:
         raise DomainError(f"notes file version {version} is not supported")
     if data.get("kind") not in KINDS or not isinstance(data.get("notes"), list):
         raise DomainError("the notes file is damaged")
+    for field in ("threshold", "tuning_cents"):
+        value = data.get(field)
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise DomainError(f"the notes file is damaged: its {field} is not a number")
+        if not math.isfinite(value):
+            raise DomainError(f"the notes file is damaged: its {field} is not a number")
     notes = []
     for entry in data["notes"]:
         try:
@@ -233,7 +241,7 @@ def from_sidecar(data: Any) -> tuple[list[Note], dict[str, Any]]:
                     drum=entry.get("drum"),
                 )
             )
-        except (KeyError, TypeError, ValueError) as exc:
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
             raise DomainError(f"the notes file is damaged: {exc}") from exc
     meta = {k: v for k, v in data.items() if k != "notes"}
     return notes, meta
