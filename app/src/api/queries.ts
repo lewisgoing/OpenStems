@@ -248,6 +248,24 @@ export function useSetAnalysis() {
 }
 
 /**
+ * Stems of one song the user hides from the lists (true), keeps in them though they are
+ * empty (false), or leaves to the setting again (null). Kept with the song, so both windows,
+ * the queue and the history say the same. Resolves with the stem set as it is now.
+ */
+export function useSetHidden() {
+  const { api } = useEngine()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ directory, stems }: { directory: string; stems: Record<string, boolean | null> }) =>
+      unwrap(api.POST('/v1/stemsets/hidden', { body: { directory, stems } })),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: keys.jobs })
+      void queryClient.invalidateQueries({ queryKey: ['stemsets'] })
+    },
+  })
+}
+
+/**
  * A song's name, by the user; null gives it its file's name back. The name is the song's:
  * every row of the same file follows, and stems that are written are renamed on the disk,
  * their folder and their files. Both resolve with the song as it is now.

@@ -153,6 +153,7 @@ def stem_set_from_manifest(directory: Path, manifest: dict[str, Any]) -> StemSet
                 offset=raw.get("offset", 0),
                 group=raw.get("group", ""),
                 peak=raw.get("peak"),
+                hidden=raw.get("hidden"),
             )
         )
     return StemSet(directory=str(directory), manifest=manifest, stems=stems)
@@ -546,6 +547,8 @@ class Pipeline:
             "bpm": str(extras.get("bpm") or ""),
             "key": str(extras.get("key") or ""),
         }
+        # A stem the user hid, or kept, stays so when the song is separated again.
+        kept = _hidden_choices(out_dir)
         try:
             stems: list[Stem] = []
             used: set[str] = set()
@@ -595,6 +598,7 @@ class Pipeline:
                         offset=int(extras.get("offsets", {}).get(out.name, 0)),
                         group=out.group,
                         peak=extras.get("levels", {}).get(out.name),
+                        hidden=kept.get(out.name),
                     )
                 )
                 report(
@@ -685,6 +689,16 @@ def _out_of_memory(exc: BaseException) -> bool:
 
 def _runs_on_cpu(loaded: object) -> bool:
     return str(getattr(loaded, "device", "")).startswith("cpu")
+
+
+def _hidden_choices(out_dir: Path) -> dict[str, bool]:
+    """What the user chose to hide or keep among the stems already in ``out_dir``."""
+    old = read_manifest(out_dir) if out_dir.is_dir() else None
+    return {
+        str(raw["name"]): bool(raw["hidden"])
+        for raw in (old or {}).get("stems", [])
+        if isinstance(raw.get("hidden"), bool)
+    }
 
 
 def _seconds(value: float | None) -> float | None:

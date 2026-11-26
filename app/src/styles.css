@@ -263,6 +263,27 @@
   padding: 0 9px;
   font-size: 12px;
 }
+/* The small buttons at the end of a stem's row: Solo, Mute, and hide or keep. They say they
+   can be pressed (the pointer, a lift on hover); what is on keeps its own color over that.
+   Solo and Mute are used constantly, so their hover is there at once; the eye is rarer and
+   eases (`.pressable`). */
+.stem-toggle {
+  color: var(--color-muted);
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .stem-toggle:hover {
+    background: var(--color-raised);
+    border-color: var(--color-line);
+    color: var(--color-text);
+  }
+}
+/* The handle that drags every stem of a song, in a row of a list. "1 stem" and "11 stems"
+   take the same room, so the buttons before it (Trim) stand in one column down the list. */
+.stems-handle {
+  min-width: 88px;
+  font-variant-numeric: tabular-nums;
+}
 
 /* Hover styles only where a real pointer can hover. */
 @media (hover: hover) and (pointer: fine) {

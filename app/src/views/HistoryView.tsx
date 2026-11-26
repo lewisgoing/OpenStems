@@ -1,11 +1,12 @@
 import { Layers, RotateCw, Search } from 'lucide-react'
 import { useDeferredValue, useState } from 'react'
 import type { Recipe, StemSet } from '@/api/client'
-import { useStemSets } from '@/api/queries'
+import { useSettings, useStemSets } from '@/api/queries'
 import { FitChip } from '@/components/Fit'
 import { SongName } from '@/components/SongName'
 import { useToast } from '@/components/toast'
 import { Button, Select, Tooltip } from '@/components/ui'
+import { dragAllHint, leftOutWord, splitEmpty, stemCount } from '@/lib/empty'
 import { cn, stemColor } from '@/lib/format'
 import { useTheme } from '@/lib/theme'
 
@@ -26,6 +27,10 @@ export function HistoryView({ recipes, selected, onSelect, onRerun, onRename }: 
   const [query, setQuery] = useState('')
   const deferred = useDeferredValue(query)
   const { data: sets = [], isFetched } = useStemSets(deferred)
+  // A row lists, counts and drags what the song's panel shows: not its empty stems while the
+  // setting says so, and not the ones hidden by hand.
+  const { data: settings } = useSettings()
+  const hideEmpty = Boolean(settings?.hide_empty_stems)
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col">
@@ -49,7 +54,9 @@ export function HistoryView({ recipes, selected, onSelect, onRerun, onRename }: 
         </div>
       ) : (
         <ul className="m-0 flex-1 list-none overflow-y-auto px-3 py-3" aria-label="Past separations">
-          {sets.map((set) => (
+          {sets.map((set) => {
+            const stems = splitEmpty(set.stems, hideEmpty)
+            return (
             <li
               key={set.directory}
               data-testid="history-row"
@@ -81,13 +88,13 @@ export function HistoryView({ recipes, selected, onSelect, onRerun, onRename }: 
                   </span>
                 </div>
                 <div className="mt-1 flex items-center gap-1 overflow-hidden">
-                  {set.stems.slice(0, 8).map((stem) => (
+                  {stems.shown.slice(0, 8).map((stem) => (
                     <span key={stem.name} className="chip">
                       <span className="h-1.5 w-1.5 rounded-full" style={{ background: stemColor(stem.name, theme) }} />
                       {stem.name}
                     </span>
                   ))}
-                  {set.stems.length > 8 && <span className="chip">+{set.stems.length - 8}</span>}
+                  {stems.shown.length > 8 && <span className="chip">+{stems.shown.length - 8}</span>}
                 </div>
               </div>
 
@@ -114,28 +121,29 @@ export function HistoryView({ recipes, selected, onSelect, onRerun, onRename }: 
                 )}
               </div>
 
-              <Tooltip label="Drag every stem into your DAW or a folder">
+              <Tooltip label={dragAllHint(stems.shown.length, stems.hidden.length, leftOutWord(stems.hidden))}>
                 <div
                   draggable
                   role="button"
                   tabIndex={0}
                   aria-label={`Drag all stems of ${set.track_name}`}
-                  className="btn btn-sm pressable stem-handle flex-none"
+                  className="btn btn-sm pressable stem-handle stems-handle flex-none"
                   onClick={(event) => event.stopPropagation()}
                   onDragStart={(event) => {
                     event.preventDefault()
-                    window.openstems.startDrag(set.stems.map((s) => s.path))
+                    window.openstems.startDrag(stems.shown.map((s) => s.path))
                   }}
                 >
                   <Layers size={13} />
-                  {set.stems.length} stems
+                  {stemCount(stems.shown.length)}
                 </div>
               </Tooltip>
               <Button size="sm" variant="ghost" className="hidden">
                 Open
               </Button>
             </li>
-          ))}
+            )
+          })}
         </ul>
       )}
     </div>

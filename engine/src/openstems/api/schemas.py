@@ -430,6 +430,12 @@ class StemFile(BaseModel):
         "45 dB under the loudest stem of the set. The file is written all the same. The "
         "app leaves such stems out of its lists while the hide_empty_stems setting is on.",
     )
+    hidden: bool | None = Field(
+        default=None,
+        description="The user's own choice for the app's lists: true leaves the stem out "
+        "of them whatever the setting, false keeps it in though it is empty, null leaves "
+        "it to `empty` and the setting. The file is there either way.",
+    )
 
 
 class JobInfo(BaseModel):
@@ -533,6 +539,16 @@ class SetAnalysis(BaseModel):
 
 class SetStemSetAnalysis(SetAnalysis):
     directory: str
+
+
+class SetHidden(BaseModel):
+    """The stems of one stem set the user hides from the app's lists, or keeps in them."""
+
+    directory: str
+    stems: dict[str, bool | None] = Field(
+        description="Stem name to the choice: true hides it, false keeps it in though it "
+        "is empty, null takes the choice away. Stems not named stay as they are."
+    )
 
 
 class SetName(BaseModel):

@@ -278,6 +278,18 @@ describe('shortcuts on a Mac', () => {
   })
 })
 
+describe('undo and redo on a Mac', () => {
+  it('are written with the command key, and redo with Shift', async () => {
+    const { redoShortcut, shortcut } = await import('@/platform')
+    bridge.info.platform = 'darwin'
+    expect(shortcut('Z')).toBe('⌘Z')
+    expect(redoShortcut()).toBe('⇧⌘Z')
+    bridge.info.platform = 'win32'
+    expect(shortcut('Z')).toBe('Ctrl+Z')
+    expect(redoShortcut()).toBe('Ctrl+Y')
+  })
+})
+
 describe('the trimmer on a Mac', () => {
   const DIR = '/Users/me/Music/OpenStems/Song/every-stem'
   const stem = (name: string, group: string | null = null) => ({

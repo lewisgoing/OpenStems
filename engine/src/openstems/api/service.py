@@ -159,6 +159,7 @@ def _job_stems(where: str, result: StemSet) -> list[dict[str, Any]]:
                 "sample_rate": s.sample_rate,
                 "group": s.group or None,
                 "peak": s.peak,
+                "hidden": s.hidden,
             }
             for s in result.stems
         ]
@@ -837,6 +838,28 @@ class Service:
             raise DomainError("that folder does not hold a set of stems")
         found["source_exists"] = os.path.isfile(found["track_path"])
         return found
+
+    def set_hidden(self, directory: str, choices: dict[str, bool | None]) -> dict[str, Any]:
+        """The user's choice of stems to leave out of the app's lists, or to keep in them,
+        for the stems in ``directory``. Kept in the manifest: no file is touched."""
+        from openstems.pipeline.levels import set_hidden
+        from openstems.pipeline.run import stem_set_from_manifest
+
+        folder = Path(directory)
+        if not self.is_served(folder) or not folder.is_dir():
+            raise DomainError("that folder does not hold a set of stems")
+        where = os.path.normpath(str(folder))
+        if self.jobs.writing_to(where):
+            raise DomainError("this song is being separated again: wait until it is done")
+        manifest = set_hidden(folder, choices)
+        self.index.save_stem_set(where, manifest)
+        result = stem_set_from_manifest(folder, manifest)
+        if result is not None:
+            self.jobs.output_changed(
+                where, _job_stems(where, result), manifest.get("analysis") or {}
+            )
+        self.bus.publish("stemsets.changed")
+        return self._indexed(where)
 
     # -- a song's name --------------------------------------------------------
 

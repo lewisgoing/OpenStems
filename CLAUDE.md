@@ -68,6 +68,8 @@ Engine (run from `engine/`):
   with the FakeEngine and synthetic beats
 - `uv run pytest tests/test_separate_selection.py`: a part of a song separated alone (the
   setting, `POST /v1/jobs/{id}/range`, the run), with the FakeEngine
+- `uv run pytest tests/test_hidden_stems.py`: stems hidden or kept by hand (the manifest,
+  the route, a second separation, a rename), with the FakeEngine
 - `uv run pytest tests/test_rename.py`: a song's name by the user (the rule, a run under a
   name, stems renamed on the disk, both routes), with the FakeEngine
 - `uv run pytest tests/test_empty_stems.py`: which stems are empty (the rule, the peak a run
@@ -131,6 +133,9 @@ App (run from `app/`):
   part gets; "Separate only the trimmed part"; Trim from the stems panel; a stem that
   enters late (`OPENSTEMS_FAKE_LATE=<stem>:<seconds>` leaves a FakeEngine stem silent at its
   start, so with Trim silence on its file begins later in the song)
+- `pnpm e2e -g "undo and redo"`: a grid messed up in the trimmer and put right, read back
+  from the song's manifest, the part, and the steps kept across leaving the song.
+  `UNDO_SHOTS=<folder>` saves two pictures of it
 - `pnpm e2e rename`: a song renamed from its row's menu before it runs, then its stems on
   the disk from the stems panel (also while they play) and from History
 - `pnpm exec playwright test e2e/empty-stems.spec.ts`: stems with nothing in them left out of
@@ -433,7 +438,15 @@ the quick-drop window ("+N empty", per song) and the handles that drag every ste
 empty stems out, and a song whose stems are all empty shows them all. What is left out is
 not decoded, played, mixed or dragged, and Trim from the panel opens on what is shown. With
 the setting off an empty stem is only dimmed (`data-empty`). The trimmer's own chips list
-every stem. `docs/adr/0027-empty-stems.md`.
+every stem. The user can also decide for one stem: `hidden` in the manifest's stem and in
+`StemFile` (true: left out whatever the setting; false: kept in though empty; absent: the
+rule and the setting decide). `POST /v1/stemsets/hidden` (`pipeline/levels.py`,
+`set_hidden`) keeps it in the manifest, so it stays after the panel is left, in both
+windows, through a rename, and through a second separation into the same folder
+(`_hidden_choices` in `pipeline/run.py`). `isLeftOut` is the one rule for every list, the
+History row included; `hideChoice` is what a row's Hide button stores, and `leftOutWord`
+says "hidden" once any left-out stem was hidden by hand. The quick-drop window has no Hide
+button. `docs/adr/0027-empty-stems.md`.
 
 Tempo sync: with the `tempo_sync` setting on, `write_audio` appends an `acid` chunk with the
 detected tempo to WAV stems and mixes (`audio/write.py`, `tempo_chunk`), which FL Studio
@@ -482,7 +495,7 @@ with `takesFocus` keeps the closing menu from taking the focus back: `finalFocus
 `RowMenu.tsx`), the pencil and F2 in the stems panel, and a double click on a title where a
 click does not move it (`doubleClick`: not a row of the queue or History whose stems are
 closed, since the first click opens them and the list can reflow). The quick-drop window has none.
-`docs/adr/0027-rename.md`.
+`docs/adr/0028-rename.md`.
 
 Clips: a stretch of a song as a file of its own, to drag into a DAW. `POST /v1/clips`
 (`pipeline/clip.py`) cuts it from stems of one stem set, summed into one file or one file
@@ -542,6 +555,21 @@ Clips): change both together. Words for keys come from `freeKey` (Alt, Option), 
 `modClick` in `src/platform.ts`. Tests: `src/test/trimmer.test.tsx`, `src/test/layers.test.ts`
 (the layered waveform), the Mac cases in `src/test/mac.test.tsx`, and `pnpm e2e trimmer`.
 `docs/adr/0023-trimmer.md`.
+
+Undo and redo in the trimmer: `trimmer/history.ts` is the history as plain functions
+(`record`, `undo`, `redo`, `figuresChange`, `nextWhat`). A step (`Moment`) is the song's
+saved figures, the grid they draw, the part and `fitted`, taken when a change is complete:
+in `save` for the grid (a run of nudges or taps is one save, so one step) and in
+`selectionDone` and `clearSelection` for the part, where changes less than `RUN_MS` apart
+are one step. The view, the snap, the chips, the loop and the playhead are not steps. An
+undo goes through the editor's own `save` (`travel`), so it is saved like any change of the
+grid and put back with a toast when the engine refuses; `travelling` keeps that save from
+being a step itself. Steps are taken from what the song is meant to have (`intended`,
+`settledGrid`), ahead of the song while a save is on its way. They are kept in
+`TrimMemory.history` for the session and dropped when the song's timeline changes. Keys:
+Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y (Cmd on a Mac; `shortcut('Z')`, `redoShortcut()`), not in a
+field and not during a gesture. The two buttons are in `TopBar`, always there.
+`docs/adr/0029-studio-undo.md`.
 
 Separating only the part: with `separate_selection` on (off by default; read when the song
 starts), a part chosen on a waiting song is all that is separated, as a song of its own named

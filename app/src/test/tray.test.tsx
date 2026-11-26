@@ -41,6 +41,7 @@ import { bridge } from './setup'
 
 const createJobs = { mutate: vi.fn() }
 const setAnalysis = { job: { mutateAsync: vi.fn() }, stemSet: { mutateAsync: vi.fn() } }
+const setHidden = { mutateAsync: vi.fn(async (_change: { directory: string; stems: Record<string, boolean | null> }) => ({}) as never) }
 const rename = { job: { mutateAsync: vi.fn(async (_change: { id: string; name: string | null }) => undefined) }, stemSet: { mutateAsync: vi.fn(async (_change: { directory: string; name: string | null }) => undefined) } }
 const actions = {
   startAll: { mutate: vi.fn() },
@@ -84,6 +85,7 @@ vi.mock('@/api/queries', () => ({
   useJobs: () => ({ data: jobs }),
   useJobActions: () => actions,
   useSetAnalysis: () => setAnalysis,
+  useSetHidden: () => setHidden,
   useRename: () => rename,
   useLinks: () => ({ data: links }),
   useLinkActions: () => linkActions,
@@ -993,6 +995,16 @@ describe('empty stems in the quick-drop window', () => {
     fireEvent.dragStart(screen.getByTestId('quick-drag-all'))
     expect(bridge.startDrag).toHaveBeenLastCalledWith([stem('Song', 'vocals').path])
     expect(screen.queryByTestId('quick-mix')).not.toBeInTheDocument()
+  })
+
+  it('leaves out a stem hidden by hand in the full app too, setting on or off, and calls them hidden', () => {
+    const song = rap()
+    jobs = [{ ...song, stems: song.stems.map((s) => (s.name === 'vocals' ? s : s.name === 'drums' ? { ...s, empty: false, hidden: true } : { ...s, empty: false })) }]
+    delete shown.hide_empty_stems
+    render(quickDrop())
+    expect(pills().map((el) => el.textContent)).not.toContain('drums')
+    expect(pills()).toHaveLength(5)
+    expect(screen.getByTestId('quick-empty')).toHaveTextContent('+1 hidden')
   })
 
   it('brings them back on a click, stepped back, and leaves them out again', async () => {

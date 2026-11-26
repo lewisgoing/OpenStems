@@ -422,6 +422,17 @@ def create_app(token: str, service: Service | None = None) -> FastAPI:
         return service.set_analysis(changes.pop("directory"), changes)
 
     @app.post(
+        "/v1/stemsets/hidden",
+        response_model=s.StemSetInfo,
+        dependencies=secured,
+        responses=errors,
+    )
+    def set_stem_set_hidden(body: s.SetHidden, service: Svc) -> dict[str, Any]:
+        """Hide stems of a song from the app's lists, keep empty ones in them, or take
+        either choice away. Kept in the manifest: every file stays where it is."""
+        return service.set_hidden(body.directory, body.stems)
+
+    @app.post(
         "/v1/stemsets/name",
         response_model=s.StemSetInfo,
         dependencies=secured,

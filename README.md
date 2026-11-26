@@ -141,6 +141,10 @@ an editor across the window, to take a few bars out as a file of their own.
    next time. A part chosen where there was none is looped; L or Loop turns that off, and it
    stays off for the parts after it. The button left of Play, or Home, takes the playhead
    and the view back to 0:00.
+   **Undo** (Ctrl+Z, Cmd+Z on a Mac) takes back the last change to the grid or to the
+   part, one step at a time, and **Redo** (Ctrl+Y or Ctrl+Shift+Z; Shift+Cmd+Z on a Mac)
+   brings it back; both are also beside Back. A grid that went wrong is put right on the
+   disk too, and the steps are still there when you leave the song and open it again.
 4. **Drag the clip out** of the footer into your DAW or a folder. It shows the name of the
    file it gives, such as "Song - drums - bars 9-16.wav". "Every stem, this part" gives every
    stem cut to the part, one file each. Clips are WAV, in a `Clips` folder beside the stems,
@@ -214,6 +218,11 @@ the naming template. A right-click on a song in the queue shows its stems or its
 file in Explorer (Finder on a Mac), starts, moves, cancels or retries it, or takes it off the
 list, in the full window and the quick-drop window. In the full window it also opens the song
 in the trimmer, and renames it.
+
+**Hide a stem.** A stem you do not want in the way has a Hide button on its row in the
+stems panel, beside Solo and Mute. It leaves the list, the "Drag all" handles and the
+quick-drop window, and waits in the line under the list ("2 hidden: hh, other") until you
+show it again. It stays hidden after you leave the song. Its file is not deleted.
 
 **Rename a song.** A song goes by its file's name until you give it another: right-click it
 in the queue and choose Rename, or double-click its title, and type over it. A song that
@@ -553,7 +562,7 @@ prints one JSON line with both. Everything the CLI does is there, with live prog
 | Clips and previews | `POST /v1/clips` (a stretch of a song's own file or of its stems, as WAV files), `POST /v1/sources/preview` (a song's own file to play and draw before it is separated, with its tempo and bar 1) |
 | Models | `GET /v1/models`, `POST /v1/models/{id}/pull`, `.../cancel`, `.../verify`, `DELETE /v1/models/{id}`, `POST /v1/models/import` |
 | Settings and system | `GET` and `PATCH /v1/settings`, `GET /v1/system`, `GET /v1/health`, `POST /v1/diagnostics` |
-| Files and history | `GET /v1/files?path=` (range requests), `GET /v1/peaks?path=`, `GET /v1/stemsets?q=`, `POST /v1/stemsets/rebuild`, `POST /v1/stemsets/analysis` (tempo, key and bar 1 of written stems), `POST /v1/stemsets/name` (rename a song's written stems, folder and files) |
+| Files and history | `GET /v1/files?path=` (range requests), `GET /v1/peaks?path=`, `GET /v1/stemsets?q=`, `POST /v1/stemsets/rebuild`, `POST /v1/stemsets/analysis` (tempo, key and bar 1 of written stems), `POST /v1/stemsets/name` (rename a song's written stems, folder and files), `POST /v1/stemsets/hidden` (stems to leave out of the lists, or to keep in them) |
 | Events | `WS /v1/events`: job and download progress, in order |
 
 One GPU worker process runs the queue, keeps the last model warm, and is restarted if it dies.

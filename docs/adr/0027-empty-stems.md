@@ -77,3 +77,38 @@ FakeEngine stems a hiss 60 dB under what they would hold.
 ## Mac
 
 Nothing here differs by system. Not yet seen on a Mac.
+
+## Hidden by hand (added 2026-11-25)
+
+The rule is a guess about one figure, and it is sometimes not the user's: a hi-hat stem
+40 dB under the vocals is above the line and may still be nothing worth a row. Moving the
+line for one song would hide real parts in others. So the user can decide for a stem.
+
+- **Three states per stem**: hidden by hand, kept by hand, or no choice. `hidden` in the
+  manifest's stem and in `StemFile`: true leaves the stem out of the lists whatever the
+  setting, false keeps it in though it is empty, absent (null) leaves it to `empty` and the
+  setting. Only a choice that differs from what the setting would do is stored
+  (`hideChoice` in `app/src/lib/empty.ts`), so a stem put back where the setting has it
+  follows the setting again.
+- **Kept with the song, in its manifest** (`pipeline/levels.py`, `set_hidden`;
+  `POST /v1/stemsets/hidden`), not in the window. It is there after the panel is closed,
+  after a restart, in the queue, the history and the quick-drop window alike, and it moves
+  with the folder when the song is renamed. A song separated again into the same folder
+  keeps the choices of the stems it had (`_hidden_choices` in `pipeline/run.py`). No file
+  is touched: hidden is not deleted.
+- **One rule for every list** (`isLeftOut`, `splitEmpty`): what is left out is not listed,
+  counted, played, mixed or dragged, exactly as an empty stem is. The History row now
+  follows the same rule for its pills, its count and its handle, which it did not for empty
+  stems before.
+- **In the panel**, each row has a Hide button after Solo and Mute, there when the pointer
+  or the keyboard reaches the row. A hidden stem joins the line under the list, which reads
+  "2 hidden: hh, other" once any stem in it was hidden by hand ("empty" while all of them
+  are the rule's). Show brings them back dimmed, each with an eye on its row that keeps it
+  in the list. Rows come and go at once, like the line's own Show and Hide.
+- **The quick-drop window has no Hide button.** It leaves the same stems out and names
+  them the same way ("+2 hidden"); the choosing is the full window's, like Trim and Rename.
+- **Limits.** The trimmer's own chips still list every stem. The choice is per stem set: the
+  same song through another recipe has its own. Hiding reloads the panel's player, so a
+  song that is playing stops.
+- The same on Windows and a Mac, with no platform branch. Tried on Windows with the
+  FakeEngine and in the end-to-end suite. Not seen on a Mac.

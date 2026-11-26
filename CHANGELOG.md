@@ -15,6 +15,33 @@
     MIDI" on. It is not separated again for that.
   - Measured on clean recordings, not yet on separated stems. The same on Windows and a
     Mac, where it has not been seen yet.
+## 0.4.6 (2026-11-25)
+
+- **Undo and redo in the trimmer.** A beat grid that went wrong can be put right: Ctrl+Z
+  (Cmd+Z on a Mac) takes back the last change to the tempo, to bar 1 or to the part, one
+  step at a time, and Ctrl+Y or Ctrl+Shift+Z (Shift+Cmd+Z on a Mac) brings it back. Two
+  buttons beside Back do the same and say what the next step is. Taking a step back saves
+  it, so file names, the manifest and the tempo FL Studio reads follow. A run of nudges or
+  taps is one step, and so is an edge walked with the arrow keys. The steps are still there
+  when you leave the song and open it again, until the app is quit. The zoom, the snap and
+  what is chosen to be heard are not steps. The same on Windows and a Mac, where it has not
+  been seen yet.
+- **Trim lines up down the queue.** The handle that drags a song's stems is now the same
+  width whether it reads "1 stem" or "11 stems", so the Trim buttons before it stand in one
+  column. The same in History, on Windows and a Mac.
+- **Solo, Mute and Hide answer the pointer.** The small buttons at the end of a stem's row
+  show the hand cursor and light up under it.
+
+## 0.4.5 (2026-11-25)
+
+- **Hide a stem.** Each stem in the stems panel has a Hide button, beside Solo and Mute when
+  the pointer is on its row. A hidden stem leaves the list, the "Drag all" handles and the
+  quick-drop window, and joins the line under the list ("2 hidden: hh, other"), where Show
+  brings it back and the eye on its row keeps it. It stays hidden after you leave the song,
+  after a restart, in History, and when the song is renamed or separated again. An empty
+  stem can be kept in the list the same way. No file is deleted. A History row now counts
+  and drags only the stems that are shown. The same on Windows and a Mac, where it has not
+  been seen yet.
 
 ## 0.4.4 (2026-11-25)
 

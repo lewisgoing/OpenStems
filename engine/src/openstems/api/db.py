@@ -125,6 +125,7 @@ class Index:
                 "group": s.get("group") or None,
                 "offset": int(s.get("offset") or 0),
                 "peak": s.get("peak"),
+                "hidden": s.get("hidden"),
             }
             for s in manifest.get("stems", [])
         ]
@@ -247,6 +248,7 @@ def _stem_set_row(row: sqlite3.Row) -> dict[str, Any]:
         # Where the file begins in the song. A row from before offsets were kept has none.
         stem["start"] = int(stem.get("offset") or 0) / SAMPLE_RATE
         stem.setdefault("empty", False)
+        stem.setdefault("hidden", None)
     return {
         "directory": directory,
         "track_name": row["track_name"],

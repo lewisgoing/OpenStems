@@ -7,7 +7,7 @@ the name on the screen is the name on the disk. The audio is never touched, and 
 own file keeps its name.
 
 Mixes and clips made from the stems move with the folder and keep the file names they have:
-a clip given to a DAW is not renamed under it (ADR 0027).
+a clip given to a DAW is not renamed under it (ADR 0028).
 """
 
 from __future__ import annotations

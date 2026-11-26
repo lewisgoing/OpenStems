@@ -107,6 +107,7 @@ def stem_set_payload(result: Any) -> dict[str, Any]:
                     "sample_rate": s.sample_rate,
                     "group": s.group or None,
                     "peak": s.peak,
+                    "hidden": s.hidden,
                 }
                 for s in result.stems
             ]
