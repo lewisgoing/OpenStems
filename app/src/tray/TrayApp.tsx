@@ -19,7 +19,7 @@ import { ToastProvider, useToast } from '@/components/toast'
 import { Button, IconButton, ProgressBar, Segmented, Select, Tooltip, TooltipProvider } from '@/components/ui'
 import { UpdatePill } from '@/components/Update'
 import { Wordmark } from '@/components/Wordmark'
-import { dragAllHint, splitEmpty, stemCount } from '@/lib/empty'
+import { dragAllHint, leftOutWord, splitEmpty, stemCount } from '@/lib/empty'
 import { cn, formatBytes, formatPercent, stemColor } from '@/lib/format'
 import { isMac, shortcut, words } from '@/platform'
 import { PendingDownload, useDropFlow, usePaste } from '@/state/dropflow'
@@ -392,7 +392,7 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
   const [emptyShown, setEmptyShown] = useState<string | null>(null)
   const found = jobs.find((job) => job.id === expanded)
   const laidOut = useMemo(
-    () => (found ? { ...found, stems: splitEmpty(found.stems, hideEmpty && emptyShown !== found.id).shown } : undefined),
+    () => (found ? { ...found, stems: emptyShown === found.id ? found.stems : splitEmpty(found.stems, hideEmpty).shown } : undefined),
     [found, hideEmpty, emptyShown],
   )
   const audition = useAudition(laidOut?.stems ?? [])
@@ -483,12 +483,14 @@ export function QuickDrop({ recipes, models }: { recipes: Recipe[]; models: Mode
               <LinkRow key={link.id} link={link} compact />
             ))}
             {shown.map((job) => {
-              const stems = job.id === expanded && laidOut ? laidOut.stems : splitEmpty(job.stems, hideEmpty && emptyShown !== job.id).shown
+              const leftOut = splitEmpty(job.stems, hideEmpty)
+              const stems = job.id === expanded && laidOut ? laidOut.stems : emptyShown === job.id ? job.stems : leftOut.shown
               return (
               <QuickRow
                 key={job.id}
                 job={stems === job.stems ? job : { ...job, stems }}
-                empty={hideEmpty ? splitEmpty(job.stems, true).hidden.length : 0}
+                empty={leftOut.hidden.length}
+                emptyWord={leftOutWord(leftOut.hidden)}
                 emptyShown={emptyShown === job.id}
                 onEmpty={() => {
                   // The mix is of the stems on show: it ends when they change.
@@ -591,6 +593,8 @@ interface QuickRowProps {
    * `job.stems` is then without them, unless `emptyShown`.
    */
   empty?: number
+  /** What those are called: "empty", or "hidden" when the user hid one of them in the full app. */
+  emptyWord?: 'empty' | 'hidden'
   emptyShown?: boolean
   /** Bring the empty stems back among the pills, or leave them out again. */
   onEmpty?: () => void
@@ -607,7 +611,7 @@ function startDrag(event: React.DragEvent, paths: string[]): void {
   window.openstems.startDrag(paths)
 }
 
-export function QuickRow({ job, separatePart = false, expanded, fresh, onPick, audition, onListen, mixer = null, onMix, empty = 0, emptyShown = false, onEmpty, onStart, onCancel, onRetry, menu = [] }: QuickRowProps) {
+export function QuickRow({ job, separatePart = false, expanded, fresh, onPick, audition, onListen, mixer = null, onMix, empty = 0, emptyWord = 'empty', emptyShown = false, onEmpty, onStart, onCancel, onRetry, menu = [] }: QuickRowProps) {
   const theme = useTheme()
   const active = ACTIVE.has(job.state)
   const queued = job.state === 'queued'
@@ -673,7 +677,7 @@ export function QuickRow({ job, separatePart = false, expanded, fresh, onPick, a
         {active && <span className="tabular flex-none font-mono text-[12px] text-muted">{formatPercent(job.progress)}</span>}
 
         {hasStems && (
-          <Tooltip label={dragAllHint(job.stems.length, leftOut)}>
+          <Tooltip label={dragAllHint(job.stems.length, leftOut, emptyWord)}>
             <div
               draggable
               role="button"
@@ -767,12 +771,18 @@ export function QuickRow({ job, separatePart = false, expanded, fresh, onPick, a
             <button
               type="button"
               aria-expanded={emptyShown}
-              title={emptyShown ? 'Leave the empty stems out again' : 'Stems with nothing in them. Click to show them'}
+              title={
+                emptyShown
+                  ? `Leave the ${emptyWord} stems out again`
+                  : emptyWord === 'empty'
+                    ? 'Stems with nothing in them. Click to show them'
+                    : 'Stems with nothing in them, and stems you hid. Click to show them'
+              }
               data-testid="quick-empty"
               className="stem-pill pressable cursor-pointer text-muted"
               onClick={onEmpty}
             >
-              {emptyShown ? 'Hide empty' : `+${empty} empty`}
+              {emptyShown ? `Hide ${emptyWord}` : `+${empty} ${emptyWord}`}
             </button>
           )}
           {canMix && (

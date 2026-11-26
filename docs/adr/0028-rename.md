@@ -1,4 +1,4 @@
-# 0027: A song can be renamed
+# 0028: A song can be renamed
 
 Date: 2026-11-25. Status: accepted. Not in `PLAN.md`.
 

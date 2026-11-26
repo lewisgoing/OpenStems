@@ -625,6 +625,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/stemsets/hidden": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Stem Set Hidden
+         * @description Hide stems of a song from the app's lists, keep empty ones in them, or take
+         *     either choice away. Kept in the manifest: every file stays where it is.
+         */
+        post: operations["set_stem_set_hidden"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/stemsets/name": {
         parameters: {
             query?: never;
@@ -1422,6 +1443,21 @@ export interface components {
             key?: string | null;
         };
         /**
+         * SetHidden
+         * @description The stems of one stem set the user hides from the app's lists, or keeps in them.
+         */
+        SetHidden: {
+            /** Directory */
+            directory: string;
+            /**
+             * Stems
+             * @description Stem name to the choice: true hides it, false keeps it in though it is empty, null takes the choice away. Stems not named stay as they are.
+             */
+            stems: {
+                [key: string]: boolean | null;
+            };
+        };
+        /**
          * SetJobRange
          * @description The part of a waiting song to separate alone: {"range": {"start", "end", "grid"}}
          *     sets it, {"range": null} takes it away again. Its label is decided when it is set, and
@@ -1619,6 +1655,11 @@ export interface components {
              * @description The larger stem this one is a part of, if any.
              */
             group?: string | null;
+            /**
+             * Hidden
+             * @description The user's own choice for the app's lists: true leaves the stem out of them whatever the setting, false keeps it in though it is empty, null leaves it to `empty` and the setting. The file is there either way.
+             */
+            hidden?: boolean | null;
             /** Midi */
             midi?: string | null;
             /** Name */
@@ -3955,6 +3996,66 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SetStemSetAnalysis"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemSetInfo"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_stem_set_hidden: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetHidden"];
             };
         };
         responses: {

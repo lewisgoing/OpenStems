@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Hide a stem.** Each stem in the stems panel has a Hide button, beside Solo and Mute when
+  the pointer is on its row. A hidden stem leaves the list, the "Drag all" handles and the
+  quick-drop window, and joins the line under the list ("2 hidden: hh, other"), where Show
+  brings it back and the eye on its row keeps it. It stays hidden after you leave the song,
+  after a restart, in History, and when the song is renamed or separated again. An empty
+  stem can be kept in the list the same way. No file is deleted. A History row now counts
+  and drags only the stems that are shown. The same on Windows and a Mac, where it has not
+  been seen yet.
+
 ## 0.4.4 (2026-11-25)
 
 - **Rename a song.** A song no longer has to go by its file's name. Right-click it in the

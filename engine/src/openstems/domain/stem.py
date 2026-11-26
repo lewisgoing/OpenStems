@@ -58,6 +58,9 @@ class Stem:
     # The largest sample of the stem as it was separated, before normalize. None in a
     # manifest from before it was measured. It decides whether the stem is empty.
     peak: float | None = None
+    # The user's own choice for the app's lists: True leaves the stem out, False keeps it
+    # in though it is empty, None lets the app decide (`pipeline/levels.py`, `set_hidden`).
+    hidden: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -74,6 +77,7 @@ class Stem:
             "settings": self.settings,
             **({"group": self.group} if self.group else {}),
             **({"peak": self.peak} if self.peak is not None else {}),
+            **({"hidden": self.hidden} if self.hidden is not None else {}),
         }
 
 

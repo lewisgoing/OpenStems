@@ -1749,6 +1749,36 @@
         "title": "SetAnalysis",
         "type": "object"
       },
+      "SetHidden": {
+        "description": "The stems of one stem set the user hides from the app's lists, or keeps in them.",
+        "properties": {
+          "directory": {
+            "title": "Directory",
+            "type": "string"
+          },
+          "stems": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "Stem name to the choice: true hides it, false keeps it in though it is empty, null takes the choice away. Stems not named stay as they are.",
+            "title": "Stems",
+            "type": "object"
+          }
+        },
+        "required": [
+          "directory",
+          "stems"
+        ],
+        "title": "SetHidden",
+        "type": "object"
+      },
       "SetJobRange": {
         "description": "The part of a waiting song to separate alone: {\"range\": {\"start\", \"end\", \"grid\"}}\nsets it, {\"range\": null} takes it away again. Its label is decided when it is set, and\nagain whenever the job's tempo or bar 1 changes.",
         "properties": {
@@ -2350,6 +2380,18 @@
             ],
             "description": "The larger stem this one is a part of, if any.",
             "title": "Group"
+          },
+          "hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The user's own choice for the app's lists: true leaves the stem out of them whatever the setting, false keeps it in though it is empty, null leaves it to `empty` and the setting. The file is there either way.",
+            "title": "Hidden"
           },
           "midi": {
             "anyOf": [
@@ -5551,6 +5593,80 @@
           }
         ],
         "summary": "Set Stem Set Analysis"
+      }
+    },
+    "/v1/stemsets/hidden": {
+      "post": {
+        "description": "Hide stems of a song from the app's lists, keep empty ones in them, or take\neither choice away. Kept in the manifest: every file stays where it is.",
+        "operationId": "set_stem_set_hidden",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetHidden"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemSetInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Stem Set Hidden"
       }
     },
     "/v1/stemsets/name": {
