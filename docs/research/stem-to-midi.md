@@ -1269,11 +1269,16 @@ column; the first row that fits):
   shown (not the E1, at 41 Hz). The same notes dying away as an 808's do: 6. With a second
   harmonic 30 dB under the sine: all 10. So a clean sub-bass or a clean 808 may lose notes;
   a bass with any grit does not.
-  - A trial that added a little even-harmonic distortion in front of the pitch tracker read
-    the dying sines too. It was not kept: on the development half it cost guitar solos half
-    a point (0.840 to 0.835) and bass a tenth (0.946 to 0.945), and it read a pure low B as
-    the B above. It wants trying on real 808s, as a second look only where the first hears
-    nothing.
+  - Two remedies were tried and neither is in the engine yet. A little even-harmonic
+    distortion in front of the pitch tracker read the dying sines, and cost real recordings
+    (guitar solos 0.840 to 0.835, bass 0.946 to 0.945, the first pass on the development
+    half). A second look does better: the tracker run again on the distorted stem, its
+    frames taken only where the first look heard no pitch. That shows 9 of the 10 dying
+    sines and all 10 steady ones, and leaves real recordings as they were (0.784, 0.840 and
+    0.945 against 0.784, 0.840 and 0.946), with bleed too (a bass with the rest of its song
+    25 dB under it: 0.941 shown either way). It reads a pure low B, under SwiftF0's floor,
+    as the B above, and it doubles the tracker's work. It wants real 808s and clean
+    sub-basses before it goes in.
 
 ### Not measured
 

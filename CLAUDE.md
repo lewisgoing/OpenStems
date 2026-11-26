@@ -600,43 +600,44 @@ stem's name picks one of three profiles (`domain/notes.line_kind`): `voice`, `ba
 pass at double speed for notes under SwiftF0's 46.9 Hz floor) and `line` for any other pitched
 stem; `bass` and `line` cut a note where it is struck again (an onset in the spectrum with a
 rise in the stem's own level, `struck_again`: bleed from a drum has only the first) and move
-each start back to the attack. Drums, mixtures and empty stems are not read. `MIDI_STEMS` is what the setting reads
-by itself: voices, basses and `melody`. A second, more willing pass adds candidates, which
-never move a note of the first pass (`_placed`). Every note has a confidence from a logistic
-model whose weights are in `PROFILES` (printed by `scripts/midi_calibrate.py fit`: never typed
-by hand; fitted on each clip alone and with the rest of a song 25 and 15 dB under it, the
-stand-in for separated stems); a profile's `threshold` is where a note counts. `pipeline/notes.py` writes two files
-beside the stem: `<stem>.notes.json` (`domain/notes.py`: every note, the threshold, the
-tuning, what wrote it, and `texture`, `chords` for a stem that plays several notes at once
-and was read as one line: `transcribe.clarity`) and `<stem>.mid`, the notes that count, one
-track, on the song's tempo and key. A stem in which no note counts gets the notes file alone.
-`Stem.notes` and `StemFile.notes` carry it; `STEM_FILES` (`domain/stem.py`) names the files a
-rename or a replaced run must take along. Every MIDI file is made from its notes file, to
-the byte (`midi_from_sidecar`): a retag makes it again, and a rename puts the song's new
-name inside one that is still what the app made (`retag.rewrite_midi`). A damaged or missing
-notes file stops neither; one that cannot be read now stops both. The keys are at A440 unless a stem with fixed pitches agrees firmly
-on another tuning, one tuning for the song over every stem whose notes are known
-(`pipeline/notes.song_tuning`): a stem read later can settle it, and the MIDI of the stems
-read before is then rounded again from their notes files. If reading a stem fails the stems
-are still written and the job says so (`extras._read_notes`). `POST /v1/notes` reads stems
-that are already written; nothing in the app calls it yet. It is two steps: `read_stems`
-(seconds, writes nothing) and `write_notes`, which starts from the manifest as it is then
-and writes everything or puts every file back. A file that is not a stem's own is never
-written over or removed (`_in_the_way`; Melodyne saves its export as `<audio name>.mid`
-beside the audio). Its own are the ones the manifest names and ones that are, to the byte,
-what the app writes there (`_adopt`). The manifest is written before
-the files it names (a stem's notes file last), so a write cut short is finished by the
-next. Putting back is a rename: what a file held is parked beside it (`.old.tmp`) until the
-write is done. In the API process whatever rewrites a stem folder's manifest (notes, a tempo
-or key, hidden stems, a rename) holds `Service._folder`, one lock per folder, and is refused
-while the running job may be writing that folder (`Service._not_being_written`): do both in
-anything new that does. The cache: `KEYED_MIDI_STEMS` are
-the only names in a run's key, written as 0.4.x wrote them, and a song from the cache whose
-stems have no notes file, or notes from another transcriber, is read where it lies, not
-separated again (`Pipeline._with_notes`, `notes.stale`). Raise the number in `METHOD`
-(`pipeline/notes.py`) whenever the notes a stem gives change. Measured on clean recordings
-only; separated stems wait for the GPU. Nothing of it has been seen on a Mac, and its tests
-have not run on one (CI runs on pull requests and `main`). `docs/adr/0030-single-line-transcriber.md`,
+each start back to the attack. Drums, mixtures and empty stems are not read. `MIDI_STEMS` is
+what the setting reads by itself: voices, basses and `melody`. A second, more willing pass adds
+candidates, which never move a note of the first pass (`_placed`). Every note has a confidence
+from a logistic model whose weights are in `PROFILES` (printed by `scripts/midi_calibrate.py
+fit`: never typed by hand; fitted on each clip alone and with the rest of a song 25 and 15 dB
+under it, the stand-in for separated stems); a profile's `threshold` is where a note counts.
+`pipeline/notes.py` writes two files beside the stem: `<stem>.notes.json` (`domain/notes.py`:
+every note, the threshold, the tuning, what wrote it, and `texture`, `chords` for a stem that
+plays several notes at once and was read as one line: `transcribe.clarity`) and `<stem>.mid`,
+the notes that count, one track, on the song's tempo and key. A stem in which no note counts
+gets the notes file alone. `Stem.notes` and `StemFile.notes` carry it; `STEM_FILES`
+(`domain/stem.py`) names the files a rename or a replaced run must take along. Every MIDI file
+is made from its notes file, to the byte (`midi_from_sidecar`): a retag makes it again, and a
+rename puts the song's new name inside one that is still what the app made
+(`retag.rewrite_midi`). A damaged or missing notes file stops neither; one that cannot be read
+now stops both. The keys are at A440 unless a stem with fixed pitches agrees firmly on another
+tuning, one tuning for the song over every stem whose notes are known
+(`pipeline/notes.song_tuning`): a stem read later can settle it, and the MIDI of the stems read
+before is then rounded again from their notes files. If reading a stem fails the stems are
+still written and the job says so (`extras._read_notes`). `POST /v1/notes` reads stems that are
+already written; nothing in the app calls it yet. It is two steps: `read_stems` (seconds,
+writes nothing) and `write_notes`, which starts from the manifest as it is then and writes
+everything or puts every file back. A file that is not a stem's own is never written over or
+removed (`_in_the_way`; Melodyne saves its export as `<audio name>.mid` beside the audio). Its
+own are the ones the manifest names and ones that are, to the byte, what the app writes there
+(`_adopt`). The manifest is written before the files it names (a stem's notes file last), so a
+write cut short is finished by the next. Putting back is a rename: what a file held is parked
+beside it (`.old.tmp`) until the write is done. In the API process whatever rewrites a stem
+folder's manifest (notes, a tempo or key, hidden stems, a rename) holds `Service._folder`, one
+lock per folder, and is refused while the running job may be writing that folder
+(`Service._not_being_written`): do both in anything new that does. The cache:
+`KEYED_MIDI_STEMS` are the only names in a run's key, written as 0.4.x wrote them, and a song
+from the cache whose stems have no notes file, or notes from another transcriber, is read where
+it lies, not separated again (`Pipeline._with_notes`, `notes.stale`). Raise the number in
+`METHOD` (`pipeline/notes.py`) whenever the notes a stem gives change. Measured on clean
+recordings, and with the rest of a song under the stem as a stand-in for bleed; separated stems
+wait for the GPU. Nothing of it has been seen on a Mac, and its tests have not run on one (CI
+runs on pull requests and `main`). `docs/adr/0030-single-line-transcriber.md`,
 `docs/research/stem-to-midi.md` section 14.
 
 Dependencies point inward: `domain` imports nothing from the other packages and never imports

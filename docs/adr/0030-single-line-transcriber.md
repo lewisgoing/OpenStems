@@ -224,9 +224,10 @@ chords, tuning, velocity) is in `docs/research/stem-to-midi.md`, section 14.
 - **A pure sine is read poorly.** SwiftF0 was trained on sounds with harmonics. Of ten
   notes from E1 to E4 as steady pure sines the bass reading shows 9, and of the same notes
   dying away as an 808's do, 6; with a second harmonic 30 dB under the sine, all 10. A clean
-  sub-bass or a clean 808 may lose notes. Adding a little distortion in front of the pitch
-  tracker reads them, at a small cost on real recordings (section 14); it was not kept, and
-  wants trying on real 808s first.
+  sub-bass or a clean 808 may lose notes. A second look, with a little distortion added and
+  only where the first look heard no pitch, showed 9 of the 10 dying sines and left real
+  recordings as they were, with bleed too (section 14). It is not in the engine: it reads a
+  pure low B as the B above, doubles the tracker's work, and wants real 808s first.
 - **The chords mark errs under heavy bleed.** With the rest of its song 15 dB under it, a
   bass is mostly called chords (section 14): SwiftF0 is less sure of any pitch.
 - **A stem that is only bleed** but louder than the 45 dB that counts as empty (ADR 0027) is
