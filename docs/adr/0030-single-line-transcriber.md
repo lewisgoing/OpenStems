@@ -237,9 +237,12 @@ one. On the half nothing was fitted on: 0.775, 0.854 and 0.927. The rest (the le
 is read at, low bass, how far the confidence can be trusted, what the wrong notes are,
 chords, tuning, velocity) is in `docs/research/stem-to-midi.md`, section 14.
 
-- **Not measured on separated stems.** Phase 7's acceptance asks for separated stems, and
-  that run needs the GPU. The transcriber was run on the separated stems of the project's
-  three test songs as a check that it behaves; there is no reference to score those against.
+- **On separated stems, a first measure only.** 5 excerpts of 45 seconds from the held-out
+  bass songs went through the app's own `full-song` recipe (on the CPU, with the owner's
+  leave; the GPU is on hold), and the notes the run wrote beside the bass stem were scored:
+  0.945 on the separated stems against 0.970 on the clean ones (precision 0.980, recall 0.919); the old tracker scores 0.626 on the same separated stems. Phase 7's acceptance asks for every stem class and the whole set, which waits
+  for the GPU. The transcriber was also run on the separated stems of the project's three
+  test songs as a check that it behaves; there is no reference to score those against.
 - **A stand-in was measured in their place:** each held-out clip with the rest of a song
   under it (a bass with its own song's other stems; a voice or a guitar solo, which come
   alone, with a Slakh song's whole mix). Onset F1 of what is shown:
@@ -291,16 +294,28 @@ chords, tuning, velocity) is in `docs/research/stem-to-midi.md`, section 14.
 - **The lock on a folder goes by its path as it is spelled.** Two spellings of one folder
   (another case on a Mac, a link) would be two locks. The app has one spelling, the one the
   API gave it.
-- **Pure tones are proven on made sounds only.** Sines held, dying away, gliding, driven,
-  under noise, ducking under a kick and in notes of 110 ms were all made here (section 14).
-  A real clean 808 or sub-bass has not been read. Of the benchmark's 142 real basses three
-  count as mostly pure tone, and SwiftF0 reads those well already: there the fill takes 2
-  to 16 frames of some 16,800 and moves a stem's score by 0.003 at most, and the mean over
-  the 142 by 0.00005, alone or under their songs. Three things it does not do: a bass that
-  is pure tone only here and there (under half of it) is read as before; a sub that ducks
-  12 dB or more under a kick is cut at the beats, less than before, where it is one held
-  note; and a stem that holds nothing but a kick's low end gives a note for each kick, a
-  short kick too, which gave none (such a stem is bleed: the last limit here).
+- **A note struck again can be lost in a separated stem.** In one of the five separated
+  excerpts 12 of 43 notes ran into the note before them, each a second strike of the same
+  pitch: the stem's level rose as in the clean stem, but the onset in the spectrum, which a
+  strike also needs, was gone (section 14). The rule waits for more separated stems before
+  it is changed.
+- **The pure tone's own pitch is worth little on real sounds.** On clean sines made for the
+  tests it finds every note where SwiftF0 lost a third. Real sub-basses and 808s (two free
+  sample packs, section 14) carry enough above their fundamental for SwiftF0, which reads
+  them, low ones too: of 157 real sub-bass notes whose pitch is known, 118 read right
+  without it and 119 with it, and of 74 riffs 7 read otherwise. Of the benchmark's 142 real
+  basses three count as mostly pure tone, and a stem's score moves by 0.003 at most. So it
+  is there for the sine a software oscillator gives, and proven only on made ones.
+- **A sound whose pitch dives comes out as a staircase.** One 808 hit that falls 3 to 19
+  semitones while it rings is read as three notes or more (88 of 105 real 808 one-shots
+  dive like that; the 10 that hold their pitch read as one note). The pure tone's own
+  pitch follows more of the dive, so it is a longer staircase. Joining the pieces was
+  tried and not taken up: a dive has no one pitch to give the joined note.
+- **A sub that wobbles is cut at each wobble.** A real sub whose level or filter is swept
+  by an LFO reads at the right pitch but in several notes (18 of the 157). So does one that
+  ducks 12 dB or more under a kick, though less than before.
+- **A stem that holds nothing but a kick's low end** gives a note for each kick, a short
+  kick too, which gave none (such a stem is bleed: the last limit here).
 - **The chords mark errs under heavy bleed.** With the rest of its song 15 dB under it, a
   bass is mostly called chords (section 14): SwiftF0 is less sure of any pitch.
 - **A stem that is only bleed** but louder than the 45 dB that counts as empty (ADR 0027) is

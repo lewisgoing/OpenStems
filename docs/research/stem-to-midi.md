@@ -1302,20 +1302,79 @@ column; the first row that fits):
   - **What it leaves.** A sub that ducks under a kick is still cut at the beats: two held
     notes ducking 12 dB four times each come out as 3 notes (6 before), and ducking 20 dB
     as 8 (8 before, with one missing). A stem that is nothing but kicks gives a note per
-    kick, also for a kick with a tail of 60 ms, which gave none. And none of this has met a
-    real 808.
+    kick, also for a kick with a tail of 60 ms, which gave none.
   - Two other remedies were tried first. A little even-harmonic distortion in front of the
     pitch tracker read the dying sines and cost real recordings (guitar solos 0.840 to
     0.835, bass 0.946 to 0.945, the first pass on the development half). The tracker run a
     second time on the distorted stem, taken only where the first look heard no pitch, left
     real recordings alone but read a pure low B as the B above, and doubled the tracker's
     work.
+- **Real sub-basses and 808s.** Two free sample packs (MusicRadar's; they may not be passed
+  on, so they are not in the repository), read as a bass on 2026-11-26, with SwiftF0's
+  frames alone and with the pure tone's own pitch:
+  - **157 notes of 19 real sub-bass sounds,** each sampled at named notes, so the right
+    note is known. (Two of the sounds sound an octave above their names; they are counted
+    by what they sound.) One note at the right pitch: 118, and 119. Four files change, two
+    each way. Right pitch but cut into several notes: 19, and 18; those are sounds whose
+    level or filter wobbles, and each wobble reads as a strike. Several notes, some wrong:
+    18, and 19; nine of them are one kick-bass whose pitch dives.
+  - **74 sub-bass riffs:** 7 are read otherwise, 706 notes become 721. In two of them a
+    figure that is played twice was read differently the second time and now reads the
+    same both times. There are no reference notes for these.
+  - **105 one-shot 808s,** most of them kick-basses whose pitch dives 3 to 19 semitones
+    while they ring. The 10 that hold their pitch read as one note, before and now. The 88
+    that dive read as a staircase of notes, before and now, and the staircase now follows
+    more of the dive (three notes or more in 79 files, in 71 before).
+  - **121 sub kicks:** 183 notes become 243, for the same reason.
+  - So on real sounds the pure tone's own pitch is worth little either way. Real subs and
+    808s carry enough above their fundamental for SwiftF0, which reads them, the low ones
+    too. What it gains above it gains on clean sines, which is what a software oscillator
+    gives before anything is done to it.
+  - Joining the pieces of one diving hit into one note was tried on the 808s: several notes
+    in 55 files where there were 83. But a dive has no one pitch, and where the joined note
+    should lie is anybody's choice. Not taken up; it wants real 808 bass lines, not kicks.
+
+### On separated stems: a first measure
+
+5 excerpts of 45 seconds from the bass benchmark's held-out songs, separated by the app's
+own `full-song` recipe (on the CPU, the GPU being on hold: 13 minutes an excerpt on two
+cores), and the bass stem's notes as the run itself wrote them beside it, scored against
+Slakh's notes for that bass. Next to it, Slakh's own clean bass of the same 45 seconds.
+Onset F1:
+
+| Excerpt | Bass notes | Separated: the run's own notes | Separated: old tracker | Clean stem: this transcriber | Clean stem: old tracker |
+| --- | --- | --- | --- | --- | --- |
+| Track01877 | 176 | 0.940 | 0.526 | 0.950 | 0.529 |
+| Track01881 | 101 | 0.985 | 0.360 | 0.970 | 0.390 |
+| Track01884 | 85 | 0.994 | 0.880 | 0.994 | 0.880 |
+| Track01887 | 98 | 0.980 | 0.720 | 0.970 | 0.722 |
+| Track01889 | 43 | 0.827 | 0.647 | 0.965 | 0.625 |
+| mean | 503 | 0.945 | 0.626 | 0.970 | 0.629 |
+
+- 0.945 on the separated stems against 0.970 on the clean ones (precision 0.980, recall
+  0.919). The old tracker scores 0.626 on the same separated stems.
+- Three of the five lose nothing to separation or gain a little, and one loses 0.010. The
+  fifth loses 12 of its 43 notes (0.827 against 0.965), and every one of them stands next
+  to a note of the same pitch: a note struck again.
+  There the stem's level rises as it does in the clean stem (9 dB at those starts in
+  both), but the onset in the spectrum is gone: the separated stem shows one at none of the
+  12, the clean stem at all of them. A strike needs both (`struck_again`), so the two notes
+  run together. The onset rule was shaped on clean stems and on bleed, where the spectrum's
+  onset is the surer sign; a separator can take a pluck's click away and leave the swell.
+  One excerpt is not enough to change the rule on: a rise in level alone is also what a
+  bass ducking under a kick does when it comes back.
+- It is a first measure and no more: 5 excerpts, 503 notes, basses only, and Slakh's
+  instruments are sampled ones in tidy mixes. The songs were chosen before anything was
+  scored (the first five of the held-out half whose densest 45 seconds hold 40 bass notes
+  or more).
+- Phase 7's acceptance asks for more: every stem class, Melodyne and NeuralNote on the same
+  stems, and the whole set. That waits for the GPU, or for many more quarter-hours of this.
 
 ### Not measured
 
-- **Separated stems.** Phase 7's acceptance is on separated stems, and that run needs the
-  GPU. The stand-in above is not it. The thresholds, the weights and the level a stem is
-  read at all wait for the real thing.
+- **Separated stems, beyond the 5 bass excerpts above.** Phase 7's acceptance is on
+  separated stems of every class, and that run needs the GPU. The thresholds, the weights
+  and the level a stem is read at all wait for it.
   - The transcriber was run on the separated stems of the project's three test songs, to
     see that it behaves; there is no reference to score them against. The stems the app
     calls empty hold no notes. The basses give lines in a bass's range, one of them from a

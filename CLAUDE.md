@@ -656,10 +656,13 @@ folder (`Service._not_being_written`): do both in anything new that does. The ca
 from the cache whose stems have no notes file, or notes from another transcriber, is read where
 it lies, not separated again (`Pipeline._with_notes`, `notes.stale`). Raise the number in
 `METHOD` (`pipeline/notes.py`) whenever the notes a stem gives change. Measured on clean
-recordings, and with the rest of a song under the stem as a stand-in for bleed; separated stems
-wait for the GPU. Its tests ran on a Mac in CI on 2026-11-26 (pull request 48, `macos-15`);
-nothing of it has been seen on a Mac by hand. `docs/adr/0030-single-line-transcriber.md`,
-`docs/research/stem-to-midi.md` section 14.
+recordings, with the rest of a song under the stem as a stand-in for bleed, and on 5 bass
+excerpts the app separated on the CPU on 2026-11-26 (0.945 against 0.970 on the clean stems);
+every stem class on separated stems waits for the GPU. On real sub-basses and 808s (two sample
+packs on D:, not in the repository) the pure tone's own pitch changes little, and an 808 whose
+pitch dives reads as several notes. Its tests ran on a Mac in CI on 2026-11-26 (pull request 48,
+`macos-15`); nothing of it has been seen on a Mac by hand.
+`docs/adr/0030-single-line-transcriber.md`, `docs/research/stem-to-midi.md` section 14.
 
 Dependencies point inward: `domain` imports nothing from the other packages and never imports
 torch. `cli` and `api` are the only entry points.
