@@ -470,6 +470,9 @@ Gain and cost are judgments, to be confirmed in stage M0.
 
 ### Results so far (CPU only, 2026-11-23 and 24)
 
+"Today's YIN" in these tables is the tracker "Write MIDI" used until stage M3 replaced it
+(section 14), and the guitar rows are the first 30 solos; section 14 has all 180.
+
 GPU runs wait on the machine (the notes in `CLAUDE.md`), so these are the clean-audio
 condition only. Scores are mir_eval's defaults; "+offset" also needs the note's end.
 
@@ -717,11 +720,11 @@ Effort: S is days, M one to two weeks, L several weeks.
 - **Mac:** pure Python, no platform branch.
 - **Status (2026-11-24):** built and tested (`engine/tests/test_notes_midi.py`): the note
   object, tuning estimation and rounding, velocity from level, the version 1 notes file, and
-  the format 1 writer in all three pitch modes. mido reads its output in each mode. Still to
-  do:
-  - writing `<stem>.notes.json` beside each stem in the pipeline (the manifest, the API and
-    renaming by tempo and key carry it);
-  - the drift and modulation split and the polyphony rule, which wait for M3's curves.
+  the format 1 writer in all three pitch modes. mido reads its output in each mode.
+- **Since (2026-11-25, with M3):** a run writes `<stem>.notes.json` beside each stem it
+  reads, and the manifest, the API, a rename and a retag carry it. The polyphony rule is in
+  as a mark on the stem (section 14). Still to do: the split of drift from modulation in a
+  note's curve.
 
 ### M2: drums from the drum parts (S to M for M2a; M for M2b; highest gain per effort)
 

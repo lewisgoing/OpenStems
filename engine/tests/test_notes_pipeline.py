@@ -17,8 +17,14 @@ from openstems.audio.transcribe import Transcription
 from openstems.audio.write import write_audio
 from openstems.domain import OutputStem, PassSpec, Recipe
 from openstems.domain.errors import DomainError
-from openstems.domain.notes import Note, from_sidecar
-from openstems.pipeline.notes import find_notes, midi_from_sidecar, readable, song_tuning
+from openstems.domain.notes import MIDI_STEMS, Note, from_sidecar
+from openstems.pipeline.notes import (
+    find_notes,
+    midi_from_sidecar,
+    readable,
+    song_tuning,
+    stale,
+)
 from openstems.pipeline.rename import rename_song
 from openstems.pipeline.retag import set_analysis
 from openstems.pipeline.run import Pipeline, RunOptions, read_manifest
@@ -169,6 +175,69 @@ def test_a_cached_song_with_the_old_trackers_midi_is_read_again(catalog, store, 
     assert plain.stems[0].midi is None
 
 
+def test_the_cache_key_is_what_it_was_before_the_transcriber() -> None:
+    # A song separated by 0.4.x with Write MIDI on must still come from the cache: its key
+    # held the five names the setting had then, and holds exactly those now. The names the
+    # setting has gained are not in the key.
+    old = ["bass", "dry vocals", "lead", "melody", "vocals"]
+    assert RunOptions(midi_stems=list(MIDI_STEMS)).key_dict()["midi"] == old
+    assert (
+        RunOptions(midi_stems=old).key_dict() == RunOptions(midi_stems=list(MIDI_STEMS)).key_dict()
+    )
+    assert RunOptions(midi_stems=["lead vocals", "guitar"]).key_dict() == RunOptions().key_dict()
+    assert RunOptions(midi_stems=["bass"]).key_dict()["midi"] == ["bass"]
+    assert "notes" not in RunOptions(midi_stems=["bass"]).key_dict()
+
+
+def test_a_cached_songs_notes_are_read_when_they_are_missing_or_stale(
+    catalog, store, tmp_path
+) -> None:
+    pipeline = Pipeline(catalog, store)
+    first = pipeline.run(tune(tmp_path), full_song(), tmp_path / "out")
+    folder = Path(first.directory)
+    audio = folder / "Tune - guitar.wav"
+    written = audio.stat().st_mtime_ns
+    # MIDI asked for a stem whose name is not in the key: the song comes from the cache and
+    # that stem is read where it lies.
+    again = pipeline.run(
+        tune(tmp_path), full_song(), tmp_path / "out", RunOptions(midi_stems=["guitar"])
+    )
+    assert again.cached and audio.stat().st_mtime_ns == written
+    guitar = {s.name: s for s in again.stems}["guitar"]
+    assert guitar.notes == "Tune - guitar.notes.json" and guitar.midi == "Tune - guitar.mid"
+    notes_file = folder / guitar.notes
+    assert not stale(notes_file)
+    # Notes another version of the transcriber wrote are read again; current ones are kept.
+    held = notes_file.read_bytes()
+    pipeline.run(tune(tmp_path), full_song(), tmp_path / "out", RunOptions(midi_stems=["guitar"]))
+    assert notes_file.read_bytes() == held
+    data = json.loads(held)
+    data["method"] = "an earlier transcriber"
+    data["notes"] = []
+    notes_file.write_text(json.dumps(data), encoding="utf-8")
+    assert stale(notes_file) and stale(folder / "nothing.json")
+    pipeline.run(tune(tmp_path), full_song(), tmp_path / "out", RunOptions(midi_stems=["guitar"]))
+    assert notes_file.read_bytes() == held
+
+
+def test_a_separation_is_never_lost_to_its_midi(catalog, store, tmp_path, monkeypatch) -> None:
+    def broken(*_: Any, **__: Any) -> Transcription:
+        raise RuntimeError("the pitch tracker would not start")
+
+    monkeypatch.setattr("openstems.audio.transcribe.transcribe_line", broken)
+    monkeypatch.setattr("openstems.pipeline.notes.transcribe_line", broken)
+    pipeline = Pipeline(catalog, store)
+    options = RunOptions(midi_stems=["vocals"])
+    result = pipeline.run(tune(tmp_path), vocals_only(), tmp_path / "out", options)
+    stem = result.stems[0]
+    assert (Path(result.directory) / stem.file).is_file()
+    assert stem.midi is None and stem.notes is None
+    assert "vocals: its notes could not be read, so it has no MIDI" in result.manifest["notes"]
+    # From the cache the same: the stems are returned, whatever became of the notes.
+    again = pipeline.run(tune(tmp_path), vocals_only(), tmp_path / "out", options)
+    assert again.cached and again.stems[0].notes is None
+
+
 def test_a_new_tempo_rewrites_the_midi_from_the_notes_file(catalog, store, tmp_path) -> None:
     options = RunOptions(midi_stems=["vocals"])
     result = Pipeline(catalog, store).run(tune(tmp_path), vocals_only(), tmp_path / "out", options)
@@ -218,6 +287,7 @@ def test_the_songs_tuning_comes_from_a_stem_with_fixed_pitches() -> None:
         == -20.0
     )
     assert song_tuning({"bass": found("bass", -20.0, 0.5)}) == 0.0  # not sure enough
+    assert song_tuning({"bass": found("bass", 3.0, 0.99)}) == 0.0  # as good as A440
     assert song_tuning({}) == 0.0
 
 

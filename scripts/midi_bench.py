@@ -3,9 +3,9 @@
 The data comes from scripts/midi_bench_data.py (default D:\\lew-stems\\bench). Run from
 engine/, with mido and mir_eval added for the run only (they are not engine dependencies):
 
-    uv run --no-sync --with mido==1.3.3 --with mir_eval==0.8.2 --with swift-f0==0.3.0 \\
-        python ../scripts/midi_bench.py score [--sets guitarset,vocadito] \\
-        [--methods yin,annotator2,swiftf0-midi,melodyne,neuralnote] [--pack-only]
+    uv run --with mido==1.3.3 --with mir_eval==0.8.2 \\
+        python ../scripts/midi_bench.py score [--sets guitarset,vocadito,slakh,slakh-low] \\
+        [--methods yin,openstems,openstems-midi,annotator2,melodyne,neuralnote] [--pack-only]
     ... midi_bench.py pack     # audio for Melodyne and NeuralNote, with instructions
 
 Methods:
@@ -13,8 +13,8 @@ Methods:
 - ``openstems``, ``openstems-midi``: the engine's transcriber for single-line stems (stage
   M3, ``openstems.audio.transcribe``): its notes at their exact pitch, and as the keys its
   MIDI file holds.
-- ``yin``: the engine's transcriber up to 0.4.4 (``_yin_notes`` here), the
-  baseline to beat. Monophonic, so polyphonic guitar is expected to score low.
+- ``yin``: the engine's transcriber up to 0.4.6 (``_yin_notes`` here), the baseline it
+  replaced. Monophonic, so polyphonic guitar is expected to score low.
 - ``annotator2``: vocadito's second annotator scored against the first, the human ceiling.
 - ``pyin``, ``swiftf0``, ``swiftf0-notes``, ``crepe``: pitch trackers (see below).
 - ``swiftf0-midi``: ``swiftf0-notes`` as the whole keys the app's MIDI file would carry (M1's
@@ -275,9 +275,10 @@ def load_slakh(bench: Path, ids: list[str] | None) -> list[Item]:
 # Low bass. No Slakh bass note lies under SwiftF0's 46.9 Hz floor, so the set does not test
 # what a real bass does there: a 4-string's low E is 41.2 Hz and a 5-string's low B 30.9 Hz.
 # This set is Slakh's own bass stems played slower, as a tape would: every pitch moves down
-# by LOW_SHIFT semitones (a G1 becomes a C1, 32.7 Hz) and every time stretches by the same
-# ratio, reference included. A slowed bass is harder than a real low one, since every error
-# in time stretches too: read its scores against each other, not against the plain set's.
+# by LOW_SHIFT semitones (Slakh's lowest bass note, an A1 at 55 Hz, becomes a D1 at 36.7 Hz)
+# and every time stretches by the same ratio, reference included. A slowed bass is harder
+# than a real low one, since every error in time stretches too: read its scores against each
+# other, not against the plain set's.
 LOW_SHIFT = 7
 
 
@@ -328,7 +329,7 @@ def _yin_notes(
     fmax: float = 1200.0,
     min_note_seconds: float = 0.08,
 ) -> list[tuple[float, float, int, int]]:
-    """The engine's transcriber up to 0.4.4 (``analysis.track_notes``), kept here as the
+    """The engine's transcriber up to 0.4.6 (``analysis.track_notes``), kept here as the
     baseline the new one is measured against: YIN per frame, frames too quiet unvoiced, a
     five-frame median, runs of one semitone as notes."""
     import librosa
@@ -372,7 +373,7 @@ def _yin_notes(
     return merged
 
 
-# The pitch range the old transcriber searched per stem (``pipeline/extras.py`` up to 0.4.4).
+# The pitch range the old transcriber searched per stem (``pipeline/extras.py`` up to 0.4.6).
 _RANGES: dict[str, tuple[float, float]] = {
     "bass": (30.0, 400.0),
     "vocals": (70.0, 1100.0),
@@ -420,7 +421,7 @@ def method_annotator2(item: Item, bench: Path) -> list[Note] | None:
 
 
 # Pitch trackers compared on equal terms: each one's pitch and voicing go through the same
-# note segmentation as today's engine (semitone runs, a 5-frame median, 80 ms minimum), so
+# note segmentation as the old tracker's (semitone runs, a 5-frame median, 80 ms minimum), so
 # only the tracker differs. ``swiftf0-notes`` instead uses SwiftF0's own segmenter (MIT).
 
 
@@ -954,7 +955,7 @@ finds each export's tempo file by the moment both were written.
 NeuralNote: load the file and export with the default settings.
 
 When both are in midi/, run the scorer with
---pack-only --methods yin,swiftf0-notes,swiftf0-midi,melodyne,neuralnote.
+--pack-only --methods yin,openstems,openstems-midi,melodyne,neuralnote.
 
 Files and the Melodyne algorithm for each:
 """

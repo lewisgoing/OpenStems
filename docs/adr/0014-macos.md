@@ -324,6 +324,18 @@ The rest has not been seen at all.
   through the Mac's output, and clips dragged into a DAW and into Finder. Its words and keys
   are covered on Windows with the platform patched; its ten steps are in ADR 0023.
 
+- **Stem to MIDI** (ADR 0030): nothing of it has been seen on a Mac, and its tests have not
+  run on one yet (they run in CI once its pull request is open). It adds `onnxruntime`,
+  whose Apple Silicon wheel needs macOS 14, to what first-run setup installs; that install
+  has not been seen. The transcriber runs on the CPU, so there is no MPS path. Steps:
+  1. In a development checkout: `uv run --no-sync pytest tests/test_swiftf0.py
+     tests/test_transcribe.py tests/test_notes_pipeline.py`. All should pass.
+  2. In the app: Settings > turn on "Write MIDI", separate a song with a clear vocal and a
+     bass with "Full song". The vocals and bass rows should each show the MIDI handle.
+  3. Drag a `.mid` into a DAW at the song's tempo: the notes should sit on the stem.
+  4. In the stem folder there should be a `.notes.json` beside each `.mid`.
+  5. If a song's row says "its notes could not be read", send `engine.log`.
+
 Not built: dropping files on the menu bar item itself. Queuing lives in the windows, and the
 quick-drop window is one click away.
 

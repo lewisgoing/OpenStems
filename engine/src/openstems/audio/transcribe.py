@@ -13,8 +13,9 @@ How it works, in the order the code runs. Every figure is from the benchmark in
    would run the two together. A voice is never split this way: it did not help.
 3. **Candidates.** A second, more willing pass finds notes the first one left out. They are
    kept, with a low confidence, for the "more notes" end of the editor's sensitivity.
-4. **Starts.** A pitch takes a few periods to settle, so a bass note's start is moved back
-   to where its sound begins. On a voice the start stays where the pitch starts.
+4. **Starts.** A pitch takes a few periods to settle, so on a bass or any plucked line a
+   note's start is moved back to where its sound begins (worth 7 points of F1 on bass, next
+   to nothing on guitar). On a voice the start stays where the pitch starts.
 5. **Per note:** a confidence (a small logistic model over what the note cost and how it
    sounds, fitted by ``scripts/midi_calibrate.py``), a velocity from its level, and its
    pitch curve.
@@ -36,8 +37,9 @@ from openstems.domain.notes import Note, estimate_tuning, line_kind
 RATE = 16000  # SwiftF0's sample rate
 HOP = 256
 FRAME_S = HOP / RATE  # 16 ms: one SwiftF0 frame
-FLOOR_HZ = 46.875  # the lowest pitch SwiftF0 reports
-LOW_BELOW_HZ = 58.0  # the double-speed pass is trusted for pitches under this
+# SwiftF0 reports no pitch under 46.875 Hz. The double-speed pass is trusted for pitches
+# under this: 58 scored best on the slowed bass set, against 70, 85 and 110.
+LOW_BELOW_HZ = 58.0
 NOTE_COST = 5.0  # what a note must earn: 80 ms of frames (SwiftF0's default)
 CANDIDATE_COST = 3.0  # the more willing pass: cheaper notes,
 CANDIDATE_BIAS = 1.0  # and frames that count as a little more voiced than they scored
@@ -60,89 +62,43 @@ class Profile:
     snap: bool  # move each start back to the note's attack
     low: bool  # a second pass at double speed, for notes under SwiftF0's floor
     program: int  # General MIDI program for the stem's MIDI file
+    # The confidence model: weights for `_features` and `_context`, and the confidence at or
+    # above which a note is shown.
+    weights: tuple[float, ...]
+    threshold: float
     # The pitches SwiftF0 is asked for, in Hz (None: its own limit). A separated stem holds a
     # little of the other parts, and without a range a bass gave the odd note three octaves up.
     lowest: float | None = None
     highest: float | None = None
-    # The confidence model: weights for `_features`, fitted on the benchmark's clean stems
-    # by scripts/midi_calibrate.py, and the confidence at or above which a note is shown.
-    weights: tuple[float, ...] = ()
-    threshold: float = 0.5
 
 
-# Fitted by `scripts/midi_calibrate.py fit` on every other clip of each set (2026-11-25), and
-# measured on the clips between: the figures in docs/research/stem-to-midi.md, section 14.
+# Weights and thresholds: `scripts/midi_calibrate.py fit` on every other clip of each set
+# (2026-11-25, never typed by hand), measured on the clips between. The figures are in
+# docs/research/stem-to-midi.md, section 14.
+# fmt: off
 PROFILES = {
     "voice": Profile(
-        "voice",
-        onsets=None,
-        superflux=True,
-        snap=False,
-        low=False,
-        program=53,
-        lowest=65.0,  # C2 to about C6
-        highest=1100.0,
-        weights=(
-            1.0722,
-            0.2869,
-            -0.6253,
-            -0.3026,
-            1.1015,
-            -1.702,
-            -0.6398,
-            -0.7566,
-            -1.5878,
-            0.0707,
-            0.1393,
-        ),
-        threshold=0.42,
+        "voice", onsets=None, superflux=True, snap=False, low=False, program=53,
+        lowest=65.0, highest=1100.0,  # C2 to about C6
+        weights=(1.0847, 0.2914, -0.6388, -0.3196, 1.0705, -1.7529,
+                 -0.6489, -0.7184, -1.5137, 0.0629, 0.1429),
+        threshold=0.45,
     ),
     "bass": Profile(
-        "bass",
-        onsets=2.0,
-        superflux=False,
-        snap=True,
-        low=True,
-        program=33,
+        "bass", onsets=2.0, superflux=False, snap=True, low=True, program=33,
         highest=800.0,  # every Slakh bass note lies under 784 Hz
-        weights=(
-            -7.4653,
-            0.2182,
-            0.2209,
-            0.2643,
-            0.0861,
-            -3.8523,
-            1.4008,
-            -1.114,
-            -0.0301,
-            9.2843,
-            12.2238,
-        ),
+        weights=(-7.4650, 0.2179, 0.2220, 0.2641, 0.0846, -3.8522,
+                 1.3998, -1.1136, -0.0304, 9.2834, 12.2245),
         threshold=0.68,
     ),
     "line": Profile(
-        "line",
-        onsets=2.5,
-        superflux=True,
-        snap=True,
-        low=False,
-        program=0,
-        weights=(
-            1.5437,
-            -0.2816,
-            0.9475,
-            1.3377,
-            0.8386,
-            -2.902,
-            -0.5748,
-            -0.4031,
-            -2.7832,
-            1.2124,
-            3.9553,
-        ),
+        "line", onsets=2.5, superflux=True, snap=True, low=False, program=0,
+        weights=(1.5437, -0.2816, 0.9475, 1.3377, 0.8386, -2.9020,
+                 -0.5748, -0.4031, -2.7832, 1.2124, 3.9553),
         threshold=0.52,
     ),
 }
+# fmt: on
 
 
 @dataclass(frozen=True)
@@ -502,8 +458,6 @@ def _context(
 
 
 def _confidence(features: tuple[float, ...], profile: Profile) -> float:
-    if not profile.weights:  # not fitted yet: the default pass's notes above the candidates
-        return 0.4 if features[CANDIDATE] else 0.8
     z = profile.weights[0] + sum(w * x for w, x in zip(profile.weights[1:], features, strict=True))
     return 1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, z))))
 

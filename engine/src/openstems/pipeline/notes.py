@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Iterable, Mapping
+from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +32,10 @@ from openstems.domain.notes import (
 from openstems.domain.stem import MANIFEST_NAME
 from openstems.pipeline.run import read_manifest
 
-METHOD = "swift-f0 0.3.0, line segmenter 1"
+# What wrote a notes file: SwiftF0's version and this transcriber's own. A cached song whose
+# notes say otherwise is read again (`stale`), so raise the last number whenever the notes a
+# stem gives change: a new weight, a new rule.
+METHOD = f"swift-f0 {version('swift-f0')}, line segmenter 1"
 # A song's MIDI is rounded to keys in the song's own tuning only when the notes of a stem
 # with fixed pitches (not a voice) agree on one this tightly. Otherwise keys are at A440.
 TUNING_STRENGTH = 0.7
@@ -85,6 +89,20 @@ def sidecar_of(transcription: Transcription, *, stem: str, tuning: float) -> dic
     )
 
 
+def failed_note(stem: str) -> str:
+    """What a job says of a stem whose notes could not be read at all."""
+    return f"{stem}: its notes could not be read, so it has no MIDI"
+
+
+def stale(notes_file: Path) -> bool:
+    """Whether a notes file is another transcriber's work (or cannot be read)."""
+    try:
+        data = json.loads(notes_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True
+    return not isinstance(data, dict) or data.get("method") != METHOD
+
+
 def chords_note(stem: str) -> str:
     """What a job says of a stem that plays chords and was read as a line all the same."""
     return f"{stem} plays chords: its MIDI holds one line of them"
@@ -112,8 +130,9 @@ def midi_from_sidecar(data: Any, *, name: str, bpm: float | None, key: str | Non
     )
 
 
-def write_json(path: Path, data: dict[str, Any]) -> None:
-    path.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+def dump(data: dict[str, Any]) -> bytes:
+    """A notes file's bytes: compact, since a long stem holds thousands of curve points."""
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
 # -- a stem that is already written ---------------------------------------------------------
@@ -162,6 +181,7 @@ def find_notes(directory: Path, files: list[str]) -> dict[str, Any]:
     tuning = _tuning_in_use(directory, stems.values()) or song_tuning(found)
 
     written: list[Path] = []
+    unneeded: list[Path] = []  # a MIDI file of a stem that holds no notes this time
     there = {path.name for path in directory.iterdir()}
     try:
         for stem in chosen:
@@ -169,9 +189,7 @@ def find_notes(directory: Path, files: list[str]) -> dict[str, Any]:
             transcription = found[name]
             base = Path(str(stem["file"])).stem
             notes_path = directory / (base + NOTES_SUFFIX)
-            _replace(
-                notes_path, _dump(sidecar_of(transcription, stem=name, tuning=tuning)), written
-            )
+            _replace(notes_path, dump(sidecar_of(transcription, stem=name, tuning=tuning)), written)
             stem["notes"] = notes_path.name
             shown = transcription.shown()
             midi_path = directory / (base + MIDI_SUFFIX)
@@ -188,7 +206,7 @@ def find_notes(directory: Path, files: list[str]) -> dict[str, Any]:
                 stem["midi"] = midi_path.name
             else:
                 if stem.get("midi"):
-                    (directory / str(stem["midi"])).unlink(missing_ok=True)
+                    unneeded.append(directory / str(stem["midi"]))
                 stem["midi"] = None
         # What the song's notes say of the stems read now: said once, and taken back for a
         # stem that reads as a line this time.
@@ -211,11 +229,10 @@ def find_notes(directory: Path, files: list[str]) -> dict[str, Any]:
         raise DomainError(
             f"a file is open in another program, so its notes were not written ({which})"
         ) from exc
+    # Only now, with the manifest saying so: until here a failure left every old file.
+    for path in unneeded:
+        path.unlink(missing_ok=True)
     return manifest
-
-
-def _dump(data: dict[str, Any]) -> bytes:
-    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
 def _replace(path: Path, data: bytes, written: list[Path]) -> None:

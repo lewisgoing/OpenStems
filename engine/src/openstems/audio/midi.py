@@ -1,12 +1,12 @@
-"""Standard MIDI File writing: format 0 for plain notes (``midi_bytes``, what the pipeline
-writes today) and format 1 with parts, pitch bends and MPE (``midi_file_bytes``, Phase 7)."""
+"""Standard MIDI Files (Phase 7): ``midi_file_bytes`` writes parts as plain notes, pitch bends
+or MPE, in one track per part or, for a stem's own file, in a single track. ``read_midi_notes``
+and ``read_tracks`` read them back, for the tests."""
 
 from __future__ import annotations
 
 import struct
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from pathlib import Path
 
 from openstems.domain.notes import Note as NoteObject
 from openstems.domain.notes import round_pitch
@@ -24,41 +24,9 @@ def _varlen(value: int) -> bytes:
     return bytes(reversed(out))
 
 
-def midi_bytes(notes: list[Note], bpm: float = 120.0, name: str = "") -> bytes:
-    """Notes as a format-0 MIDI file. Times are placed on the grid of ``bpm``, so the
-    clip lines up with the project when the DAW runs at the same tempo."""
-    bpm = bpm if bpm and bpm > 0 else 120.0
-    ticks_per_second = TICKS_PER_BEAT * bpm / 60.0
-    events: list[tuple[int, int, bytes]] = []  # tick, order (offs before ons), bytes
-    for start, end, note, velocity in notes:
-        on = max(0, round(start * ticks_per_second))
-        off = max(on + 1, round(end * ticks_per_second))
-        pitch = min(127, max(0, int(note)))
-        events.append((on, 1, bytes([0x90, pitch, min(127, max(1, int(velocity)))])))
-        events.append((off, 0, bytes([0x80, pitch, 0])))
-    events.sort(key=lambda e: (e[0], e[1]))
-
-    track = bytearray()
-    if name:
-        text = name.encode("utf-8")[:120]
-        track += b"\x00\xff\x03" + _varlen(len(text)) + text
-    tempo = round(60_000_000 / bpm)
-    track += b"\x00\xff\x51\x03" + tempo.to_bytes(3, "big")
-    last = 0
-    for tick, _, data in events:
-        track += _varlen(tick - last) + data
-        last = tick
-    track += b"\x00\xff\x2f\x00"
-    header = b"MThd" + struct.pack(">IHHH", 6, 0, 1, TICKS_PER_BEAT)
-    return header + b"MTrk" + struct.pack(">I", len(track)) + bytes(track)
-
-
-def write_midi(path: Path, notes: list[Note], bpm: float = 120.0, name: str = "") -> None:
-    path.write_bytes(midi_bytes(notes, bpm, name))
-
-
 def read_midi_notes(data: bytes) -> tuple[list[Note], float]:
-    """Parse a file written by :func:`midi_bytes` back into notes and its tempo."""
+    """A single-track file of plain notes (``midi_file_bytes`` with ``single_track``) back
+    as its notes, in seconds, and its tempo."""
     if data[:4] != b"MThd":
         raise ValueError("not a MIDI file")
     division = struct.unpack(">H", data[12:14])[0]
@@ -209,8 +177,9 @@ def midi_file_bytes(
     single_track: bool = False,
 ) -> bytes:
     """A format 1 file: a conductor track (tempo, 4/4, key signature), then one track per
-    part. Times are placed on the grid of ``bpm`` as in :func:`midi_bytes`. Drum parts go
-    on channel 10 as plain notes whatever ``pitch`` is.
+    part. Times are placed on the grid of ``bpm``, so the notes line up with the project
+    when the DAW runs at the same tempo. Drum parts go on channel 10 as plain notes whatever
+    ``pitch`` is.
 
     ``single_track`` writes one part as a format 0 file instead, the tempo and key in the
     part's own track: what a stem's own MIDI file is, since every program that reads MIDI

@@ -6,6 +6,7 @@ stems keep the source's length, start and level.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ from openstems.engines.base import CancelToken
 from openstems.pipeline.levels import measure_peak
 
 NORMALIZE_PEAK_DB = -1.0
+log = logging.getLogger(__name__)
 
 
 def post_process(
@@ -29,7 +31,8 @@ def post_process(
     sample_rate: int = 44100,
 ) -> dict[str, Any]:
     """Returns extras for the writer: ``bpm``, ``key``, ``downbeat`` (where bar 1 starts,
-    in seconds), ``trim`` and ``midi``.
+    in seconds), ``trim``, and for stem to MIDI ``midi`` and ``notes`` (a writer per stem)
+    and ``said`` (what the job should say of it).
 
     ``outputs`` is modified in place when normalization is on.
     """
@@ -96,17 +99,24 @@ def _read_notes(
     from openstems.pipeline import notes
 
     found = {}
+    failed = []
     for name in notes.readable(outputs, wanted, peaks):
         trimmed = extras["trim"].get(name)
         audio = outputs[name] if trimmed is None else trimmed
-        found[name] = transcribe_line(audio, sample_rate, name)
+        try:
+            found[name] = transcribe_line(audio, sample_rate, name)
+        except Exception:
+            # The stems are what the run is for: they are written whatever became of the
+            # notes, and the job says which stem has none.
+            log.exception("stem to MIDI failed for %s", name)
+            failed.append(name)
         cancel.raise_if_cancelled()
     tuning = notes.song_tuning(found)
-    extras["said"] = notes.job_notes(found)
+    extras["said"] = [*notes.job_notes(found), *map(notes.failed_note, failed)]
     extras["notes"] = {}
     for name, transcription in found.items():
         sidecar = notes.sidecar_of(transcription, stem=name, tuning=tuning)
-        extras["notes"][name] = _writer(notes.write_json, sidecar)
+        extras["notes"][name] = _writer(Path.write_bytes, notes.dump(sidecar))
         shown = transcription.shown()
         if shown:
             data = notes.midi_of(

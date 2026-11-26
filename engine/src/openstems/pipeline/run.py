@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import sys
@@ -26,7 +27,7 @@ from openstems.domain.grid import SongPart, clean_selection, part_downbeat
 from openstems.domain.memory import CPU_NOTE
 from openstems.domain.model import ModelSpec
 from openstems.domain.naming import DEFAULT_TEMPLATE, render_name, safe_component
-from openstems.domain.notes import MIDI_SUFFIX, NOTES_SUFFIX
+from openstems.domain.notes import KEYED_MIDI_STEMS, MIDI_SUFFIX, NOTES_SUFFIX
 from openstems.domain.quality import RunSettings, resolve_settings
 from openstems.domain.recipe import MIX, Recipe, check_against_models, split_ref
 from openstems.domain.stem import (
@@ -45,6 +46,7 @@ from openstems.pipeline.levels import measure_peak
 
 PEAKS_DIR = ".peaks"
 SAMPLE_RATE = 44100
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -83,7 +85,8 @@ class RunOptions:
             "trim_silence": self.trim_silence,
             "normalize": self.normalize,
             "tempo_key": self.detect_tempo_key,
-            "midi": sorted(self.midi_stems),
+            # The names 0.4.x could ask for, as it wrote them (`KEYED_MIDI_STEMS`).
+            "midi": sorted(set(self.midi_stems) & KEYED_MIDI_STEMS),
             # Only when on, so the cache key of every earlier run stays what it was.
             **({"tempo_sync": True} if self.tempo_sync else {}),
             # Only for a part, so every other run keeps its key: the frames separated.
@@ -218,21 +221,29 @@ class Pipeline:
 
     @staticmethod
     def _with_notes(out_dir: Path, cached: StemSet, options: RunOptions) -> StemSet:
-        """A cached result whose MIDI an earlier transcriber wrote, read again. Its stems
-        have a MIDI file and no notes file. They are read as they lie on the disk: the song
-        is not separated again for it."""
+        """A cached result with the notes this run asks for. A stem that has no notes file
+        (it was separated without MIDI, or by a version that wrote only the MIDI), or whose
+        notes another version of the transcriber wrote, is read as it lies on the disk: the
+        song is not separated again for it."""
         if not options.midi_stems:
             return cached
-        from openstems.pipeline.notes import find_notes, readable
+        from openstems.pipeline.notes import find_notes, readable, stale
 
         peaks = {s.name: s.peak for s in cached.stems}
         names = readable([s.name for s in cached.stems], options.midi_stems, peaks)
-        files = [s.file for s in cached.stems if s.name in names and not s.notes]
+        files = [
+            s.file
+            for s in cached.stems
+            if s.name in names and (not s.notes or stale(out_dir / s.notes))
+        ]
         if not files:
             return cached
         try:
             manifest = find_notes(out_dir, files)
-        except DomainError:  # a file in the way, or one open elsewhere: the old MIDI stays
+        except DomainError:  # a file in the way, or one open elsewhere: what is there stays
+            return cached
+        except Exception:  # the cached stems are good whatever became of their notes
+            log.exception("stem to MIDI failed on the cached stems in %s", out_dir)
             return cached
         return stem_set_from_manifest(out_dir, manifest) or cached
 

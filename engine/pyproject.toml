@@ -29,6 +29,7 @@ dependencies = [
     # does). Both are pinned to the versions the benchmark's figures were measured with.
     "swift-f0==0.3.0",
     "onnxruntime==1.32.0",
+    "soxr>=1.0",  # the resampler in front of SwiftF0 (librosa already brings it)
 ]
 
 [project.scripts]

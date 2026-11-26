@@ -93,6 +93,11 @@ MIXTURE_STEMS = frozenset({"instrumental", "drumless", "no-drums", "clean", "dry
 # The stems that get a MIDI file when the write_midi setting is on: the ones that are a
 # single line by nature, and the melody recipe's stem.
 MIDI_STEMS = tuple(sorted(VOICE_STEMS | BASS_STEMS | {"melody"}))
+# The names that are in a run's cache key when MIDI is asked for them: the five the setting
+# named up to 0.4.6. They stay as they were, so a song separated then still comes from the
+# cache. No other name enters the key: a cached song's stems are read where they lie
+# (`Pipeline._with_notes`), which needs no new separation.
+KEYED_MIDI_STEMS = frozenset({"bass", "vocals", "dry vocals", "lead", "melody"})
 
 
 def line_kind(stem: str) -> str | None:

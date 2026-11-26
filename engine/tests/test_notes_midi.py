@@ -14,7 +14,6 @@ from openstems.audio.midi import (
     TICKS_PER_BEAT,
     Part,
     key_signature,
-    midi_bytes,
     midi_file_bytes,
     read_midi_notes,
     read_tracks,
@@ -284,7 +283,7 @@ def test_key_signatures() -> None:
 
 
 def test_read_tracks_reads_running_status_and_format_0() -> None:
-    data = midi_bytes([(0.0, 0.5, 60, 100)])
+    data = midi_file_bytes([Part("p", [Note(0.0, 0.5, 60.0)])], single_track=True)
     fmt, _, tracks = read_tracks(data)
     assert fmt == 0 and _notes_of(tracks[0]) == [(0, 60, 100, 0, 480)]
     assert read_midi_notes(data)[0] == [(0.0, 0.5, 60, 100)]  # format 0 is unchanged

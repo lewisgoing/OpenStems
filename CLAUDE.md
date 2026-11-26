@@ -59,7 +59,8 @@ Engine (run from `engine/`):
   - `uv run --with mir_eval==0.8.2 --with mido==1.3.3 python ../scripts/midi_calibrate.py fit|report`:
     fit the transcriber's confidence model on every other clip and print the `weights` and
     `threshold` for `PROFILES` (`fit`), or say how far the weights now in the code can be
-    trusted on the clips between (`report`). Frames are cached in `<bench>/cache/f0`
+    trusted on the clips between (`report`). Each clip's audio and frames are kept in
+    `<bench>/cache/f0`: delete it after changing how frames are made
 - `python ../scripts/compare_builds.py run --out DIR MODEL...` in each environment, then
   `compare DIR DIR`: the same stems from two PyTorch builds (on the CPU)
 - `uv run pytest tests/test_links_mixes.py`: links and mixes, with a stand-in for the fetch
@@ -589,27 +590,33 @@ it differently, `null` when it is cleared), its readout says "Start separates on
 <label>.", and the queue rows of both windows add "<label> only" (`statusText`, `jobRange`).
 Off, the editor sends nothing and nothing mentions a part. `docs/adr/0023-trimmer.md`.
 
-Stem to MIDI: with `write_midi` on (off by default), or through `POST /v1/notes` for stems
-already written, a stem that plays one note at a time is read by `audio/transcribe.py`
-(`transcribe_line`: no torch, so the API process may call it). SwiftF0 gives a pitch every
-16 ms; its own segmenter, ported there, cuts them into notes. The stem's name picks one of
-three profiles (`domain/notes.line_kind`): `voice`, `bass` (a second pass at double speed for
-notes under SwiftF0's 46.9 Hz floor, starts moved back to the attack) and `line` for any
-other pitched stem; drums and mixtures are not read. `MIDI_STEMS` is what the setting reads
+Stem to MIDI: with `write_midi` on (off by default), a stem that plays one note at a time is
+read by `audio/transcribe.py` (`transcribe_line`: no torch, so the API process may call it).
+SwiftF0 gives a pitch every 16 ms; its own segmenter, ported there, cuts them into notes. The
+stem's name picks one of three profiles (`domain/notes.line_kind`): `voice`, `bass` (a second
+pass at double speed for notes under SwiftF0's 46.9 Hz floor) and `line` for any other pitched
+stem; `bass` and `line` cut a note where it is struck again and move each start back to the
+attack. Drums, mixtures and empty stems are not read. `MIDI_STEMS` is what the setting reads
 by itself: voices, basses and `melody`. Every note has a confidence from a logistic model
-whose weights are in `PROFILES` (fitted by `scripts/midi_calibrate.py`: never typed by hand);
-a profile's `threshold` is where a note counts. `pipeline/notes.py` writes two files beside
-the stem: `<stem>.notes.json` (`domain/notes.py`: every note, the threshold, the tuning, and
-`texture`, `chords` for a stem that plays several notes at once and was read as one line)
-and `<stem>.mid`, the notes that count, one track, on the song's tempo and key. A stem with
-no notes gets the notes file alone. `Stem.notes` and `StemFile.notes` carry it; `STEM_FILES`
-(`domain/stem.py`) names the files a rename or a replaced run must take along. A retag
-writes the MIDI again from the notes file (`retag._rewrite_midi`). The keys are at A440
-unless a stem with fixed pitches agrees firmly on another tuning (`notes.song_tuning`).
-A song that comes from the cache with MIDI asked for and stems that have no notes file (the
-old tracker's) is read again where it lies, not separated again (`Pipeline._with_notes`).
-Measured on clean recordings only; separated stems wait for the GPU.
-`docs/adr/0028-single-line-transcriber.md`, `docs/research/stem-to-midi.md` section 14.
+whose weights are in `PROFILES` (printed by `scripts/midi_calibrate.py fit`: never typed by
+hand); a profile's `threshold` is where a note counts. `pipeline/notes.py` writes two files
+beside the stem: `<stem>.notes.json` (`domain/notes.py`: every note, the threshold, the
+tuning, what wrote it, and `texture`, `chords` for a stem that plays several notes at once
+and was read as one line) and `<stem>.mid`, the notes that count, one track, on the song's
+tempo and key. A stem in which no note counts gets the notes file alone. `Stem.notes` and
+`StemFile.notes` carry it; `STEM_FILES` (`domain/stem.py`) names the files a rename or a
+replaced run must take along. A retag writes the MIDI again from the notes file
+(`retag._rewrite_midi`). The keys are at A440 unless a stem with fixed pitches agrees firmly
+on another tuning (`pipeline/notes.song_tuning`). If reading a stem fails the stems are still
+written and the job says so (`extras._read_notes`). `POST /v1/notes` reads stems that are
+already written; nothing in the app calls it yet. The cache: `KEYED_MIDI_STEMS` are the
+only names in a run's key, written as 0.4.x wrote them, and a song from the cache whose
+stems have no notes file, or notes from another transcriber, is read where it lies, not
+separated again (`Pipeline._with_notes`, `notes.stale`). Raise the number in `METHOD`
+(`pipeline/notes.py`) whenever the notes a stem gives change. Measured on clean recordings
+only; separated stems wait for the GPU. Nothing of it has been seen on a Mac, and its tests
+have not run on one (CI runs on pull requests and `main`). `docs/adr/0030-single-line-transcriber.md`,
+`docs/research/stem-to-midi.md` section 14.
 
 Dependencies point inward: `domain` imports nothing from the other packages and never imports
 torch. `cli` and `api` are the only entry points.

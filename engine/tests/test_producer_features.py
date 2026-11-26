@@ -12,7 +12,7 @@ import soundfile as sf
 from openstems.api.watcher import FolderWatcher
 from openstems.audio import analysis
 from openstems.audio.decode import decode, probe
-from openstems.audio.midi import midi_bytes, read_midi_notes
+from openstems.audio.midi import read_midi_notes
 from openstems.audio.write import read_audio, write_audio
 from openstems.domain import OutputStem, PassSpec, Recipe
 from openstems.domain.tempo import (
@@ -203,17 +203,6 @@ def test_trim_silence_cuts_both_ends_and_records_the_offset(pipeline, tmp_path) 
 
 
 # -- stem to MIDI -----------------------------------------------------------------
-
-
-def test_midi_round_trip() -> None:
-    notes = [(0.0, 0.5, 60, 100), (0.5, 1.0, 64, 90), (1.25, 2.0, 67, 80)]
-    data = midi_bytes(notes, bpm=120.0, name="Song bass")
-    assert data[:4] == b"MThd" and b"MTrk" in data
-    back, bpm = read_midi_notes(data)
-    assert bpm == pytest.approx(120.0)
-    assert [(n, v) for _, _, n, v in back] == [(60, 100), (64, 90), (67, 80)]
-    for (a, b, _, _), (c, d, _, _) in zip(back, notes, strict=True):
-        assert a == pytest.approx(c, abs=0.005) and b == pytest.approx(d, abs=0.005)
 
 
 def test_pipeline_writes_a_midi_file_next_to_the_stem(catalog, store, tmp_path) -> None:
