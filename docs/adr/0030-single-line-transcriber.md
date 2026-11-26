@@ -33,7 +33,7 @@ writes what it finds.
   58 Hz replace the first pass's.
 - **Starts:** on a bass and on any other plucked line, a note's start moves back to where
   its level rises fastest. A pitch takes a few periods to settle, and on Slakh's basses the
-  pitch alone came 25 ms late. A voice's starts are left where the pitch starts.
+  pitch alone came 28 ms late. A voice's starts are left where the pitch starts.
 - **Three profiles** by the stem's name (`domain/notes.line_kind`): `voice`, `bass`, and
   `line` for every other pitched stem. Drums and mixtures are not read, and neither is a
   stem the app judges empty (ADR 0027).

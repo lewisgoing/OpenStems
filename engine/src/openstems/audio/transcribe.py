@@ -14,7 +14,7 @@ How it works, in the order the code runs. Every figure is from the benchmark in
 3. **Candidates.** A second, more willing pass finds notes the first one left out. They are
    kept, with a low confidence, for the "more notes" end of the editor's sensitivity.
 4. **Starts.** A pitch takes a few periods to settle, so on a bass or any plucked line a
-   note's start is moved back to where its sound begins (worth 7 points of F1 on bass, next
+   note's start is moved back to where its sound begins (worth 6 points of F1 on bass, next
    to nothing on guitar). On a voice the start stays where the pitch starts.
 5. **Per note:** a confidence (a small logistic model over what the note cost and how it
    sounds, fitted by ``scripts/midi_calibrate.py``), a velocity from its level, and its
