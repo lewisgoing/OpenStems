@@ -27,6 +27,7 @@ from openstems.domain.levels import empty_stems
 from openstems.domain.notes import (
     MIDI_SUFFIX,
     NOTES_SUFFIX,
+    SIDECAR_FORMAT,
     Note,
     estimate_tuning,
     from_sidecar,
@@ -204,6 +205,7 @@ def read_stems(directory: Path, files: list[str]) -> Reading:
         if not (directory / file).is_file():
             raise DomainError(f"{file} is no longer in its folder: separate the song again")
         chosen.append(stem)
+    _adopt(directory, manifest, chosen)
     _in_the_way(directory, chosen)  # before the seconds of reading, and again before writing
     found: dict[str, Transcription] = {}
     for stem in chosen:
@@ -226,12 +228,13 @@ def write_notes(directory: Path, reading: Reading) -> dict[str, Any]:
     stems read before are rounded again from their notes files. Either all of it is written
     or the folder is left as it was.
 
-    The manifest alone says which files are a stem's own. A file it does not name is never
-    written over or removed, and it is written before the files it names: a process that
-    ends in between leaves a manifest naming files that are not there yet, which the next
-    reading writes. The other order left files no manifest named, in the way for ever. For
-    the same reason a stem's notes file is written after its MIDI file: it is the notes
-    file that says the stem is read, and on which tuning.
+    A stem's own files are the ones the manifest names (and ones that are, to the byte,
+    what the app writes there: `_adopt`). Any other file is never written over or removed.
+    The manifest is written before the files it names: a process that ends in between
+    leaves a manifest naming files that are not there yet, which the next reading writes.
+    The other order left files no manifest named. For the same reason a stem's notes file
+    is written after its MIDI file: it is the notes file that says the stem is read, and
+    on which tuning.
     """
     manifest = read_manifest(directory)
     if manifest is None or not manifest.get("complete"):
@@ -249,6 +252,7 @@ def write_notes(directory: Path, reading: Reading) -> dict[str, Any]:
     for stem in chosen:
         if not (directory / str(stem["file"])).is_file():
             raise DomainError(f"{stem['file']} is no longer in its folder")
+    _adopt(directory, manifest, chosen)
     _in_the_way(directory, chosen)
 
     analysis = manifest.get("analysis") or {}
@@ -340,10 +344,49 @@ def _why(exc: OSError) -> str:
     return f"the notes could not be written: {exc.strerror or exc}{where}"
 
 
+def _adopt(directory: Path, manifest: Mapping[str, Any], chosen: Iterable[dict[str, Any]]) -> None:
+    """Take as a stem's own the notes file and the MIDI file under its name that the
+    manifest does not name, when they are exactly what the app writes there: a notes file
+    of the app's for this stem, and the MIDI file made from that notes file, to the byte.
+    ``chosen`` are stems of ``manifest``, which is changed in memory only.
+
+    A write that was cut short by a version that wrote its manifest last left such files,
+    and so can a rename or a new tempo that is cut short. Nothing of a user's is mistaken
+    for them: a MIDI file somebody saved there is not, byte for byte, what the app makes
+    of the notes file beside it. And nothing is lost by replacing them: they can be made
+    again from the stem.
+    """
+    analysis = manifest.get("analysis") or {}
+    title = str((manifest.get("source") or {}).get("name") or "")
+    for stem in chosen:
+        name = str(stem["name"])
+        base = Path(str(stem["file"])).stem
+        notes_name, midi_name = base + NOTES_SUFFIX, base + MIDI_SUFFIX
+        if stem.get("notes") not in (None, notes_name):
+            continue  # its manifest names another notes file
+        try:
+            data = json.loads((directory / notes_name).read_bytes().decode("utf-8"))
+            if data.get("format") != SIDECAR_FORMAT or data.get("stem") != name:
+                continue
+            made = midi_from_sidecar(
+                data,
+                name=f"{title} {name}".strip(),
+                bpm=analysis.get("bpm"),
+                key=analysis.get("key"),
+            )
+        except Exception:  # no notes file there, not one of ours, or damaged: nothing to take
+            continue
+        stem["notes"] = notes_name
+        if stem.get("midi") is None and made is not None:
+            with contextlib.suppress(OSError):
+                if (directory / midi_name).read_bytes() == made:
+                    stem["midi"] = midi_name
+
+
 def _in_the_way(directory: Path, chosen: Iterable[Mapping[str, Any]]) -> None:
     """Refuse when a notes file or a MIDI file would be written over one that is not the
-    stem's own, which is to say one its manifest does not name. Melodyne, for one, saves
-    its MIDI as ``<audio name>.mid`` beside the audio: that is the user's file, not ours."""
+    stem's own (`_adopt` has taken what is). Melodyne, for one, saves its MIDI as
+    ``<audio name>.mid`` beside the audio: that is the user's file, not ours."""
     for stem in chosen:
         base = Path(str(stem["file"])).stem
         for field, suffix in (("notes", NOTES_SUFFIX), ("midi", MIDI_SUFFIX)):

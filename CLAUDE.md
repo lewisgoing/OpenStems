@@ -618,9 +618,10 @@ read before is then rounded again from their notes files. If reading a stem fail
 are still written and the job says so (`extras._read_notes`). `POST /v1/notes` reads stems
 that are already written; nothing in the app calls it yet. It is two steps: `read_stems`
 (seconds, writes nothing) and `write_notes`, which starts from the manifest as it is then
-and writes everything or puts every file back. Only the manifest says which files are a
-stem's own: one it does not name is never written over or removed (`_in_the_way`; Melodyne
-saves its export as `<audio name>.mid` beside the audio), and the manifest is written before
+and writes everything or puts every file back. A file that is not a stem's own is never
+written over or removed (`_in_the_way`; Melodyne saves its export as `<audio name>.mid`
+beside the audio). Its own are the ones the manifest names and ones that are, to the byte,
+what the app writes there (`_adopt`). The manifest is written before
 the files it names (a stem's notes file last), so a write cut short is finished by the
 next. Putting back is a rename: what a file held is parked beside it (`.old.tmp`) until the
 write is done. In the API process whatever rewrites a stem folder's manifest (notes, a tempo

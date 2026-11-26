@@ -635,6 +635,45 @@ def test_a_write_cut_short_is_finished_by_the_next_reading(
     assert keys_of(folder / "Tune - bass.mid") == WANTED and not list(folder.glob("*.tmp"))
 
 
+def test_files_the_app_made_are_a_stems_own_though_no_manifest_names_them(
+    catalog, store, tmp_path, monkeypatch
+) -> None:
+    # A version that wrote its manifest last, cut short, left a notes file and a MIDI file
+    # no manifest named, and they were in the way of that stem for ever. They are told from
+    # a user's files by what they hold: a notes file of the app's for this stem, and the
+    # MIDI file made from it, to the byte.
+    folder = separated(catalog, store, tmp_path)
+    unread = (folder / "manifest.json").read_bytes()
+    find_notes(folder, ["Tune - bass.wav"])
+    (folder / "manifest.json").write_bytes(unread)  # both files there, neither named
+    manifest = find_notes(folder, ["Tune - bass.wav"])
+    assert by_name(manifest)["bass"]["notes"] == "Tune - bass.notes.json"
+    assert keys_of(folder / "Tune - bass.mid") == WANTED and not list(folder.glob("*.tmp"))
+    # With no notes this time, the MIDI file the app left goes with the reading.
+    (folder / "manifest.json").write_bytes(unread)
+    with monkeypatch.context() as patched:
+        patched.setattr(notes_module, "transcribe_line", lambda *_, **__: Transcription())
+        manifest = find_notes(folder, ["Tune - bass.wav"])
+    assert by_name(manifest)["bass"]["midi"] is None
+    assert not (folder / "Tune - bass.mid").exists() and not list(folder.glob("*.tmp"))
+
+    # What is not the app's for this stem stays in the way: a notes file for another stem
+    # under this one's name, and a MIDI file that is not what the app makes of the notes
+    # file beside it.
+    find_notes(folder, ["Tune - bass.wav"])
+    notes_file, midi_file = folder / "Tune - bass.notes.json", folder / "Tune - bass.mid"
+    own = json.loads(notes_file.read_text("utf-8"))
+    (folder / "manifest.json").write_bytes(unread)
+    notes_file.write_text(json.dumps({**own, "stem": "vocals"}), encoding="utf-8")
+    with pytest.raises(DomainError, match=r"bass\.notes\.json is already in the stem folder"):
+        find_notes(folder, ["Tune - bass.wav"])
+    notes_file.write_text(json.dumps(own), encoding="utf-8")
+    midi_file.write_bytes(b"somebody's own")
+    with pytest.raises(DomainError, match=r"bass\.mid is already in the stem folder"):
+        find_notes(folder, ["Tune - bass.wav"])
+    assert midi_file.read_bytes() == b"somebody's own"
+
+
 def test_a_file_the_manifest_does_not_name_is_never_touched(
     catalog, store, tmp_path, monkeypatch
 ) -> None:

@@ -76,10 +76,14 @@ writes what it finds.
   (`read_stems`, `write_notes`): the second starts from the manifest as it is then and
   changes only what the notes need, so a tempo typed, a stem hidden or a file renamed
   meanwhile is kept. Either everything is written or every file is put back as it was.
-- **Only the manifest says which files are a stem's own.** A notes or MIDI file it does not
-  name is never written over or removed: the reading is refused. Melodyne saves the MIDI it
-  exports as `<audio name>.mid` beside the audio, which is the very name a stem's own MIDI
-  takes.
+- **A file that is not a stem's own is never written over or removed:** the reading is
+  refused. Melodyne saves the MIDI it exports as `<audio name>.mid` beside the audio, which
+  is the very name a stem's own MIDI takes. A stem's own files are the ones its manifest
+  names, and ones that are exactly what the app writes there (`_adopt`): a notes file of
+  the app's for that stem, and the MIDI file made from it, to the byte. A write cut short by
+  an order of writing since given up left such files unnamed, and a rename or a new tempo
+  cut short can. A file somebody saved is never, byte for byte, what the app makes of the
+  notes file beside it.
 - **A write that is cut short is finished by the next.** The manifest is written before the
   files it names, and a stem's notes file after its MIDI file: it is the notes file that
   says a stem is read, and on which tuning. A process that ends in between leaves a manifest
