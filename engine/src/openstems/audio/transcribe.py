@@ -10,7 +10,9 @@ How it works, in the order the code runs. Every figure is from the benchmark in
 2. **Notes.** The frames are cut into notes and gaps by the dynamic program of SwiftF0's
    own segmenter, ported here so it can take one more piece of evidence: on a plucked line
    a note that is struck again while it sounds starts a new note there, where pitch alone
-   would run the two together. A voice is never split this way: it did not help.
+   would run the two together. Struck means an onset in the spectrum with a rise in the
+   stem's own level: bleed from a drum has the first without the second. A voice is never
+   split this way: it did not help.
 3. **Candidates.** A second, more willing pass finds notes the first one left out. They are
    kept, with a low confidence, for the "more notes" end of the editor's sensitivity.
 4. **Starts.** A pitch takes a few periods to settle, so on a bass or any plucked line a
@@ -91,22 +93,22 @@ PROFILES = {
     "voice": Profile(
         "voice", onsets=None, superflux=True, snap=False, low=False, program=53,
         lowest=65.0, highest=1100.0,  # C2 to about C6
-        weights=(0.9661, 0.3286, -0.6874, -0.3919, 1.0151, -1.5681,
-                 -0.6671, -0.5707, -1.2409, -0.0051, 0.0028),
-        threshold=0.49,
+        weights=(-0.6538, 0.2574, -0.2218, -0.1985, 2.0674, -0.6389,
+                 -1.1449, -0.4468, -1.8233, 0.4748, 0.5008),
+        threshold=0.27,
     ),
     "bass": Profile(
         "bass", onsets=2.0, superflux=False, snap=True, low=True, program=33,
         highest=800.0,  # every Slakh bass note lies under 784 Hz
-        weights=(-8.0903, 0.2717, 0.2123, 0.1735, 0.2217, -3.8071,
-                 1.4444, -1.0175, 0.0722, 9.1096, 12.3451),
-        threshold=0.67,
+        weights=(-8.9177, 0.0474, 1.0425, -0.0413, 0.0701, -2.3077,
+                 0.7649, -0.4573, -1.0507, 0.4982, 13.7831),
+        threshold=0.55,
     ),
     "line": Profile(
         "line", onsets=2.5, superflux=True, snap=True, low=False, program=0,
-        weights=(1.2887, -0.2374, 0.9165, 1.2574, 1.6319, -2.9245,
-                 -0.7868, -0.2941, -2.7959, 1.2443, 3.0694),
-        threshold=0.46,
+        weights=(1.0593, -0.0995, 1.0066, 0.8976, 0.9212, -3.0562,
+                 -0.8650, -0.1692, -3.1175, 0.5150, 3.3176),
+        threshold=0.45,
     ),
 }
 # fmt: on
@@ -410,6 +412,25 @@ def onset_peaks(strength: np.ndarray, delta: float, wait: int = 3) -> np.ndarray
     return out
 
 
+def struck_again(peaks: np.ndarray, env: np.ndarray) -> np.ndarray:
+    """The onset peaks at which the stem's own level rises as well, by 3 dB or more
+    (`attack`, from 60 ms before the peak to 30 ms after): a string that is struck.
+
+    An onset in the spectrum without that rise is something else's. A drum that bled into
+    the stem makes one with every hit, and under a held note it barely moves the level.
+    Cutting notes at those was most of what went wrong on a bass with the rest of its song
+    under it. With the rest 25 dB under the bass, ending notes at any onset scored
+    0.81 and asking for the rise as well 0.85; on clean stems 0.880 and 0.883, and
+    on clean guitar solos 0.834 and 0.839 (the first pass's notes on the development half,
+    before starts are moved).
+    """
+    out = peaks.copy()
+    for t in np.flatnonzero(peaks):
+        if attack(env, t * FRAME_S, back=0.06, ahead=0.03) is None:
+            out[t] = False
+    return out
+
+
 def envelope_db(audio16: np.ndarray) -> np.ndarray:
     """The RMS level in dB every 4 ms, over the 16 ms around each step."""
     n = len(audio16) // ENV_HOP
@@ -565,13 +586,13 @@ def transcribe_line(audio: np.ndarray, sample_rate: int, stem: str = "") -> Tran
     if not frames.valid.any():
         return Transcription(profile=profile.name, threshold=profile.threshold)
     cost = _frame_cost(frames)
+    env = envelope_db(audio16)
     struck = None
     if profile.onsets is not None:
         strength = onset_strength(audio16, len(frames.m), profile.superflux)
-        struck = onset_peaks(strength, profile.onsets)
+        struck = struck_again(onset_peaks(strength, profile.onsets), env)
     default = _segment(frames, cost, NOTE_COST, struck)
     relaxed = _segment(frames, cost - CANDIDATE_BIAS, CANDIDATE_COST, struck)
-    env = envelope_db(audio16)
     spans, times = _placed(default, _outside(default, relaxed), env, profile.snap)
     if not spans:
         return Transcription(profile=profile.name, threshold=profile.threshold)

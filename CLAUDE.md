@@ -57,9 +57,10 @@ Engine (run from `engine/`):
   - `python ../scripts/make_midi_import_tests.py`: the MIDI files that show how a DAW imports
     bends, MPE and tempo maps.
   - `uv run --with mir_eval==0.8.2 --with mido==1.3.3 python ../scripts/midi_calibrate.py fit|report`:
-    fit the transcriber's confidence model on every other clip and print the `weights` and
-    `threshold` for `PROFILES` (`fit`), or say how far the weights now in the code can be
-    trusted on the clips between (`report`). Each clip's audio and frames are kept in
+    fit the transcriber's confidence model on every other clip, read alone and with the rest
+    of a song bleeding in (`BLEED`), and print the `weights` and `threshold` for `PROFILES`
+    (`fit`), or say how far the weights now in the code can be trusted on the clips between,
+    alone and with bleed (`report`). Each clip's audio and frames are kept in
     `<bench>/cache/f0`: delete it after changing how frames are made
 - `python ../scripts/compare_builds.py run --out DIR MODEL...` in each environment, then
   `compare DIR DIR`: the same stems from two PyTorch builds (on the CPU)
@@ -597,12 +598,14 @@ so the notes do not depend on its gain, and a sample that is no number counts as
 SwiftF0 gives a pitch every 16 ms; its own segmenter, ported there, cuts them into notes. The
 stem's name picks one of three profiles (`domain/notes.line_kind`): `voice`, `bass` (a second
 pass at double speed for notes under SwiftF0's 46.9 Hz floor) and `line` for any other pitched
-stem; `bass` and `line` cut a note where it is struck again and move each start back to the
-attack. Drums, mixtures and empty stems are not read. `MIDI_STEMS` is what the setting reads
+stem; `bass` and `line` cut a note where it is struck again (an onset in the spectrum with a
+rise in the stem's own level, `struck_again`: bleed from a drum has only the first) and move
+each start back to the attack. Drums, mixtures and empty stems are not read. `MIDI_STEMS` is what the setting reads
 by itself: voices, basses and `melody`. A second, more willing pass adds candidates, which
 never move a note of the first pass (`_placed`). Every note has a confidence from a logistic
 model whose weights are in `PROFILES` (printed by `scripts/midi_calibrate.py fit`: never typed
-by hand); a profile's `threshold` is where a note counts. `pipeline/notes.py` writes two files
+by hand; fitted on each clip alone and with the rest of a song 25 and 15 dB under it, the
+stand-in for separated stems); a profile's `threshold` is where a note counts. `pipeline/notes.py` writes two files
 beside the stem: `<stem>.notes.json` (`domain/notes.py`: every note, the threshold, the
 tuning, what wrote it, and `texture`, `chords` for a stem that plays several notes at once
 and was read as one line: `transcribe.clarity`) and `<stem>.mid`, the notes that count, one

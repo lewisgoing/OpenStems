@@ -102,6 +102,36 @@ def test_a_note_struck_again_is_two_notes() -> None:
         assert all(abs(n.start - at) < 0.03 for n, at in zip(shown, starts, strict=True)), stem
 
 
+def test_a_hit_that_bled_in_does_not_cut_a_held_note(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A held bass note with two short bursts of noise 30 dB under it, as a snare leaves in a
+    # separated bass stem: an onset in the spectrum each time, and no rise in the stem's own
+    # level. A string struck again has both.
+    seconds = 1.6
+    t = np.arange(int(seconds * RATE)) / RATE
+    held = sum(np.sin(2 * np.pi * hz(40) * k * t) / k for k in range(1, 12))
+    held = held * np.minimum(1.0, t / 0.003) * np.exp(-t * 0.6)
+    audio = np.zeros(int((seconds + 0.4) * RATE))
+    audio[int(0.2 * RATE) :][: len(held)] = held
+    burst = int(0.03 * RATE)
+    rng = np.random.default_rng(8)
+    for at in (0.7, 1.2):
+        lo = int(at * RATE)
+        audio[lo : lo + burst] += rng.standard_normal(burst) * np.hanning(burst) * 0.05
+    audio = (audio * 0.25).astype(np.float32)
+    (note,) = transcribe_line(audio, RATE, "bass").shown()
+    assert round(note.pitch) == 40 and note.duration > 1.3
+    # Without the rule the bursts do cut it: they are onsets as far as the spectrum goes.
+    with monkeypatch.context() as patched:
+        patched.setattr(T, "struck_again", lambda peaks, env: peaks)
+        assert len(transcribe_line(audio, RATE, "bass").shown()) > 1
+    # The rule itself: of two onset peaks, the one where the level steps up 10 dB is a strike.
+    peaks = np.zeros(100, dtype=bool)
+    peaks[[20, 60]] = True
+    env = np.full(400, -20.0)
+    env[4 * 60 - 2 :] = -10.0  # the envelope has four steps to a frame
+    assert np.flatnonzero(T.struck_again(peaks, env)).tolist() == [60]
+
+
 def test_a_bass_notes_start_is_where_it_was_struck() -> None:
     audio, starts = plucked([33, 36, 38, 40, 43], every=0.5)
     shown = transcribe_line(audio, RATE, "bass").shown()

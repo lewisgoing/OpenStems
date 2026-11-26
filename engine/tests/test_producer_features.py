@@ -66,15 +66,16 @@ def chord_progression(roots: list[int], minor: bool, seconds_each: float = 2.0) 
     return np.stack([mono, mono])
 
 
-def melody(notes: list[int], seconds_each: float = 0.5) -> np.ndarray:
+def melody(notes: list[int], seconds_each: float = 0.5, harmonics: int = 1) -> np.ndarray:
     parts = []
     for note in notes:
         t = np.arange(int(seconds_each * RATE)) / RATE
         freq = 440.0 * 2 ** ((note - 69) / 12)
         envelope = np.minimum(1.0, np.minimum(t, seconds_each - t) / 0.02)
-        parts.append(np.sin(2 * np.pi * freq * t) * envelope)
+        wave = sum(np.sin(2 * np.pi * freq * k * t) / k for k in range(1, harmonics + 1))
+        parts.append(wave * envelope)
         parts.append(np.zeros(int(0.08 * RATE)))
-    mono = (np.concatenate(parts) * 0.5).astype(np.float32)
+    mono = (np.concatenate(parts) * 0.5 / max(1.0, harmonics / 2)).astype(np.float32)
     return np.stack([mono, mono])
 
 
@@ -207,7 +208,8 @@ def test_trim_silence_cuts_both_ends_and_records_the_offset(pipeline, tmp_path) 
 
 def test_pipeline_writes_a_midi_file_next_to_the_stem(catalog, store, tmp_path) -> None:
     source = tmp_path / "Tune.wav"
-    write_audio(source, melody([57, 60, 64, 69]), RATE)
+    # With harmonics, as a voice has: SwiftF0 is unsure of a pure sine at some pitches.
+    write_audio(source, melody([57, 60, 64, 69], harmonics=5), RATE)
     pipeline = Pipeline(catalog, store)
     recipe = Recipe(
         id="vox",

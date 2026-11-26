@@ -9,6 +9,8 @@
   - A note struck twice in a row comes out as two notes, not one long one.
   - A bass note starts where it was struck, not a moment later where its pitch settles.
   - A quiet stem gives the same notes as a loud one.
+  - A drum that bleeds into a bass or a lead stem no longer cuts its held notes in two, and
+    a quiet sound between the notes is less often taken for one.
   - Notes below a bass's low G are found by listening a second time at double speed. Tested
     on test tones down to a 5-string's low B and on a slowed-down bass, not on a real one.
   - Each stem also gets a `.notes.json` file beside its `.mid`, with every note found and how

@@ -27,7 +27,9 @@ writes what it finds.
   instrument plays.
 - **Notes:** the dynamic program of SwiftF0's own segmenter, ported into the engine (MIT,
   the notice is in the module), with one rule added: on a plucked line a note that is struck
-  again while it sounds ends there. A test holds the port to SwiftF0's own output.
+  again while it sounds ends there. Struck means an onset in the spectrum together with a
+  rise of 3 dB in the stem's own level (`struck_again`): a drum that bled into the stem has
+  the first without the second. A test holds the port to SwiftF0's own output.
 - **Low bass:** SwiftF0 reports nothing under 46.9 Hz. A bass is tracked a second time at
   double speed, where every pitch is an octave up, and the frames that pass finds under
   58 Hz replace the first pass's.
@@ -43,11 +45,15 @@ writes what it finds.
   cost the segmenter, its length, level, pitch spread and neighbours), fitted per profile by
   `scripts/midi_calibrate.py`. A profile's `threshold` is the confidence at which showing a
   note gave the best F1.
+- **Fitted with bleed:** the model is fitted on every other clip read three times: alone,
+  and with the rest of a song 25 dB and 15 dB under it. A separated stem is not a clean one,
+  and fitted on clean stems alone the model took a quiet note between a bass's own notes
+  for a note. It is a stand-in until separated stems can be scored (below).
 - **No second guess at a note's pitch** is written. SwiftF0 gives one pitch per frame, so
   the frames hold no evidence for another, and on the held-out clips an octave or two off is
-  1 to 4 percent of the wrong notes: a "which octave?" question would nearly always be
+  1 to 3 percent of the wrong notes: a "which octave?" question would nearly always be
   asked of a right note. Where one note ends and the next begins is the commoner fault:
-  29 to 41 percent of the wrong notes are a piece cut out of a longer note, and 22 to 38
+  29 to 39 percent of the wrong notes are a piece cut out of a longer note, and 21 to 38
   percent of the missed ones were run into the note before them (section 14), so what the
   editor needs first is split and join. Its other questions can use what the file holds:
   the exact pitch and the tuning (a note between two keys), the confidence, the candidates.
@@ -165,24 +171,36 @@ transcriber's notes at their exact pitch):
 
 | Stem | Old tracker | SwiftF0's segmenter alone | This transcriber | Clips |
 | --- | --- | --- | --- | --- |
-| Vocals (vocadito) | 0.392 | 0.778 | 0.783 | 40 |
-| Guitar solos (GuitarSet) | 0.324 | 0.801 | 0.850 | 180 |
-| Bass (Slakh's own stems) | 0.658 | 0.838 | 0.938 | 142 |
+| Vocals (vocadito) | 0.392 | 0.778 | 0.784 | 40 |
+| Guitar solos (GuitarSet) | 0.324 | 0.801 | 0.855 | 180 |
+| Bass (Slakh's own stems) | 0.658 | 0.838 | 0.937 | 142 |
 
 Those are every clip of each set, and the settings and weights were fitted on every other
-one. On the half nothing was fitted on: 0.774, 0.849 and 0.927. The rest (the level a stem
+one. On the half nothing was fitted on: 0.775, 0.854 and 0.927. The rest (the level a stem
 is read at, low bass, how far the confidence can be trusted, what the wrong notes are,
 chords, tuning, velocity) is in `docs/research/stem-to-midi.md`, section 14.
 
-- **Not measured on separated stems.** Every figure is from clean audio. Separated stems
-  carry bleed and artifacts, the thresholds, the weights and the level a stem is read at
-  were chosen without them, and Phase 7's acceptance asks for separated stems. That run
-  needs the GPU. The transcriber was run on the separated stems of the project's three test
-  songs as a check that it behaves; there is no reference to score those against.
+- **Not measured on separated stems.** Phase 7's acceptance asks for separated stems, and
+  that run needs the GPU. The transcriber was run on the separated stems of the project's
+  three test songs as a check that it behaves; there is no reference to score those against.
+- **A stand-in was measured in their place:** each held-out clip with the rest of a song
+  under it (a bass with its own song's other stems; a voice or a guitar solo, which come
+  alone, with a Slakh song's whole mix). Onset F1 of what is shown:
+
+  | Read | Vocals | Guitar solos | Bass |
+  | --- | --- | --- | --- |
+  | alone | 0.775 | 0.854 | 0.927 |
+  | the rest 25 dB under it | 0.771 | 0.853 | 0.920 |
+  | the rest 15 dB under it | 0.743 | 0.833 | 0.881 |
+
+  It says the transcriber does not fall apart with other sound under the stem. It does not
+  say what it scores on separated stems: a separator leaves what it could not tell apart,
+  not an even share of everything, and adds faults of its own. By how sure SwiftF0 is of a
+  pitch, the two real bass stems to hand lie between the clean reading and the 25 dB one.
 - **Low notes rest on two things:** steady test tones down to 30.9 Hz (a 5-string's low B),
   which the double-speed pass follows, and Slakh's bass played 7 semitones lower, whose
   lowest note is 36.7 Hz. No real low bass was measured.
-- **A voice's confidence ranks weakly** (AUC 0.72 on held-out clips, 0.87 for guitar
+- **A voice's confidence ranks weakly** (AUC 0.70 on held-out clips, 0.87 for guitar
   lines): what counts as wrong there is mostly how a phrase is written down, a note a key or
   two from the reference's or one cut where the annotator held it. A second annotator
   scores 0.74 against the first.
@@ -195,14 +213,22 @@ chords, tuning, velocity) is in `docs/research/stem-to-midi.md`, section 14.
   process, and it too starts from the manifest as it is when it writes, so what could be
   lost is a change the API makes within the same few milliseconds.
 - **The level a stem is read at** is one figure for every kind of stem. On clean recordings
-  0.25, 0.35 and 0.5 score within 0.003 of each other; separated stems, with bleed under
-  the notes, may prefer another.
+  0.25, 0.35 and 0.5 score within 0.003 of each other, and a bass with the rest of its song
+  under it scored the same at all three. Real separated stems may still prefer another.
 - **A change made in a `.mid` itself is lost at the next tempo or key.** The MIDI file is
   made from the notes file, so a retag makes it again. A rename leaves a changed file
   alone.
 - **The lock on a folder goes by its path as it is spelled.** Two spellings of one folder
   (another case on a Mac, a link) would be two locks. The app has one spelling, the one the
   API gave it.
+- **A pure sine is read poorly.** SwiftF0 was trained on sounds with harmonics. Of ten
+  notes from E1 to E4 as steady pure sines the bass reading shows 9, and of the same notes
+  dying away as an 808's do, 6; with a second harmonic 30 dB under the sine, all 10. A clean
+  sub-bass or a clean 808 may lose notes. Adding a little distortion in front of the pitch
+  tracker reads them, at a small cost on real recordings (section 14); it was not kept, and
+  wants trying on real 808s first.
+- **The chords mark errs under heavy bleed.** With the rest of its song 15 dB under it, a
+  bass is mostly called chords (section 14): SwiftF0 is less sure of any pitch.
 - **A stem that is only bleed** but louder than the 45 dB that counts as empty (ADR 0027) is
   read at full level like any other, and can give a note or two of the part that bled in.
   On the project's three test songs one such stem (a piano, 41 dB under the loudest stem)
