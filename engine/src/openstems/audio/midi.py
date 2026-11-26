@@ -96,6 +96,8 @@ def read_midi_notes(data: bytes) -> tuple[list[Note], float]:
             if started is not None:
                 raw.append((started[0], tick, data[pos + 1], started[1]))
             pos += 3
+        elif status & 0xF0 in (0xC0, 0xD0):  # program change, pressure: one data byte
+            pos += 2
         else:
             pos += 3
     per_second = division * bpm / 60.0
@@ -204,10 +206,15 @@ def midi_file_bytes(
     pitch: str = "plain",
     bend_range: int = 2,
     tuning_cents: float = 0.0,
+    single_track: bool = False,
 ) -> bytes:
     """A format 1 file: a conductor track (tempo, 4/4, key signature), then one track per
     part. Times are placed on the grid of ``bpm`` as in :func:`midi_bytes`. Drum parts go
-    on channel 10 as plain notes whatever ``pitch`` is."""
+    on channel 10 as plain notes whatever ``pitch`` is.
+
+    ``single_track`` writes one part as a format 0 file instead, the tempo and key in the
+    part's own track: what a stem's own MIDI file is, since every program that reads MIDI
+    reads that."""
     if pitch not in PITCH_MODES:
         raise ValueError(f"pitch must be one of {PITCH_MODES}, not {pitch!r}")
     if not 1 <= bend_range <= 96:
@@ -218,6 +225,8 @@ def midi_file_bytes(
     channels = [c for c in range(16) if c != DRUM_CHANNEL]
     if pitch == "bend" and pitched > len(channels):
         raise ValueError(f"bends need a channel per part: at most {len(channels)} pitched parts")
+    if single_track and len(parts) != 1:
+        raise ValueError("a single-track file holds one part")
     bpm = bpm if bpm and bpm > 0 else 120.0
     per_second = TICKS_PER_BEAT * bpm / 60.0
 
@@ -253,8 +262,13 @@ def midi_file_bytes(
                 ):
                     _emit(span, channel, events)
                     _curve(span, channel, tick, bend_range, events)
+        if single_track:
+            events += conductor
+            tracks = []
         tracks.append(_track(events, part.name))
-    header = b"MThd" + struct.pack(">IHHH", 6, 1, len(tracks), TICKS_PER_BEAT)
+    header = b"MThd" + struct.pack(
+        ">IHHH", 6, 0 if single_track else 1, len(tracks), TICKS_PER_BEAT
+    )
     return header + b"".join(tracks)
 
 

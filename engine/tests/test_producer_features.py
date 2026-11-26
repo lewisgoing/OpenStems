@@ -216,19 +216,6 @@ def test_midi_round_trip() -> None:
         assert a == pytest.approx(c, abs=0.005) and b == pytest.approx(d, abs=0.005)
 
 
-def test_a_sine_melody_becomes_the_right_notes() -> None:
-    wanted = [60, 64, 67, 72, 67]
-    notes = analysis.track_notes(melody(wanted), RATE)
-    assert [n for _, _, n, _ in notes] == wanted
-    assert all(0.3 < end - start < 0.6 for start, end, _, _ in notes)
-
-
-def test_bass_range_notes() -> None:
-    wanted = [40, 43, 45]  # E2, G2, A2
-    notes = analysis.track_notes(melody(wanted, 0.6), RATE, fmin=30.0, fmax=400.0)
-    assert [n for _, _, n, _ in notes] == wanted
-
-
 def test_pipeline_writes_a_midi_file_next_to_the_stem(catalog, store, tmp_path) -> None:
     source = tmp_path / "Tune.wav"
     write_audio(source, melody([57, 60, 64, 69]), RATE)

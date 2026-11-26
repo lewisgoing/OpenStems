@@ -10,7 +10,10 @@ engine/, with mido and mir_eval added for the run only (they are not engine depe
 
 Methods:
 
-- ``yin``: today's engine transcriber (``openstems.audio.analysis.track_notes``), the
+- ``openstems``, ``openstems-midi``: the engine's transcriber for single-line stems (stage
+  M3, ``openstems.audio.transcribe``): its notes at their exact pitch, and as the keys its
+  MIDI file holds.
+- ``yin``: the engine's transcriber up to 0.4.4 (``_yin_notes`` here), the
   baseline to beat. Monophonic, so polyphonic guitar is expected to score low.
 - ``annotator2``: vocadito's second annotator scored against the first, the human ceiling.
 - ``pyin``, ``swiftf0``, ``swiftf0-notes``, ``crepe``: pitch trackers (see below).
@@ -164,8 +167,12 @@ RECIPE_FOR = {
 }
 # Slakh renders its bass patches an octave below the written MIDI (the usual bass
 # convention). Measured on the 142 test songs with bass: 140 sit exactly 12 semitones down
-# and two (Track01931, Track01937) 14 down, a quirk of those renders left in on purpose.
+# and two (Track01931, Track01937) 14 down, a quirk of those renders (`SOUNDS_AT_SONG`).
 SOUNDS_AT = {"bass": -12}
+# The two songs whose bass sounds 14 semitones under its MIDI, read as they sound: scored an
+# octave down, every one of their notes counted as two semitones wrong (254 of the 338 pitch
+# mismatches left on 30 songs, measured 2026-11-25).
+SOUNDS_AT_SONG = {("Track01931", "bass"): -14, ("Track01937", "bass"): -14}
 SLAKH_CONDITIONS = ["separated", "oracle"]
 SLAKH_KINDS: set[str] = set()  # empty: every class
 
@@ -193,7 +200,7 @@ def slakh_reference(song: Path, meta: dict) -> dict[str, list[Note]]:
         if not stem.get("audio_rendered"):
             continue
         kind = _slakh_class(stem)
-        shift = SOUNDS_AT.get(kind, 0)
+        shift = SOUNDS_AT_SONG.get((song.name, kind), SOUNDS_AT.get(kind, 0))
         notes = [(a, b, p + shift, v) for a, b, p, v in read_midi(song / "MIDI" / f"{sid}.mid")]
         refs.setdefault(kind, []).extend(notes)
         if kind == "drums":
@@ -275,14 +282,98 @@ LOADERS: dict[str, Callable[[Path, list[str] | None], list[Item]]] = {
 # -- methods -----------------------------------------------------------------------------
 
 
+def _yin_notes(
+    audio: np.ndarray,
+    sample_rate: int,
+    fmin: float = 55.0,
+    fmax: float = 1200.0,
+    min_note_seconds: float = 0.08,
+) -> list[tuple[float, float, int, int]]:
+    """The engine's transcriber up to 0.4.4 (``analysis.track_notes``), kept here as the
+    baseline the new one is measured against: YIN per frame, frames too quiet unvoiced, a
+    five-frame median, runs of one semitone as notes."""
+    import librosa
+
+    rate = 16000
+    mono = audio.mean(axis=0) if audio.ndim == 2 else audio
+    mono = librosa.resample(mono.astype(np.float32), orig_sr=sample_rate, target_sr=rate)
+    if mono.shape[0] < rate // 4:
+        return []
+    frame, hop = 2048, 256
+    f0 = librosa.yin(mono, fmin=fmin, fmax=fmax, sr=rate, frame_length=frame, hop_length=hop)
+    rms = librosa.feature.rms(y=mono, frame_length=frame, hop_length=hop)[0]
+    count = min(len(f0), len(rms))
+    f0, rms = f0[:count], rms[:count]
+    peak = float(rms.max())
+    if peak < 1e-4:
+        return []
+    voiced = (rms > max(peak * 0.06, 1e-4)) & (f0 > fmin * 1.02) & (f0 < fmax * 0.98)
+    midi = np.where(voiced, np.round(librosa.hz_to_midi(np.maximum(f0, 1e-6))), -1).astype(int)
+    padded = np.pad(midi, 2, mode="edge")
+    midi = np.median(np.lib.stride_tricks.sliding_window_view(padded, 5), axis=1).astype(int)
+    seconds = hop / rate
+    min_frames = max(1, round(min_note_seconds / seconds))
+    notes: list[tuple[float, float, int, int]] = []
+    start = 0
+    for i in range(1, count + 1):
+        if i == count or midi[i] != midi[start]:
+            note = int(midi[start])
+            if note >= 0 and i - start >= min_frames:
+                loudness = float(rms[start:i].mean()) / peak
+                velocity = int(np.clip(round(40 + 87 * np.sqrt(loudness)), 1, 127))
+                notes.append((start * seconds, i * seconds, note, velocity))
+            start = i
+    merged: list[tuple[float, float, int, int]] = []
+    for note in notes:
+        if merged and merged[-1][2] == note[2] and note[0] - merged[-1][1] <= 2 * seconds:
+            prev = merged.pop()
+            merged.append((prev[0], note[1], prev[2], max(prev[3], note[3])))
+        else:
+            merged.append(note)
+    return merged
+
+
+# The pitch range the old transcriber searched per stem (``pipeline/extras.py`` up to 0.4.4).
+_RANGES: dict[str, tuple[float, float]] = {
+    "bass": (30.0, 400.0),
+    "vocals": (70.0, 1100.0),
+    "dry vocals": (70.0, 1100.0),
+    "lead": (70.0, 1100.0),
+    "melody": (55.0, 1600.0),
+}
+
+
 def method_yin(item: Item, bench: Path) -> list[Note] | None:
-    from openstems.audio.analysis import track_notes
     from openstems.audio.decode import decode
-    from openstems.pipeline.extras import _RANGES  # the engine's own ranges per stem
 
     low, high = _RANGES.get(item.kind, (55.0, 1600.0))
     audio = decode(item.audio)
-    return [(s, e, float(n), v) for s, e, n, v in track_notes(audio, 44100, fmin=low, fmax=high)]
+    return [(s, e, float(n), v) for s, e, n, v in _yin_notes(audio, 44100, fmin=low, fmax=high)]
+
+
+def method_openstems(item: Item, bench: Path) -> list[Note] | None:
+    """The engine's transcriber for single-line stems (stage M3), as a run would call it:
+    the notes it shows, at their exact pitch."""
+    from openstems.audio.decode import decode
+    from openstems.audio.transcribe import transcribe_line
+
+    shown = transcribe_line(decode(item.audio), 44100, item.kind).shown()
+    return [(n.start, n.end, n.pitch, n.velocity) for n in shown]
+
+
+def method_openstems_midi(item: Item, bench: Path) -> list[Note] | None:
+    """The same notes as the keys the stem's MIDI file holds: rounded at A440, or in the
+    stem's own tuning when its notes agree on one (``pipeline/notes.py``)."""
+    from openstems.audio.decode import decode
+    from openstems.audio.transcribe import transcribe_line
+    from openstems.domain.notes import round_pitch
+    from openstems.pipeline.notes import song_tuning
+
+    found = transcribe_line(decode(item.audio), 44100, item.kind)
+    tuning = song_tuning({item.kind: found})
+    return [
+        (n.start, n.end, float(round_pitch(n.pitch, tuning)[0]), n.velocity) for n in found.shown()
+    ]
 
 
 def method_annotator2(item: Item, bench: Path) -> list[Note] | None:
@@ -331,8 +422,6 @@ def _mono(item: Item, rate: int) -> np.ndarray:
 def method_pyin(item: Item, bench: Path) -> list[Note] | None:
     import librosa
 
-    from openstems.pipeline.extras import _RANGES
-
     low, high = _RANGES.get(item.kind, (55.0, 1600.0))
     rate, hop = 22050, 256
     f0, voiced, _ = librosa.pyin(_mono(item, rate), fmin=low, fmax=high, sr=rate, hop_length=hop)
@@ -369,8 +458,6 @@ def method_swiftf0_midi(item: Item, bench: Path) -> list[Note] | None:
 def method_crepe(item: Item, bench: Path) -> list[Note] | None:
     import torch
     import torchcrepe
-
-    from openstems.pipeline.extras import _RANGES
 
     low, high = _RANGES.get(item.kind, (55.0, 1600.0))
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -569,6 +656,8 @@ def external(tool: str, window: float) -> Callable[[Item, Path], list[Note] | No
 
 METHODS: dict[str, Callable[[Item, Path], list[Note] | None]] = {
     "yin": method_yin,
+    "openstems": method_openstems,
+    "openstems-midi": method_openstems_midi,
     "annotator2": method_annotator2,
     "pyin": method_pyin,
     "swiftf0": method_swiftf0,
@@ -659,7 +748,10 @@ def score_hits(reference: list[Note], estimate: list[Note]) -> dict[str, float]:
     return row
 
 
-PITCH_TRACKERS = {"yin", "pyin", "swiftf0", "swiftf0-notes", "swiftf0-midi", "crepe"}  # not drums
+PITCH_TRACKERS = {
+    *("yin", "pyin", "swiftf0", "swiftf0-notes", "swiftf0-midi", "crepe"),
+    *("openstems", "openstems-midi"),
+}  # not drums
 HIT_DETECTORS = {"onsets", "superflux"}  # drum stems only
 
 

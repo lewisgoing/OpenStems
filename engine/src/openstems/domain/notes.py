@@ -18,6 +18,11 @@ from openstems.domain.errors import DomainError
 SIDECAR_FORMAT = "openstems.notes"
 SIDECAR_VERSION = 1
 KINDS = ("pitched", "drums")
+NOTES_SUFFIX = ".notes.json"  # after the stem file's own name, without its extension
+MIDI_SUFFIX = ".mid"
+# The transcriber's version. It is in a run's cache key while MIDI is on, so a song read by
+# an earlier transcriber is read again instead of keeping its old MIDI. 1 was YIN.
+TRANSCRIBER_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -73,6 +78,39 @@ class Note:
         return value
 
 
+# -- which stems hold a line to read ------------------------------------------------------
+#
+# The recipes name their stems; the name says how a stem is read (the routing table in
+# docs/research/stem-to-midi.md, section 5). Chords are stage M4: until then a stem that may
+# hold them is read as a line, and gives its most prominent one.
+
+VOICE_STEMS = frozenset({"vocals", "lead vocals", "lead", "dry vocals", "lead-vocal", "vocal"})
+BASS_STEMS = frozenset({"bass", "double-bass", "tuba"})
+# No pitch to follow: drums and percussion (stage M2 reads their hits).
+DRUM_STEMS = frozenset(
+    {"drums", "kick", "snare", "toms", "hh", "ride", "crash", "other drums", "kit-rest"}
+    | {"percussion", "congas", "tambourine", "triangle", "timpani", "wind-chimes"}
+)
+# Several parts at once, by design: never transcribed.
+MIXTURE_STEMS = frozenset({"instrumental", "drumless", "no-drums", "clean", "dry", "mix"})
+# The stems that get a MIDI file when the write_midi setting is on: the ones that are a
+# single line by nature, and the melody recipe's stem.
+MIDI_STEMS = tuple(sorted(VOICE_STEMS | BASS_STEMS | {"melody"}))
+
+
+def line_kind(stem: str) -> str | None:
+    """How a stem is read as a single line: ``voice``, ``bass`` or ``line`` (anything else
+    with a pitch). None for drums, percussion and mixtures, which have no line to read."""
+    name = stem.strip().lower()
+    if name in VOICE_STEMS:
+        return "voice"
+    if name in BASS_STEMS:
+        return "bass"
+    if name in DRUM_STEMS or name in MIXTURE_STEMS:
+        return None
+    return "line"
+
+
 def estimate_tuning(pitches: Iterable[float], weights: Iterable[float] | None = None) -> float:
     """The song's tuning in cents from A440, in [-50, 50): the circular mean of the notes'
     fractional pitches, weighted (by duration, say) when weights are given. 0 with no notes.
@@ -119,8 +157,16 @@ def to_sidecar(
     kind: str = "pitched",
     tuning_cents: float = 0.0,
     method: str = "",
+    threshold: float | None = None,
+    texture: str = "",
 ) -> dict[str, Any]:
     """The JSON object of ``<stem>.notes.json``. Version 1; readers refuse later versions.
+
+    ``threshold`` is the confidence at or above which a note counts as part of the
+    transcription. The notes under it are candidates: found, but not sure enough to be in
+    the MIDI file. ``tuning_cents`` is the tuning the MIDI file's keys were chosen against.
+    ``texture`` is ``line`` for a stem that plays one note at a time and ``chords`` for one
+    that plays several, of which the notes here are only one line.
 
     Times are rounded to a tenth of a millisecond. Rounding a note's start and end can
     shorten it by that much, so its bend points are held within the rounded note: what is
@@ -153,6 +199,8 @@ def to_sidecar(
         "kind": kind,
         "tuning_cents": _number(tuning_cents, 2),
         "method": method,
+        **({"threshold": _number(threshold, 3)} if threshold is not None else {}),
+        **({"texture": texture} if texture else {}),
         "notes": out,
     }
 

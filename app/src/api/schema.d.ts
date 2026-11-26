@@ -492,6 +492,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Find Notes
+         * @description Find the notes in stems that are already written (stem to MIDI) and write each
+         *     one's notes file and MIDI file beside it. A stem that has them is read again.
+         */
+        post: operations["find_notes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/peaks": {
         parameters: {
             query?: never;
@@ -883,6 +904,14 @@ export interface components {
         ErrorBody: {
             /** Detail */
             detail: string;
+        };
+        /** FindNotes */
+        FindNotes: {
+            /**
+             * Paths
+             * @description Stem files of one song to find notes in: voices, basses and other pitched stems. Drums and mixtures are refused.
+             */
+            paths: string[];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1619,10 +1648,18 @@ export interface components {
              * @description The larger stem this one is a part of, if any.
              */
             group?: string | null;
-            /** Midi */
+            /**
+             * Midi
+             * @description The stem's MIDI file, when it was read and held notes.
+             */
             midi?: string | null;
             /** Name */
             name: string;
+            /**
+             * Notes
+             * @description The stem's notes file (`<stem>.notes.json`), when it was read: every note found with its confidence, and the confidence at which a note counts. A stem with this and no `midi` was read and held no notes.
+             */
+            notes?: string | null;
             /** Path */
             path: string;
             /** Peaks */
@@ -3501,6 +3538,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VerifyResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    find_notes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FindNotes"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemSetInfo"];
                 };
             };
             /** @description Bad Request */

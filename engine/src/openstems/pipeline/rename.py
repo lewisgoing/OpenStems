@@ -21,7 +21,7 @@ from typing import Any
 
 from openstems.domain.errors import DomainError
 from openstems.domain.naming import DEFAULT_TEMPLATE, render_name, safe_component
-from openstems.domain.stem import MANIFEST_NAME
+from openstems.domain.stem import MANIFEST_NAME, STEM_FILES
 from openstems.pipeline.retag import tokens_of
 from openstems.pipeline.run import read_manifest
 
@@ -48,7 +48,7 @@ def _file_moves(manifest: dict[str, Any], directory: Path, name: str) -> dict[st
     for stem in manifest.get("stems", []):
         was = render_name(template, stem=str(stem["name"]), **before)
         now = render_name(template, stem=str(stem["name"]), **after)
-        for field in ("file", "midi"):
+        for field in STEM_FILES:
             file = stem.get(field)
             if file and str(file).startswith(was) and was != now:
                 moves[str(file)] = now + str(file)[len(was) :]
@@ -58,7 +58,7 @@ def _file_moves(manifest: dict[str, Any], directory: Path, name: str) -> dict[st
 def _renamed(manifest: dict[str, Any], moves: dict[str, str], name: str) -> dict[str, Any]:
     updated = json.loads(json.dumps(manifest))
     for stem in updated.get("stems", []):
-        for field in ("file", "midi"):
+        for field in STEM_FILES:
             if stem.get(field) in moves:
                 stem[field] = moves[stem[field]]
     updated.setdefault("source", {})["name"] = name

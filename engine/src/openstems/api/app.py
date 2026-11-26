@@ -360,6 +360,14 @@ def create_app(token: str, service: Service | None = None) -> FastAPI:
         """Write some of a song's stems as one file, next to them."""
         return service.mix(body.paths)
 
+    # -- notes ----------------------------------------------------------------
+
+    @app.post("/v1/notes", response_model=s.StemSetInfo, dependencies=secured, responses=errors)
+    def find_notes(body: s.FindNotes, service: Svc) -> dict[str, Any]:
+        """Find the notes in stems that are already written (stem to MIDI) and write each
+        one's notes file and MIDI file beside it. A stem that has them is read again."""
+        return service.find_notes(body.paths)
+
     # -- clips ----------------------------------------------------------------
 
     @app.post("/v1/clips", response_model=s.ClipList, dependencies=secured, responses=errors)

@@ -26,11 +26,13 @@ from openstems.domain.grid import SongPart, clean_selection, part_downbeat
 from openstems.domain.memory import CPU_NOTE
 from openstems.domain.model import ModelSpec
 from openstems.domain.naming import DEFAULT_TEMPLATE, render_name, safe_component
+from openstems.domain.notes import MIDI_SUFFIX, NOTES_SUFFIX, TRANSCRIBER_VERSION
 from openstems.domain.quality import RunSettings, resolve_settings
 from openstems.domain.recipe import MIX, Recipe, check_against_models, split_ref
 from openstems.domain.stem import (
     MANIFEST_NAME,
     MANIFEST_SCHEMA,
+    STEM_FILES,
     Stem,
     StemSet,
     Track,
@@ -82,6 +84,8 @@ class RunOptions:
             "normalize": self.normalize,
             "tempo_key": self.detect_tempo_key,
             "midi": sorted(self.midi_stems),
+            # Only with MIDI on, so every other run keeps its key: the transcriber's version.
+            **({"notes": TRANSCRIBER_VERSION} if self.midi_stems else {}),
             # Only when on, so the cache key of every earlier run stays what it was.
             **({"tempo_sync": True} if self.tempo_sync else {}),
             # Only for a part, so every other run keeps its key: the frames separated.
@@ -147,6 +151,7 @@ def stem_set_from_manifest(directory: Path, manifest: dict[str, Any]) -> StemSet
                 settings=raw.get("settings"),
                 peaks=raw.get("peaks"),
                 midi=raw.get("midi"),
+                notes=raw.get("notes"),
                 offset=raw.get("offset", 0),
                 group=raw.get("group", ""),
                 peak=raw.get("peak"),
@@ -289,6 +294,7 @@ class Pipeline:
         extras = self._post_process(track, mix, outputs, options, report, cancel)
         extras["levels"] = levels
         notes = [*notes, *tempo_notes(options.tempo_sync, options.output_format, extras.get("bpm"))]
+        notes += extras.get("said", [])  # what stem to MIDI has to say: a stem with chords
         stem_set = self._write(
             track,
             info,
@@ -547,8 +553,13 @@ class Pipeline:
                 midi_name = None
                 midi_writer = extras.get("midi", {}).get(out.name)
                 if midi_writer is not None:
-                    midi_name = base + ".mid"
+                    midi_name = base + MIDI_SUFFIX
                     midi_writer(tmp / midi_name)
+                notes_name = None
+                notes_writer = extras.get("notes", {}).get(out.name)
+                if notes_writer is not None:
+                    notes_name = base + NOTES_SUFFIX
+                    notes_writer(tmp / notes_name)
                 stems.append(
                     Stem(
                         name=out.name,
@@ -561,6 +572,7 @@ class Pipeline:
                         settings={"input": prov["input"]} if prov else None,
                         peaks=peaks_name,
                         midi=midi_name,
+                        notes=notes_name,
                         offset=int(extras.get("offsets", {}).get(out.name, 0)),
                         group=out.group,
                         peak=extras.get("levels", {}).get(out.name),
@@ -718,7 +730,7 @@ def _replace_dir(tmp: Path, out_dir: Path) -> None:
         old = read_manifest(out_dir)
         if old is not None:
             for raw in old.get("stems", []):
-                for name in (raw.get("file"), raw.get("midi")):
+                for name in (raw.get(field) for field in STEM_FILES):
                     if name:
                         (out_dir / name).unlink(missing_ok=True)
         (out_dir / MANIFEST_NAME).unlink(missing_ok=True)

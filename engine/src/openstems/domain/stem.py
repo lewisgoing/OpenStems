@@ -10,6 +10,9 @@ from typing import Any
 from openstems.domain.naming import MAX_COMPONENT
 
 MANIFEST_NAME = "manifest.json"
+# The fields of a stem in the manifest that name a file of its own, beside it: the audio,
+# its MIDI and its notes. What renames a stem, or replaces a stem set, goes by these.
+STEM_FILES = ("file", "midi", "notes")
 MANIFEST_SCHEMA = 1
 
 
@@ -53,6 +56,7 @@ class Stem:
     settings: dict[str, Any] | None = None
     peaks: str | None = None
     midi: str | None = None
+    notes: str | None = None  # the notes file (stem to MIDI), when the stem was read
     offset: int = 0  # samples trimmed from the start (0 unless silence trim is on)
     group: str = ""  # the larger stem this one is a part of, if any
     # The largest sample of the stem as it was separated, before normalize. None in a
@@ -72,6 +76,7 @@ class Stem:
             "pass": self.pass_id,
             "models": list(self.models),
             "settings": self.settings,
+            **({"notes": self.notes} if self.notes else {}),
             **({"group": self.group} if self.group else {}),
             **({"peak": self.peak} if self.peak is not None else {}),
         }

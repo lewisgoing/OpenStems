@@ -152,6 +152,7 @@ def _job_stems(where: str, result: StemSet) -> list[dict[str, Any]]:
                 "path": os.path.join(where, s.file),
                 "peaks": os.path.join(where, s.peaks) if s.peaks else None,
                 "midi": os.path.join(where, s.midi) if s.midi else None,
+                "notes": os.path.join(where, s.notes) if s.notes else None,
                 "offset": s.offset,
                 "start": s.offset / SAMPLE_RATE,
                 "samples": s.samples,
@@ -570,6 +571,35 @@ class Service:
                     f"{file.name} is no longer in its folder: separate the song again"
                 )
         return directory
+
+    # -- notes ----------------------------------------------------------------
+
+    def find_notes(self, paths: list[str]) -> dict[str, Any]:
+        """Read stems that are already written and write each one's notes and MIDI beside
+        it. Returns the stem set as the index now holds it."""
+        from openstems.pipeline.notes import find_notes
+        from openstems.pipeline.run import stem_set_from_manifest
+
+        files = [Path(p) for p in paths]
+        if not files:
+            raise DomainError("name the stems to find notes in")
+        directory = self._stem_folder(files, "notes are found in stems of one song")
+        where = os.path.normpath(str(directory))
+        if self.jobs.writing_to(where):
+            raise DomainError("this song is being separated again: wait until it is done")
+        with self._lock("notes", where):
+            manifest = find_notes(directory, [file.name for file in files])
+        self.index.save_stem_set(where, manifest)
+        result = stem_set_from_manifest(directory, manifest)
+        if result is not None:
+            self.jobs.output_changed(
+                where,
+                _job_stems(where, result),
+                manifest.get("analysis") or {},
+                list(manifest.get("notes") or []),
+            )
+        self.bus.publish("stemsets.changed")
+        return self._indexed(where)
 
     # -- clips ----------------------------------------------------------------
 

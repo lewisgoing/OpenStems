@@ -19,7 +19,7 @@ from openstems.audio.write import set_tempo
 from openstems.domain.errors import DomainError
 from openstems.domain.grid import clean_downbeat
 from openstems.domain.naming import DEFAULT_TEMPLATE, render_name
-from openstems.domain.stem import MANIFEST_NAME
+from openstems.domain.stem import MANIFEST_NAME, STEM_FILES
 from openstems.domain.tempo import notes_after_retag
 from openstems.pipeline.run import read_manifest
 
@@ -95,7 +95,7 @@ def _renames(
     for stem in manifest.get("stems", []):
         was = render_name(template, stem=str(stem["name"]), **before)
         now = render_name(template, stem=str(stem["name"]), **after)
-        for field in ("file", "midi"):
+        for field in STEM_FILES:
             name = stem.get(field)
             if name and str(name).startswith(was) and was != now:
                 moves[str(name)] = now + str(name)[len(was) :]
@@ -133,6 +133,7 @@ def set_analysis(directory: Path, changes: dict[str, Any]) -> dict[str, Any]:
     # be neither renamed nor written to.
     marked: list[Path] = []
     moved: list[tuple[Path, Path]] = []
+    rewritten: list[tuple[Path, bytes]] = []
     options = manifest.get("options") or {}
     try:
         if options.get("tempo_sync") and new.get("bpm") != old.get("bpm"):
@@ -144,15 +145,20 @@ def set_analysis(directory: Path, changes: dict[str, Any]) -> dict[str, Any]:
             moved.append((directory / was, directory / now))
         updated = json.loads(json.dumps(manifest))
         for stem in updated.get("stems", []):
-            for field in ("file", "midi"):
+            for field in STEM_FILES:
                 if stem.get(field) in moves:
                     stem[field] = moves[stem[field]]
+        if any(new.get(name) != old.get(name) for name in ("bpm", "key")):
+            _rewrite_midi(directory, updated, new, rewritten)
         updated["analysis"] = new
         updated["notes"] = notes_after_retag(list(updated.get("notes") or []), new.get("bpm"))
         tmp = directory / (MANIFEST_NAME + ".tmp")
         tmp.write_text(json.dumps(updated, indent=2, ensure_ascii=False), encoding="utf-8")
         os.replace(tmp, directory / MANIFEST_NAME)
     except OSError as exc:
+        for file, data in reversed(rewritten):
+            with contextlib.suppress(OSError):
+                file.write_bytes(data)
         for was, now in reversed(moved):
             with contextlib.suppress(OSError):
                 os.replace(now, was)
@@ -168,6 +174,40 @@ def set_analysis(directory: Path, changes: dict[str, Any]) -> dict[str, Any]:
             f"and try again ({which})."
         ) from exc
     return updated
+
+
+def _rewrite_midi(
+    directory: Path,
+    manifest: dict[str, Any],
+    analysis: dict[str, Any],
+    rewritten: list[tuple[Path, bytes]],
+) -> None:
+    """Write each stem's MIDI file again from its notes file, on the new tempo and key: a
+    MIDI file places its notes in beats, so the old one would hold them at the old tempo's.
+    ``rewritten`` collects each file with what it held, for the undo. A stem whose notes
+    file is missing or unreadable keeps its MIDI file as it is."""
+    from openstems.pipeline.notes import midi_from_sidecar
+
+    title = str((manifest.get("source") or {}).get("name") or "")
+    for stem in manifest.get("stems", []):
+        if not (stem.get("midi") and stem.get("notes")):
+            continue
+        target = directory / str(stem["midi"])
+        try:
+            sidecar = json.loads((directory / str(stem["notes"])).read_text(encoding="utf-8"))
+            data = midi_from_sidecar(
+                sidecar,
+                name=f"{title} {stem['name']}".strip(),
+                bpm=analysis.get("bpm"),
+                key=analysis.get("key"),
+            )
+        except (ValueError, DomainError, FileNotFoundError):
+            continue
+        if data is None or not target.is_file():
+            continue
+        before = target.read_bytes()
+        target.write_bytes(data)
+        rewritten.append((target, before))
 
 
 def _marked_files(manifest: dict[str, Any], directory: Path) -> list[Path]:
