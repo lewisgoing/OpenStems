@@ -53,6 +53,11 @@ export function shortcut(key: string): string {
   return isMac() ? `⌘${key}` : `Ctrl+${key}`
 }
 
+/** Redo as it is written on this system: "Ctrl+Y" on Windows, "⇧⌘Z" on a Mac. Both take Shift with undo's key too. */
+export function redoShortcut(): string {
+  return isMac() ? '⇧⌘Z' : 'Ctrl+Y'
+}
+
 /** A click with the modifier held: "Ctrl+click" on Windows, "⌘-click" on a Mac. */
 export function modClick(): string {
   return isMac() ? '⌘-click' : 'Ctrl+click'

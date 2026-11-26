@@ -14,6 +14,7 @@ import { type Grid, TapTempo, cleanDownbeat, rangeLabel, timeAtBar } from '@/lib
 import { type ClipRequest, forgetClips, useClipFiles } from '@/state/clip'
 import { SelectionProvider } from '@/state/selection'
 import { TrimEditor, type TrimEditorProps } from '@/trimmer/TrimEditor'
+import { EMPTY, KEEP, type Moment, RUN_MS, figuresChange, nextWhat, record, redo, sameRange, undo } from '@/trimmer/history'
 import { FRESH, type TrimMemory, forgetAll, recall, remember } from '@/trimmer/memory'
 import {
   BARS_KEY,
@@ -1640,5 +1641,231 @@ describe('separating only the part of a waiting song', () => {
     expect(screen.getByText(/Start separates just that part: faster, and its stems come out trimmed\./)).toBeInTheDocument()
     await userEvent.click(toggle)
     expect(patchSettings.mutate).toHaveBeenCalledWith({ separate_selection: true }, expect.anything())
+  })
+})
+
+describe('undo and redo, as plain functions', () => {
+  const at = (bpm: number, sel: [number, number] | null = null): Moment => ({
+    figures: { bpm, downbeat: 0.5 },
+    grid: { bpm, downbeat: 0.5, beatsPerBar: 4 },
+    sel: sel ? { start: sel[0], end: sel[1] } : null,
+    fitted: false,
+  })
+
+  it('goes back through what was done, and forward again', () => {
+    // The tempo doubled twice: 120, 240, and now 480.
+    let history = record(record(EMPTY, at(120), 'grid', 0), at(240), 'grid', 5000)
+    expect(nextWhat(history.past)).toBe('the beat grid')
+    expect(nextWhat(history.future)).toBeNull()
+
+    const back = undo(history, at(480))
+    expect(back?.to).toEqual(at(240))
+    history = back?.history ?? EMPTY
+    const further = undo(history, at(240))
+    expect(further?.to).toEqual(at(120))
+    history = further?.history ?? EMPTY
+    expect(undo(history, at(120))).toBeNull()
+
+    const forward = redo(history, at(120))
+    expect(forward?.to).toEqual(at(240))
+    history = forward?.history ?? EMPTY
+    expect(redo(history, at(240))?.to).toEqual(at(480))
+  })
+
+  it('a new change after an undo leaves nothing to redo', () => {
+    const history = undo(record(EMPTY, at(120), 'grid', 0), at(240))?.history ?? EMPTY
+    expect(history.future).toHaveLength(1)
+    const changed = record(history, at(120), 'grid', 9000)
+    expect(changed.future).toEqual([])
+    expect(redo(changed, at(60))).toBeNull()
+  })
+
+  it('takes back an edge walked with the arrow keys whole, and a later move by itself', () => {
+    // Three presses in a row, then one after a pause.
+    let history = record(EMPTY, at(120, [0.5, 2.5]), 'part', 1000)
+    history = record(history, at(120, [0.5, 4.5]), 'part', 1000 + RUN_MS - 1)
+    history = record(history, at(120, [0.5, 6.5]), 'part', 1000 + 2 * RUN_MS - 2)
+    expect(history.past).toHaveLength(1)
+    expect(history.past[0]?.moment.sel).toEqual({ start: 0.5, end: 2.5 })
+    history = record(history, at(120, [0.5, 8.5]), 'part', 1000 + 4 * RUN_MS)
+    expect(history.past).toHaveLength(2)
+    expect(nextWhat(history.past)).toBe('the part')
+    // A change of the grid is never folded into a run, nor a part into a grid's step.
+    history = record(history, at(120, [0.5, 8.5]), 'grid', 1000 + 4 * RUN_MS + 1)
+    history = record(history, at(240, [0.5, 8.5]), 'part', 1000 + 4 * RUN_MS + 2)
+    expect(history.past.map((step) => step.what)).toEqual(['part', 'part', 'grid', 'part'])
+  })
+
+  it('keeps the newest steps and drops the oldest', () => {
+    let history = EMPTY
+    for (let n = 0; n < KEEP + 5; n += 1) history = record(history, at(100 + n), 'grid', n * 5000)
+    expect(history.past).toHaveLength(KEEP)
+    expect(history.past[0]?.moment.figures.bpm).toBe(105)
+  })
+
+  it('saves only what differs between two moments, none as none', () => {
+    expect(figuresChange({ bpm: 120, downbeat: 0.5 }, { bpm: 120, downbeat: 0.5 })).toBeNull()
+    expect(figuresChange({ bpm: 240, downbeat: 0.5 }, { bpm: 120, downbeat: 0.5 })).toEqual({ bpm: 120 })
+    expect(figuresChange({ bpm: 87, downbeat: 0.2 }, { bpm: null, downbeat: null })).toEqual({ bpm: null, downbeat: null })
+    expect(sameRange(null, null)).toBe(true)
+    expect(sameRange({ start: 1, end: 2 }, null)).toBe(false)
+    expect(sameRange({ start: 1, end: 2 }, { start: 1, end: 2 })).toBe(true)
+  })
+})
+
+describe('undo and redo in the trimmer', () => {
+  /** The editor on a song that follows what is saved, as the song in the app's list does. */
+  function live(initial: TrimMemory = FRESH) {
+    const onCommit = vi.fn(async (_change: { bpm?: number | null; downbeat?: number | null }) => undefined)
+    let analysis: Record<string, unknown> = { bpm: 120, key: 'Am', downbeat: 0.5 }
+    const props = { initial, instant: false, leaving: false, onBack: vi.fn() }
+    const commit = async (change: { bpm?: number | null; downbeat?: number | null }) => {
+      await onCommit(change)
+      analysis = { ...analysis, ...change }
+      view.rerender(tree(<TrimEditor song={songOfJob(job({ analysis }))} {...props} onCommit={commit} />))
+    }
+    const view = render(tree(<TrimEditor song={song} {...props} onCommit={commit} />))
+    return { onCommit, view }
+  }
+  const undoButton = () => screen.getByTestId('trim-undo')
+  const redoButton = () => screen.getByTestId('trim-redo')
+  const bpm = () => editorEl().getAttribute('data-bpm')
+  const settle = () => act(async () => undefined)
+  const view = { t0: 0, t1: 60 }
+
+  it('has nothing to undo in a song just opened, and says so', () => {
+    live()
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+    expect(redoButton()).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(undoButton())
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true })
+    expect(bpm()).toBe('120')
+  })
+
+  it('takes back a grid that was messed up, step by step, and saves each step', async () => {
+    const { onCommit } = live()
+    fireEvent.click(screen.getByRole('button', { name: 'Double the tempo' }))
+    await settle()
+    fireEvent.click(screen.getByRole('button', { name: 'Double the tempo' }))
+    await settle()
+    expect(bpm()).toBe('480')
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'false')
+    expect(undoButton()).toHaveAttribute('data-what', 'the beat grid')
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true })
+    expect(bpm()).toBe('240')
+    expect(onCommit).toHaveBeenLastCalledWith({ bpm: 240 })
+    await settle()
+    fireEvent.click(undoButton())
+    expect(bpm()).toBe('120')
+    expect(onCommit).toHaveBeenLastCalledWith({ bpm: 120 })
+    await settle()
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+
+    // Forward again: Ctrl+Shift+Z, Ctrl+Y, or the button.
+    fireEvent.keyDown(window, { key: 'Z', ctrlKey: true, shiftKey: true })
+    expect(bpm()).toBe('240')
+    await settle()
+    fireEvent.keyDown(window, { key: 'y', ctrlKey: true })
+    expect(bpm()).toBe('480')
+    expect(onCommit).toHaveBeenLastCalledWith({ bpm: 480 })
+    await settle()
+    expect(redoButton()).toHaveAttribute('aria-disabled', 'true')
+    expect(onCommit).toHaveBeenCalledTimes(6)
+  })
+
+  it('takes back bar 1 and the tempo together when one change set both, and a run of nudges as one', async () => {
+    const { onCommit } = live()
+    fireEvent.click(screen.getByTestId('downbeat-later'))
+    fireEvent.click(screen.getByTestId('downbeat-later'))
+    fireEvent.click(screen.getByTestId('downbeat-later'))
+    // Undo straight away: the nudges are saved first, then taken back as one step.
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true })
+    expect(editorEl()).toHaveAttribute('data-downbeat', '0.5')
+    await waitFor(() => expect(onCommit).toHaveBeenLastCalledWith({ downbeat: 0.5 }))
+    expect(onCommit).toHaveBeenCalledTimes(2)
+    expect(onCommit.mock.calls[0]?.[0]).toEqual({ downbeat: 0.53 })
+    await settle()
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+    expect(redoButton()).toHaveAttribute('data-what', 'the beat grid')
+  })
+
+  it('takes back Reset, the way out of the way out', async () => {
+    live()
+    const field = screen.getByTestId('tempo-field')
+    await userEvent.clear(field)
+    await userEvent.type(field, '87{Enter}')
+    await settle()
+    expect(bpm()).toBe('87')
+    // Typing in the field again and pressing Ctrl+Z there is the field's own undo, not this one.
+    fireEvent.keyDown(field, { key: 'z', ctrlKey: true })
+    expect(bpm()).toBe('87')
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true })
+    expect(bpm()).toBe('120')
+  })
+
+  it('takes back the part: one chosen, one changed, one cleared', async () => {
+    const memory: TrimMemory = { ...FRESH, pick: { kind: 'stems', names: ['kick'] }, view }
+    const { onCommit } = live(memory)
+    const sel = () => editorEl().getAttribute('data-sel')
+    const player = TrimPlayer.last
+    fireEvent.click(screen.getByTestId('bars-8'))
+    expect(sel()).toBe('0.5,16.5')
+    // Long enough apart to be steps of their own.
+    vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 10 * RUN_MS)
+    fireEvent.click(screen.getByTestId('bars-4'))
+    expect(sel()).toBe('0.5,8.5')
+    vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 10 * RUN_MS)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(sel()).toBe('')
+    expect(undoButton()).toHaveAttribute('data-what', 'the part')
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true })
+    expect(sel()).toBe('0.5,8.5')
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true })
+    expect(sel()).toBe('0.5,16.5')
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true })
+    expect(sel()).toBe('')
+    expect(player?.state.loop).toBeNull()
+    fireEvent.keyDown(window, { key: 'y', ctrlKey: true })
+    expect(sel()).toBe('0.5,16.5')
+    // The part alone: nothing of the grid was saved.
+    expect(onCommit).not.toHaveBeenCalled()
+    vi.restoreAllMocks()
+  })
+
+  it('still has its steps when the song is left and opened again', async () => {
+    const { view: first } = live()
+    fireEvent.click(screen.getByRole('button', { name: 'Double the tempo' }))
+    await settle()
+    expect(bpm()).toBe('240')
+    first.unmount()
+    const kept = recall(song.id)
+    expect(kept.history?.past).toHaveLength(1)
+    const onCommit = vi.fn(async () => undefined)
+    render(tree(<TrimEditor song={songOfJob(job({ analysis: { bpm: 240, key: 'Am', downbeat: 0.5 } }))} initial={kept} instant={false} leaving={false} onBack={vi.fn()} onCommit={onCommit} />))
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'false')
+    fireEvent.click(undoButton())
+    expect(bpm()).toBe('120')
+    expect(onCommit).toHaveBeenCalledWith({ bpm: 120 })
+  })
+
+  it('a save that is refused takes nothing back for good: the song keeps the grid it has', async () => {
+    const onCommit = vi.fn(async (change: { bpm?: number | null }) => {
+      if (change.bpm === 120) throw new ApiError('Song - kick 240.wav is open in another program')
+    })
+    let analysis: Record<string, unknown> = { bpm: 120, key: 'Am', downbeat: 0.5 }
+    const props = { initial: FRESH, instant: false, leaving: false, onBack: vi.fn() }
+    const commit = async (change: { bpm?: number | null }) => {
+      await onCommit(change)
+      analysis = { ...analysis, ...change }
+      shown.rerender(tree(<TrimEditor song={songOfJob(job({ analysis }))} {...props} onCommit={commit} />))
+    }
+    const shown = render(tree(<TrimEditor song={song} {...props} onCommit={commit} />))
+    fireEvent.click(screen.getByRole('button', { name: 'Double the tempo' }))
+    await settle()
+    fireEvent.click(undoButton())
+    expect(await screen.findByText('Song - kick 240.wav is open in another program')).toBeInTheDocument()
+    await waitFor(() => expect(bpm()).toBe('240'))
   })
 })

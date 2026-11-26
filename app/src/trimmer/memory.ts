@@ -5,6 +5,7 @@
  */
 
 import type { Range, Snap, View } from '@/lib/grid'
+import type { History } from './history'
 import type { Pick } from './model'
 
 export interface TrimMemory {
@@ -19,6 +20,8 @@ export interface TrimMemory {
    * a waiting song's part comes back as stems whose 0 is the part's start.
    */
   origin: number
+  /** What can be undone and redone, so a song left and opened again can still be put right. */
+  history?: History
 }
 
 export const FRESH: TrimMemory = { pick: null, sel: null, snap: 'bar', view: null, fitted: false, origin: 0 }

@@ -8,7 +8,7 @@
  */
 
 import { useQueries } from '@tanstack/react-query'
-import { ArrowLeft, AudioLines, GripVertical, Layers, Metronome, Pause, Play, Repeat, RotateCcw, SkipBack, TriangleAlert, X } from 'lucide-react'
+import { ArrowLeft, AudioLines, GripVertical, Layers, Metronome, Pause, Play, Redo2, Repeat, RotateCcw, SkipBack, TriangleAlert, Undo2, X } from 'lucide-react'
 import {
   type CSSProperties,
   type ReactNode,
@@ -53,10 +53,11 @@ import {
 import { dragSource } from '@/lib/sourcedrag'
 import { formatBpm, parseBpm } from '@/lib/tempokey'
 import { type Theme, useTheme } from '@/lib/theme'
-import { freeKey, homeKey, isMac, modClick, modKey, modName } from '@/platform'
+import { freeKey, homeKey, isMac, modClick, modKey, modName, redoShortcut, shortcut } from '@/platform'
 import { type ClipFiles, SETTLE_MS, forgetWritten, useClipFiles } from '@/state/clip'
 import { capitalize } from '@/state/mix'
 import { type Tokens, mixColors, useFrame, useTokens } from './canvas'
+import { EMPTY, type History, type Moment, type What, figuresChange, nextWhat, record, redo as redoStep, sameRange, undo as undoStep } from './history'
 import { type TrimMemory, remember } from './memory'
 import {
   BAR_LENGTHS,
@@ -360,6 +361,34 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
   // showed, then bar 1 typed, ended with the old bar 1.
   const onItsWay = useRef<Promise<unknown> | null>(null)
 
+  /* ---- undo and redo: what the grid and the part were before each change ---- */
+
+  // What the song is meant to be saved with, and the grid that draws: a step ahead of the
+  // song itself while a save is on its way, and the song's own once nothing is.
+  const intended = useRef<Figures>(song.saved)
+  const settledGrid = useRef<Grid>(saved.grid)
+  if (draft === null && onItsWay.current === null) {
+    intended.current = song.saved
+    settledGrid.current = saved.grid
+  }
+  // Steps kept from the last time the song was open are of the timeline it was on then.
+  const [history, setHistory] = useState<History>(() => (initial.history && initial.origin === song.origin ? initial.history : EMPTY))
+  const historyRef = useRef(history)
+  const putHistory = (next: History) => {
+    historyRef.current = next
+    setHistory(next)
+  }
+  const selRef = useRef<Range | null>(null)
+  const fittedRef = useRef(false)
+  // Going back or forward saves a grid too: that save is not itself a step.
+  const travelling = useRef(false)
+  /** Keep the state before a change that is now complete. */
+  const keep = (what: What, selBefore: Range | null) => {
+    if (travelling.current) return
+    const before: Moment = { figures: intended.current, grid: settledGrid.current, sel: selBefore, fitted: fittedRef.current }
+    putHistory(record(historyRef.current, before, what, performance.now()))
+  }
+
   const save = (change: GridChange | null, shown: Grid | null) => {
     window.clearTimeout(nudgeTimer.current)
     nudgeTimer.current = 0
@@ -367,6 +396,9 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
       setDraft(null)
       return
     }
+    keep('grid', selRef.current)
+    intended.current = { ...intended.current, ...change }
+    if (shown) settledGrid.current = shown
     setDraft(shown)
     const mine = epoch.current
     const before = onItsWay.current
@@ -431,6 +463,8 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
   // The part as it was before the gesture under way: what tells a new part from a changed one.
   const rest = useRef(sel)
   if (!gesture) rest.current = sel
+  selRef.current = sel
+  fittedRef.current = fitted
 
   // A song that comes back on another timeline while it is open (a waiting song whose part
   // was separated alone): the part moves with it, and the view shows the whole of it.
@@ -456,8 +490,8 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
     setSel((current) => (current && current.end > duration ? cleanRange(current.start, current.end, duration) : current))
   }, [duration])
 
-  const latest = useRef<TrimMemory>({ pick, sel, snap, view, fitted, origin: song.origin })
-  latest.current = { pick, sel, snap, view, fitted, origin: song.origin }
+  const latest = useRef<TrimMemory>({ pick, sel, snap, view, fitted, origin: song.origin, history })
+  latest.current = { pick, sel, snap, view, fitted, origin: song.origin, history }
   useEffect(() => () => remember(song.id, latest.current), [song.id])
 
   const looping = state.loop !== null
@@ -490,15 +524,19 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
     if (sel) player.playRange(sel, looping)
   }
   const clearSelection = () => {
+    if (sel) keep('part', sel)
     setSel(null)
     if (looping) player.setLoop(null)
   }
+  const keepRef = useRef(keep)
+  keepRef.current = keep
   const selectionDone = useCallback(
     (next: Range | null) => {
       // A part chosen where there was none is looped: it is chosen to be heard round and
       // round. After that the loop is the user's: on, it follows the part once the pointer
       // lets go (not on every move); turned off, it stays off.
       const created = next !== null && rest.current === null
+      if (!sameRange(rest.current, next)) keepRef.current('part', rest.current)
       rest.current = next
       if (created || player.state.loop) player.setLoop(next)
     },
@@ -566,14 +604,57 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
   }, [leaving])
   useEffect(() => () => flush.current(), [])
 
+  /** Show and save a moment of the history: the part at once, the grid through the usual save. */
+  const travel = (to: Moment) => {
+    setSel(to.sel)
+    selRef.current = to.sel
+    rest.current = to.sel
+    // A loop follows the part, as it does when the part is moved by hand.
+    if (player.state.loop) player.setLoop(to.sel)
+    setFitted(to.fitted)
+    fittedRef.current = to.fitted
+    const change = figuresChange(intended.current, to.figures)
+    if (!change) return
+    travelling.current = true
+    save(change, to.grid)
+    travelling.current = false
+  }
+  const here = (): Moment => ({ figures: intended.current, grid: settledGrid.current, sel: selRef.current, fitted: fittedRef.current })
+  const undo = () => {
+    if (gesture) return
+    // A nudge or a tap still waiting for its moment is a change like any other: it is saved
+    // first, and is then the step taken back.
+    flush.current()
+    const step = undoStep(historyRef.current, here())
+    if (!step) return
+    putHistory(step.history)
+    travel(step.to)
+  }
+  const redo = () => {
+    if (gesture) return
+    flush.current()
+    const step = redoStep(historyRef.current, here())
+    if (!step) return
+    putHistory(step.history)
+    travel(step.to)
+  }
+
   // Keys. Nothing animates for them; none of them acts while a field is being typed in.
   useEffect(() => {
     if (leaving) return
     const onKey = (event: KeyboardEvent) => {
       const el = event.target instanceof Element ? event.target : null
+      // In a field, Undo is the field's own: what was typed there.
       if (el?.closest('input, textarea, select, [contenteditable="true"], [role="combobox"]')) return
-      if (event.ctrlKey || event.metaKey || event.altKey) return
       const key = event.key.toLowerCase()
+      if (modKey(event) && !event.altKey && (key === 'z' || key === 'y')) {
+        // Ctrl+Z, and Ctrl+Shift+Z or Ctrl+Y to go forward again (Cmd on a Mac).
+        event.preventDefault()
+        if (key === 'y' || event.shiftKey) redo()
+        else undo()
+        return
+      }
+      if (event.ctrlKey || event.metaKey || event.altKey) return
       if (event.code === 'Space') {
         // Also on a focused button: Space is the transport here, as in the stems panel.
         event.preventDefault()
@@ -721,7 +802,17 @@ export function TrimEditor({ song, initial, instant, leaving, onBack, onCommit, 
       data-sel={sel ? `${sel.start},${sel.end}` : ''}
       data-wave={waves ? (waves.some((source) => source instanceof PeaksWave) ? 'peaks' : 'audio') : 'none'}
     >
-      <TopBar song={song} pick={pick} preview={preview} onPick={setChosen} onBack={onBack} />
+      <TopBar
+        song={song}
+        pick={pick}
+        preview={preview}
+        onPick={setChosen}
+        onBack={onBack}
+        undoes={nextWhat(history.past)}
+        redoes={nextWhat(history.future)}
+        onUndo={undo}
+        onRedo={redo}
+      />
       {known ? (
         <>
           <GridBar
@@ -903,9 +994,14 @@ interface TopBarProps {
   preview: { isPending: boolean; isError: boolean; error: unknown; data?: unknown }
   onPick: (pick: Pick) => void
   onBack: (instant: boolean) => void
+  /** What Undo takes back and Redo brings back, in words; null when there is nothing to. */
+  undoes: string | null
+  redoes: string | null
+  onUndo: () => void
+  onRedo: () => void
 }
 
-function TopBar({ song, pick, preview, onPick, onBack }: TopBarProps) {
+function TopBar({ song, pick, preview, onPick, onBack, undoes, redoes, onUndo, onRedo }: TopBarProps) {
   const theme = useTheme()
   const chip = (c: Chip, text: ReactNode, colorValue: string, options: { strong?: boolean; mark?: ReactNode; title?: string } = {}) => {
     const on = isChosen(pick, c)
@@ -936,6 +1032,20 @@ function TopBar({ song, pick, preview, onPick, onBack }: TopBarProps) {
           Back
         </Button>
       </Tooltip>
+      {/* Always there, so nothing in the bar moves when the first change is made; with nothing
+          to take back they are dimmed and say so. They say what the next step is. */}
+      <div className="flex flex-none items-center" role="group" aria-label="Undo and redo">
+        <Tooltip label={undoes ? `Undo ${undoes} (${shortcut('Z')})` : `Nothing to undo (${shortcut('Z')})`}>
+          <Button size="icon" variant="ghost" className="!h-7 !w-7" aria-label="Undo" aria-disabled={!undoes} data-testid="trim-undo" data-what={undoes ?? undefined} onClick={onUndo}>
+            <Undo2 size={14} />
+          </Button>
+        </Tooltip>
+        <Tooltip label={redoes ? `Redo ${redoes} (${redoShortcut()})` : `Nothing to redo (${redoShortcut()})`}>
+          <Button size="icon" variant="ghost" className="!h-7 !w-7" aria-label="Redo" aria-disabled={!redoes} data-testid="trim-redo" data-what={redoes ?? undefined} onClick={onRedo}>
+            <Redo2 size={14} />
+          </Button>
+        </Tooltip>
+      </div>
       <span className="h-5 w-px flex-none bg-line" aria-hidden="true" />
       {/* The title takes the room it needs, up to a share of the bar; the chips wrap first. */}
       <div className="flex min-w-0 max-w-[40%] flex-none items-baseline gap-2" data-testid="trim-title">
