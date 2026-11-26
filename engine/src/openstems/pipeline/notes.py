@@ -35,6 +35,7 @@ METHOD = "swift-f0 0.3.0, line segmenter 1"
 # A song's MIDI is rounded to keys in the song's own tuning only when the notes of a stem
 # with fixed pitches (not a voice) agree on one this tightly. Otherwise keys are at A440.
 TUNING_STRENGTH = 0.7
+TUNING_LEAST = 5.0  # cents: a song this close to A440 is at A440
 
 
 def readable(
@@ -59,7 +60,7 @@ def song_tuning(found: Mapping[str, Transcription]) -> float:
         weight = transcription.tuning_strength * sum(n.duration for n in transcription.shown())
         if weight > best[0]:
             best = (weight, transcription.tuning_cents)
-    return best[1]
+    return best[1] if abs(best[1]) >= TUNING_LEAST else 0.0
 
 
 def midi_of(

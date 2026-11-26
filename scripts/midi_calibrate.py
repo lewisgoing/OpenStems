@@ -19,8 +19,9 @@ This script fits that model on the benchmark's clean stems and says how far it c
   notes" needs.
 
 A note counts as right when mir_eval pairs it with a reference note: onset within 50 ms and
-pitch within 50 cents. Frames are cached under ``<bench>/cache/f0`` (16 kHz audio and
-SwiftF0's answer per clip), so a second run takes seconds per set.
+pitch within 50 cents. Each clip's 16 kHz audio and the engine's pitch frames for it are
+kept under ``<bench>/cache/f0``, so a second run takes seconds per set. Delete that folder
+after changing how frames are made (a profile's range, the double-speed pass).
 """
 
 from __future__ import annotations
@@ -56,57 +57,41 @@ def clips(profile: str, bench: Path, limit: int | None = None) -> list[mb.Item]:
     return out[: limit or None]
 
 
-def _cached(item: mb.Item, folder: Path) -> dict:
+def _audio(item: mb.Item, folder: Path) -> tuple[np.ndarray, Path]:
+    """The clip as 16 kHz mono, read once and kept."""
     import soundfile as sf
     import soxr
 
     path = folder / (item.id.replace("/", "_") + ".npz")
     if path.is_file():
         with np.load(path) as z:
-            return {k: z[k] for k in z.files}
+            return z["audio"], path
     data, rate = sf.read(str(item.audio), dtype="float32", always_2d=True)
     audio = soxr.resample(data.mean(axis=1), rate, T.RATE).astype(np.float32)
-    r = T._swiftf0().detect(audio, T.RATE)
-    out = {"audio": audio, "pitch": r.pitch_hz, "conf": r.confidence, "loud": r.loudness_db}
     path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(path, **out)
-    return out
+    np.savez(path, audio=audio)
+    return audio, path
 
 
-def _frames(audio16: np.ndarray, low: bool = False) -> T.Frames:
-    """`transcribe.pitch_frames` from the cache: the first pass, and the double-speed pass
-    kept beside it."""
-    import soxr
+_pitch_frames = T.pitch_frames
 
-    data, path = _now["data"], _now["path"]
-    pitch, conf = data["pitch"].copy(), data["conf"].copy()
-    if low:
-        fast_path = path.with_suffix(".fast.npz")
-        if fast_path.is_file():
-            with np.load(fast_path) as z:
-                fp, fc = z["pitch"], z["conf"]
-        else:
-            fast = soxr.resample(audio16, T.RATE, T.RATE // 2).astype(np.float32)
-            r = T._swiftf0().detect(fast, T.RATE)
-            fp, fc = r.pitch_hz, r.confidence
-            np.savez(fast_path, pitch=fp, conf=fc)
-        n = len(pitch)
-        up_pitch, up_conf = np.zeros(n), np.zeros(n)
-        doubled = np.repeat(fp / 2.0, 2)[:n]
-        up_pitch[: len(doubled)] = doubled
-        up_conf[: len(doubled)] = np.repeat(fc, 2)[:n]
-        take = (up_conf >= 0.5) & (up_pitch > 0) & (up_pitch < T.LOW_BELOW_HZ)
-        pitch[take], conf[take] = up_pitch[take], up_conf[take]
-    return T._to_frames(pitch, conf, data["loud"])
+
+def _frames(audio16: np.ndarray, profile: T.Profile) -> T.Frames:
+    """`transcribe.pitch_frames`, its answer kept beside the clip's audio per profile."""
+    path = _now["path"].with_suffix(f".{profile.name}.npz")
+    if path.is_file():
+        with np.load(path) as z:
+            return T.Frames(z["m"], z["w"], z["level"])
+    frames = _pitch_frames(audio16, profile)
+    np.savez(path, m=frames.m, w=frames.w, level=frames.level)
+    return frames
 
 
 def transcribe(item: mb.Item, profile: str, bench: Path) -> T.Transcription:
     folder, stem = SETS[profile]
-    data = _cached(item, bench / "cache" / "f0" / folder)
-    _now["data"] = data
-    _now["path"] = bench / "cache" / "f0" / folder / (item.id.replace("/", "_") + ".npz")
+    audio, _now["path"] = _audio(item, bench / "cache" / "f0" / folder)
     T.pitch_frames = _frames  # type: ignore[assignment]
-    return T.transcribe_line(data["audio"], T.RATE, stem)
+    return T.transcribe_line(audio, T.RATE, stem)
 
 
 def right(reference: list, notes: tuple) -> np.ndarray:

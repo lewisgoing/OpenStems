@@ -60,6 +60,10 @@ class Profile:
     snap: bool  # move each start back to the note's attack
     low: bool  # a second pass at double speed, for notes under SwiftF0's floor
     program: int  # General MIDI program for the stem's MIDI file
+    # The pitches SwiftF0 is asked for, in Hz (None: its own limit). A separated stem holds a
+    # little of the other parts, and without a range a bass gave the odd note three octaves up.
+    lowest: float | None = None
+    highest: float | None = None
     # The confidence model: weights for `_features`, fitted on the benchmark's clean stems
     # by scripts/midi_calibrate.py, and the confidence at or above which a note is shown.
     weights: tuple[float, ...] = ()
@@ -76,6 +80,8 @@ PROFILES = {
         snap=False,
         low=False,
         program=53,
+        lowest=65.0,  # C2 to about C6
+        highest=1100.0,
         weights=(
             1.0722,
             0.2869,
@@ -98,6 +104,7 @@ PROFILES = {
         snap=True,
         low=True,
         program=33,
+        highest=800.0,  # every Slakh bass note lies under 784 Hz
         weights=(
             -7.4653,
             0.2182,
@@ -215,16 +222,20 @@ def _to_frames(pitch_hz: np.ndarray, confidence: np.ndarray, level: np.ndarray) 
     return Frames(m, np.where(valid, confidence, 0.0), np.asarray(level, dtype=np.float64))
 
 
-def pitch_frames(audio16: np.ndarray, low: bool = False) -> Frames:
-    """SwiftF0 over 16 kHz mono. With ``low``, a second pass at double speed fills in what
-    lies under its floor: at twice the speed a 41 Hz low E is an 82 Hz note."""
+def pitch_frames(audio16: np.ndarray, profile: Profile) -> Frames:
+    """SwiftF0 over 16 kHz mono, within the profile's range. For a profile with ``low``, a
+    second pass at double speed fills in what lies under SwiftF0's floor: at twice the speed
+    a 41 Hz low E is an 82 Hz note."""
     detector = _swiftf0()
-    first = detector.detect(audio16, RATE)
+    first = detector.detect(audio16, RATE, fmin=profile.lowest, fmax=profile.highest)
     pitch, confidence = first.pitch_hz.copy(), first.confidence.copy()
-    if low and audio16.size >= 4 * HOP:
+    if profile.low and audio16.size >= 4 * HOP:
         import soxr
 
-        fast = detector.detect(soxr.resample(audio16, RATE, RATE // 2).astype(np.float32), RATE)
+        top = None if profile.highest is None else min(2 * profile.highest, 2000.0)
+        fast = detector.detect(
+            soxr.resample(audio16, RATE, RATE // 2).astype(np.float32), RATE, fmax=top
+        )
         n = len(pitch)
         # Each of its frames spans two of ours.
         up_pitch = np.zeros(n)
@@ -549,7 +560,7 @@ def transcribe_line(audio: np.ndarray, sample_rate: int, stem: str = "") -> Tran
     audio16 = mono16(audio, sample_rate)
     if audio16.size < RATE // 4 or float(np.abs(audio16).max()) < 1e-4:
         return Transcription(profile=profile.name, threshold=profile.threshold)
-    frames = pitch_frames(audio16, profile.low)
+    frames = pitch_frames(audio16, profile)
     if not frames.valid.any():
         return Transcription(profile=profile.name, threshold=profile.threshold)
     cost = _frame_cost(frames)
