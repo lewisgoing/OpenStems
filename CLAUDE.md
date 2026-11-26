@@ -106,6 +106,9 @@ App (run from `app/`):
   part gets; "Separate only the trimmed part"; Trim from the stems panel; a stem that
   enters late (`OPENSTEMS_FAKE_LATE=<stem>:<seconds>` leaves a FakeEngine stem silent at its
   start, so with Trim silence on its file begins later in the song)
+- `pnpm e2e -g "undo and redo"`: a grid messed up in the trimmer and put right, read back
+  from the song's manifest, the part, and the steps kept across leaving the song.
+  `UNDO_SHOTS=<folder>` saves two pictures of it
 - `pnpm e2e rename`: a song renamed from its row's menu before it runs, then its stems on
   the disk from the stems panel (also while they play) and from History
 - `pnpm exec playwright test e2e/empty-stems.spec.ts`: stems with nothing in them left out of
@@ -523,6 +526,21 @@ Clips): change both together. Words for keys come from `freeKey` (Alt, Option), 
 `modClick` in `src/platform.ts`. Tests: `src/test/trimmer.test.tsx`, `src/test/layers.test.ts`
 (the layered waveform), the Mac cases in `src/test/mac.test.tsx`, and `pnpm e2e trimmer`.
 `docs/adr/0023-trimmer.md`.
+
+Undo and redo in the trimmer: `trimmer/history.ts` is the history as plain functions
+(`record`, `undo`, `redo`, `figuresChange`, `nextWhat`). A step (`Moment`) is the song's
+saved figures, the grid they draw, the part and `fitted`, taken when a change is complete:
+in `save` for the grid (a run of nudges or taps is one save, so one step) and in
+`selectionDone` and `clearSelection` for the part, where changes less than `RUN_MS` apart
+are one step. The view, the snap, the chips, the loop and the playhead are not steps. An
+undo goes through the editor's own `save` (`travel`), so it is saved like any change of the
+grid and put back with a toast when the engine refuses; `travelling` keeps that save from
+being a step itself. Steps are taken from what the song is meant to have (`intended`,
+`settledGrid`), ahead of the song while a save is on its way. They are kept in
+`TrimMemory.history` for the session and dropped when the song's timeline changes. Keys:
+Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y (Cmd on a Mac; `shortcut('Z')`, `redoShortcut()`), not in a
+field and not during a gesture. The two buttons are in `TopBar`, always there.
+`docs/adr/0029-studio-undo.md`.
 
 Separating only the part: with `separate_selection` on (off by default; read when the song
 starts), a part chosen on a waiting song is all that is separated, as a song of its own named
