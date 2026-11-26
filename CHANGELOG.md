@@ -1,7 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.4.6 (2026-11-25)
 
+- **Undo and redo in the trimmer.** A beat grid that went wrong can be put right: Ctrl+Z
+  (Cmd+Z on a Mac) takes back the last change to the tempo, to bar 1 or to the part, one
+  step at a time, and Ctrl+Y or Ctrl+Shift+Z (Shift+Cmd+Z on a Mac) brings it back. Two
+  buttons beside Back do the same and say what the next step is. Taking a step back saves
+  it, so file names, the manifest and the tempo FL Studio reads follow. A run of nudges or
+  taps is one step, and so is an edge walked with the arrow keys. The steps are still there
+  when you leave the song and open it again, until the app is quit. The zoom, the snap and
+  what is chosen to be heard are not steps. The same on Windows and a Mac, where it has not
+  been seen yet.
 - **Trim lines up down the queue.** The handle that drags a song's stems is now the same
   width whether it reads "1 stem" or "11 stems", so the Trim buttons before it stand in one
   column. The same in History, on Windows and a Mac.

@@ -141,6 +141,10 @@ an editor across the window, to take a few bars out as a file of their own.
    next time. A part chosen where there was none is looped; L or Loop turns that off, and it
    stays off for the parts after it. The button left of Play, or Home, takes the playhead
    and the view back to 0:00.
+   **Undo** (Ctrl+Z, Cmd+Z on a Mac) takes back the last change to the grid or to the
+   part, one step at a time, and **Redo** (Ctrl+Y or Ctrl+Shift+Z; Shift+Cmd+Z on a Mac)
+   brings it back; both are also beside Back. A grid that went wrong is put right on the
+   disk too, and the steps are still there when you leave the song and open it again.
 4. **Drag the clip out** of the footer into your DAW or a folder. It shows the name of the
    file it gives, such as "Song - drums - bars 9-16.wav". "Every stem, this part" gives every
    stem cut to the part, one file each. Clips are WAV, in a `Clips` folder beside the stems,

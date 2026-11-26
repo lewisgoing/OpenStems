@@ -509,3 +509,95 @@ test("a stem that enters late is cut on the song's timeline: silent until it sta
   expect(before).toBe(0)
   expect(after).toBeGreaterThan(0.001)
 })
+
+test('undo and redo: a grid that was messed up is put right, on the disk too, and the part comes back', async () => {
+  await start()
+  const { page } = ctx
+  const shots = process.env.UNDO_SHOTS
+  await add('First Song.mp3')
+  const done = page.locator('[data-testid="job-row"][data-state="done"]')
+  await expect(done).toHaveCount(1)
+  const folder = join(ctx.outputDir, 'First Song', 'full-song')
+  await done.getByTestId('row-trim').click()
+  await opened()
+  const undo = page.getByTestId('trim-undo')
+  const redo = page.getByTestId('trim-redo')
+  const bpm = async () => Number(await editor().getAttribute('data-bpm'))
+
+  // Nothing done yet: both are there, dimmed, and say why.
+  await expect(undo).toHaveAttribute('aria-disabled', 'true')
+  await expect(redo).toHaveAttribute('aria-disabled', 'true')
+
+  // A good grid, then two mistakes on top of it: the wrong tempo, and bar 1 dragged away.
+  await typeInto('tempo-field', '120')
+  await expect.poll(() => manifest(folder).analysis.bpm).toBe(120)
+  await typeInto('downbeat-field', '0:00.250')
+  await expect.poll(() => manifest(folder).analysis.downbeat).toBe(0.25)
+  await page.getByRole('button', { name: 'Double the tempo' }).click()
+  await expect.poll(() => manifest(folder).analysis.bpm).toBe(240)
+  await typeInto('downbeat-field', '0:01.000')
+  await expect.poll(() => manifest(folder).analysis.downbeat).toBe(1)
+  await expect(undo).toHaveAttribute('aria-disabled', 'false')
+  await expect(undo).toHaveAttribute('data-what', 'the beat grid')
+  if (shots) {
+    await undo.hover()
+    await page.waitForTimeout(700)
+    await page.screenshot({ path: join(shots, 'undo-1-messed-up.png') })
+  }
+
+  // Ctrl+Z (Cmd on a Mac) takes them back one at a time, in the song's manifest as well.
+  await editor().focus()
+  await page.keyboard.press(`${MOD}+z`)
+  await expect(editor()).toHaveAttribute('data-downbeat', '0.25')
+  await expect.poll(() => manifest(folder).analysis.downbeat).toBe(0.25)
+  expect(await bpm()).toBe(240)
+  await page.keyboard.press(`${MOD}+z`)
+  await expect(editor()).toHaveAttribute('data-bpm', '120')
+  await expect.poll(() => manifest(folder).analysis.bpm).toBe(120)
+  await expect(page.getByTestId('tempo-field')).toHaveValue('120')
+  await expect(redo).toHaveAttribute('aria-disabled', 'false')
+  if (shots) await page.screenshot({ path: join(shots, 'undo-2-put-right.png') })
+
+  // Forward again with the button and with the keys, then back to the good grid.
+  await redo.click()
+  await expect.poll(() => manifest(folder).analysis.bpm).toBe(240)
+  await page.keyboard.press(`${MOD}+Shift+z`)
+  await expect.poll(() => manifest(folder).analysis.downbeat).toBe(1)
+  await expect(redo).toHaveAttribute('aria-disabled', 'true')
+  await undo.click()
+  await undo.click()
+  await expect.poll(() => manifest(folder).analysis.bpm).toBe(120)
+  await expect.poll(() => manifest(folder).analysis.downbeat).toBe(0.25)
+
+  // The part is a step too: chosen, cleared by mistake, and back.
+  await select(0.25, 1.25)
+  const chosen = await editor().getAttribute('data-sel')
+  expect(chosen).not.toBe('')
+  await page.waitForTimeout(900) // a step of its own, not the end of the drag
+  await page.keyboard.press('Escape')
+  await expect(editor()).toHaveAttribute('data-sel', '')
+  await page.keyboard.press(`${MOD}+z`)
+  await expect(editor()).toHaveAttribute('data-sel', chosen ?? '')
+  await expect(undo).toHaveAttribute('data-what', 'the part')
+  // Nothing of the grid moved for it.
+  expect(manifest(folder).analysis.bpm).toBe(120)
+
+  // In a field, the same keys are the field's own undo: the song's grid stays.
+  await page.getByTestId('tempo-field').focus()
+  await page.keyboard.press(`${MOD}+z`)
+  await expect(editor()).toHaveAttribute('data-sel', chosen ?? '')
+  await expect(editor()).toHaveAttribute('data-bpm', '120')
+
+  // Left and opened again, the song can still be put back further.
+  await editor().focus()
+  await page.getByTestId('trim-back').click()
+  await expect(editor()).toHaveCount(0)
+  await done.getByTestId('row-trim').click()
+  await opened()
+  await expect(undo).toHaveAttribute('aria-disabled', 'false')
+  await editor().focus()
+  await page.keyboard.press(`${MOD}+z`) // the part
+  await expect(editor()).toHaveAttribute('data-sel', '')
+  await page.keyboard.press(`${MOD}+z`) // bar 1, typed at the start
+  await expect.poll(() => manifest(folder).analysis.downbeat).not.toBe(0.25)
+})
