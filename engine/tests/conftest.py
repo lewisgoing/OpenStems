@@ -16,6 +16,10 @@ from openstems.engines.host import ModelHost
 from openstems.pipeline.run import Pipeline
 
 RATE = 44100
+# How the engine says that a file could not be read, moved or replaced for want of
+# permission (`pipeline/notes.refused`): on Windows another program has it open, on a Mac
+# the app is not allowed to.
+REFUSED = "open in another program" if sys.platform == "win32" else "not allowed to read or write"
 
 
 def fake_spec(model_id: str, stems: tuple[str, ...], chunk_size: int = 22050) -> ModelSpec:

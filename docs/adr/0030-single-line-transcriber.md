@@ -89,7 +89,14 @@ writes what it finds.
   leaves out that stem's notes and MIDI, says so on the job, and reads the other stems
   (`notes.theirs`). A stem's own files are the ones its manifest names, and ones that are
   exactly what the app writes there (`_adopt`): a notes file of the app's for that stem, and
-  the MIDI file made from it, to the byte.
+  the MIDI file made from it, to the byte. Whether a file is the one the manifest names is
+  asked of the disk, not of the spelling: Windows and a Mac do not tell `TUNE - bass.mid`
+  from `Tune - bass.mid`.
+- **It is asked last.** A reading asks before its seconds of work and again just before it
+  writes. A run asks once every stem is written, just before its folder goes in, and the
+  swap itself never writes over or removes a notes or MIDI file that is not the old
+  manifest's own (`_replace_dir`, `notes.own`): a file saved while the stems were being
+  written is somebody's as well.
 - **A MIDI file is the stem's own only while it holds what the app wrote.** The manifest
   keeps the sha256 of the bytes (`midi_hash`), set by whatever writes the file: a run, a
   reading, a new tempo, a rename. One with other bytes was saved over the app's or edited,
@@ -97,11 +104,21 @@ writes what it finds.
   new tuning, not given a new tempo or name inside, not removed when the stem has no notes
   or the song is separated again. The manifest also keeps the hash of what the file held
   just before (`midi_was`), since it is written before the file: a write cut short must not
-  make the app take its own older file for somebody's. A MIDI file of the old tracker (up to
-  0.4.6, which kept no hash) came with its stem in the same moment, so one more than two
-  minutes newer than its stem counts as saved there since.
-- **A file marked read-only is left as it is:** a reading of its stem is refused, and
-  another stem's reading leaves that stem's two files on the tuning they are on.
+  make the app take its own older file for somebody's.
+- **A MIDI file of the old tracker** (up to 0.4.6, which kept no hash) came with the run
+  that wrote its folder. One more than two minutes later than that run counts as saved
+  there since. The run's time is the one the manifest keeps (`created_at`), which nothing
+  rewrites. The stem's own time will not do: with tempo sync on, a new tempo rewrites the
+  mark inside each WAV, and from then on the stem is newer than anything saved beside it;
+  and a stem may have been moved away. With no time to go by, the file is not the app's.
+- **A MIDI file that is there and cannot be read is nobody's to touch.** Whose it is, is
+  read from its bytes. A reading, a new tempo and a rename stop and say which file; a run
+  leaves that stem's notes out. On Windows that is a file another program holds, on a Mac
+  one the app may not read, on either one a sync client has not fetched.
+- **A file marked read-only is left as it is,** the same on both systems, by a reading (of
+  its stem: refused; of another stem: that stem's two files stay on the tuning they are
+  on), by a new tempo and a rename (which go through without it) and by a new run (which
+  writes the stem without notes, and says so).
 - **A name in a manifest is a file name.** A stem's files are joined to its folder and then
   moved, written over and removed, so `read_manifest` gives nothing for a manifest that
   names one outside its folder (`../x`, a path), and such a folder holds no stems to the
@@ -110,16 +127,25 @@ writes what it finds.
   files it names, and a stem's notes file after its MIDI file: it is the notes file that
   says a stem is read, and on which tuning. A process that ends in between leaves a manifest
   naming a file that is not there, or a notes file that still says the old tuning, and the
-  next reading writes what is missing. It first brings back a file that was moved aside and
-  never replaced, and clears what else was left (`_recover`). Written last, the manifest
-  left files nothing named, in the way for ever.
+  next write puts there what is missing. It first brings back a file that was moved aside
+  and never replaced, and clears what else was left (`recover`). A song that comes from the
+  cache with nothing to read does the same (`mend`): nothing else would write to it. A
+  rename and a new tempo clear up before they move the names, since what was left is found
+  by the names the manifest has. Written last, the manifest left files nothing named, in
+  the way for ever.
 - **Putting back is a rename.** What a file held is parked beside it until the whole write
   is done, the manifest too, so undoing a write needs no room on the disk and cannot leave
   half a file. A file that is open in another program cannot be parked (on Windows), and
-  then nothing is changed. The same holds for a notes file of another stem that is there and
-  cannot be read: decided without it, the song's tuning could be another than that stem's
-  MIDI file is on. Why nothing was written is said as the system means it: on Windows a
-  refusal is a file open elsewhere, on a Mac a folder the app may not write in.
+  then nothing is changed. The same holds for a file of another stem that is there and
+  cannot be read, its notes file or a MIDI file that would be rounded again: decided
+  without it, the song's tuning could be another than that stem's MIDI file is on. What a
+  write puts on the disk is flushed before it is renamed into place, the manifest above
+  all: after a power cut a manifest that cannot be read is a song the app no longer knows.
+  (The other writers of a manifest do not flush yet.)
+- **Why a change was refused is said as the system means it** (`notes.refused`), by a
+  reading, a new tempo and a rename alike: on Windows a file is open in another program,
+  on a Mac the app is not allowed to read or write it, and only Windows is told to close
+  something. A change that fails for another reason (a full disk) says that reason.
 - **The MIDI file is made from the notes file,** to the byte, with the song's name, tempo
   and key from the manifest (`midi_from_sidecar`): in a run, afterwards, on a retag.
 - **One writer at a time:** in the API process everything that rewrites a stem folder's
@@ -242,8 +268,17 @@ chords, tuning, velocity) is in `docs/research/stem-to-midi.md`, section 14.
   again until it is moved or renamed, which the app does say, on the job or in its answer.
   Its notes file still follows the song.
 - **Whose a MIDI file of the old tracker is, is a guess from its time.** One saved over
-  the app's within two minutes of the separation is taken for the app's and replaced, and
-  one whose time a copying tool set later than its stem's is taken for somebody's and kept.
+  the app's within two minutes of the separation is taken for the app's and replaced. A
+  folder copied by a tool that does not keep file times has every old MIDI file taken for
+  somebody's: nothing is lost, and the app says which files to move.
+- **A name that fills a file name to the brim.** While it writes, a reading keeps files
+  beside the notes and MIDI files whose names are up to 8 bytes longer than the notes
+  file's. A Mac's disk holds 255 bytes a name, so a song of some 77 Japanese characters
+  gets its notes from a run and not from a reading afterwards, which says the name is too
+  long and changes nothing. Windows counts otherwise and has room.
+- **What could not be removed at the end of a write stays until the next.** A file moved
+  aside that the system would not let go of is cleared by the next write, rename, tempo or
+  cached run of the song.
 - **The lock on a folder goes by its path as it is spelled.** Two spellings of one folder
   (another case on a Mac, a link) would be two locks. The app has one spelling, the one the
   API gave it.

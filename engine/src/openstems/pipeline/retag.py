@@ -118,6 +118,11 @@ def set_analysis(directory: Path, changes: dict[str, Any]) -> dict[str, Any]:
     if all(new.get(name) == old.get(name) for name in FIELDS):
         return manifest
     new.setdefault("detected", {name: old.get(name) for name in FIELDS})
+    # What a write of notes that was cut short left is cleared first: once the files have
+    # other names it would not be found.
+    from openstems.pipeline.notes import recover, why_refused
+
+    recover(directory, manifest)
 
     moves = _renames(manifest, old, new, directory)
     taken = {name.lower() for name in os.listdir(directory)} - {name.lower() for name in moves}
@@ -173,10 +178,10 @@ def set_analysis(directory: Path, changes: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(exc, OSError):
             raise  # not a file in the way: a fault, with the folder as it was
         which = Path(str(exc.filename)).name if exc.filename else str(exc)
-        raise DomainError(
-            "a file of this song is open in another program, so nothing was changed. "
-            f"Close it there and try again ({which})."
-        ) from exc
+        refused = why_refused(exc, "nothing was changed", which)
+        if refused is None:
+            refused = f"nothing was changed: {exc.strerror or exc} ({which})"
+        raise DomainError(refused) from exc
     return updated
 
 
@@ -212,7 +217,13 @@ def rewrite_midi(
     it, the app would otherwise take its own MIDI file for one somebody changed. What the
     manifest held goes into ``rewritten`` too, first, so `undo_midi` puts it back last.
     """
-    from openstems.pipeline.notes import changed, digest, midi_from_sidecar, track_name
+    from openstems.pipeline.notes import (
+        changed,
+        digest,
+        midi_from_sidecar,
+        read_only,
+        track_name,
+    )
 
     title = str((manifest.get("source") or {}).get("name") or "")
     plan: list[tuple[dict[str, Any], Path, bytes, bytes]] = []
@@ -238,7 +249,11 @@ def rewrite_midi(
             untouched = made(written_as) if written_as is not None else None
         except Exception:  # whatever is wrong with a notes file, the MIDI file is not at fault
             continue
-        if data is None or not target.is_file() or changed(directory, stem):
+        if data is None or not target.is_file():
+            continue
+        # A file marked read-only is left as it is, and so is somebody's. One that is there
+        # and cannot be read raises (`changed`): whose it is cannot be told.
+        if read_only(target) or changed(directory, stem):
             continue
         held = target.read_bytes()
         if written_as is not None and not stem.get("midi_hash") and held != untouched:

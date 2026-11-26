@@ -623,31 +623,40 @@ still written and the job says so (`extras._read_notes`). `POST /v1/notes` reads
 already written; nothing in the app calls it yet. It is two steps: `read_stems` (seconds, writes
 nothing) and `write_notes`, which starts from the manifest as it is then and writes everything
 or puts every file back. A file that is not a stem's own is never written over or removed, by a
-reading, a new run, a new tempo or a rename (`notes.theirs`; Melodyne saves its export as
-`<audio name>.mid` beside the audio): a reading that was asked for is refused, and a run leaves
-that stem's notes out and says so on the job. A stem's own are the files the manifest names and
-ones that are, to the byte, what the app writes there (`_adopt`). A MIDI file is its own only
-while it holds what the app wrote (`notes.changed`): the manifest keeps the sha256 as
-`midi_hash`, and as `midi_was` that of what the file held before, since the manifest is written
-first. Whatever writes a stem's MIDI file must set it, and ask `changed` before it replaces or
-removes one. A retag and a rename write their manifest last, so `rewrite_midi` first writes the
-one on the disk with both hashes (`on_disk`). A file marked read-only is left as it is. The
-manifest is written before the files it names (a stem's notes file last), so a write cut short
-is finished by the next, which first brings back what was parked (`_recover`). Putting back is a
-rename: what a file held is parked beside it (`.old.tmp`) until the write is done, the manifest
-too. `read_manifest` gives None for a manifest that names a file outside its own folder. Why a
-write was refused is said per system (`notes._why`, the platform passed in). In the API process
-whatever rewrites a stem folder's manifest (notes, a tempo or key, hidden stems, a rename) holds
-`Service._folder`, one lock per folder, and is refused while the running job may be writing that
-folder (`Service._not_being_written`): do both in anything new that does. The cache:
-`KEYED_MIDI_STEMS` are the only names in a run's key, written as 0.4.x wrote them, and a song
-from the cache whose stems have no notes file, or notes from another transcriber, is read where
-it lies, not separated again (`Pipeline._with_notes`, `notes.stale`). Raise the number in
-`METHOD` (`pipeline/notes.py`) whenever the notes a stem gives change. Measured on clean
-recordings, and with the rest of a song under the stem as a stand-in for bleed; separated stems
-wait for the GPU. Nothing of it has been seen on a Mac, and its tests have not run on one (CI
-runs on pull requests and `main`). `docs/adr/0030-single-line-transcriber.md`,
-`docs/research/stem-to-midi.md` section 14.
+reading, a new run, a new tempo or a rename (`notes.theirs`, `notes.own`; Melodyne saves its
+export as `<audio name>.mid` beside the audio): a reading that was asked for is refused, and a
+run leaves that stem's notes out and says so on the job. It is asked last: a reading asks again
+just before it writes, a run once every stem is written, and `_replace_dir` never writes over a
+notes or MIDI file that is not the old manifest's own. Whether a file is the one the manifest
+names is asked of the disk (`_one_file`), which does not tell case. A stem's own are the files
+the manifest names and ones that are, to the byte, what the app writes there (`_adopt`). A MIDI
+file is its own only while it holds what the app wrote (`notes.changed`): the manifest keeps the
+sha256 as `midi_hash`, and as `midi_was` that of what the file held before, since the manifest
+is written first. One from before hashes (the old tracker's) goes by the run's time in the
+manifest (`created_at`), never by its stem's, which a new tempo moves. `changed` raises OSError
+for a file that is there and cannot be read: whose it is cannot be told, so a reading, a new
+tempo and a rename stop. Whatever writes a stem's MIDI file must set it, and ask `changed`
+before it replaces or removes one. A retag and a rename write their manifest last, so
+`rewrite_midi` first writes the one on the disk with both hashes (`on_disk`). A file marked
+read-only is left as it is, by all four and on both systems. The manifest is written before the
+files it names (a stem's notes file last), so a write cut short is finished by the next, which
+first brings back what was parked (`recover`); a song from the cache with nothing to read does
+that by itself (`mend`), and a rename and a new tempo call `recover` before they move the names.
+Putting back is a rename: what a file held is parked beside it (`.old.tmp`) until the write is
+done, the manifest too. `read_manifest` gives None for a manifest that names a file outside its
+own folder. Why a change was refused is said per system by a reading, a new tempo and a rename
+alike (`notes.refused`, `why_refused`, the platform passed in; `REFUSED` in `tests/conftest.py`
+is what tests match). In the API process whatever rewrites a stem folder's manifest (notes, a
+tempo or key, hidden stems, a rename) holds `Service._folder`, one lock per folder, and is
+refused while the running job may be writing that folder (`Service._not_being_written`): do both
+in anything new that does. The cache: `KEYED_MIDI_STEMS` are the only names in a run's key,
+written as 0.4.x wrote them, and a song from the cache whose stems have no notes file, or notes
+from another transcriber, is read where it lies, not separated again (`Pipeline._with_notes`,
+`notes.stale`). Raise the number in `METHOD` (`pipeline/notes.py`) whenever the notes a stem
+gives change. Measured on clean recordings, and with the rest of a song under the stem as a
+stand-in for bleed; separated stems wait for the GPU. Nothing of it has been seen on a Mac, and
+its tests have not run on one (CI runs on pull requests and `main`).
+`docs/adr/0030-single-line-transcriber.md`, `docs/research/stem-to-midi.md` section 14.
 
 Dependencies point inward: `domain` imports nothing from the other packages and never imports
 torch. `cli` and `api` are the only entry points.

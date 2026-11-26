@@ -104,6 +104,12 @@ def rename_song(directory: Path, name: str) -> list[Moved]:
     except OSError as exc:
         raise DomainError(f"cannot read the song's folder: {exc}") from exc
     sets = [(folder, manifest) for folder in folders if (manifest := read_manifest(folder))]
+    # What a write of notes that was cut short left is cleared first: once the files have
+    # other names it would not be found.
+    from openstems.pipeline.notes import recover, why_refused
+
+    for folder, manifest in sets:
+        recover(folder, manifest)
 
     move_folder = new_folder.name != old_folder.name
     if move_folder and new_folder.exists() and not _same_folder(old_folder, new_folder):
@@ -160,10 +166,8 @@ def rename_song(directory: Path, name: str) -> list[Moved]:
         if moved_folder:
             with contextlib.suppress(OSError):
                 os.rename(new_folder, old_folder)
-        if isinstance(exc, PermissionError):
-            raise DomainError(
-                "a file of this song is open in another program, so nothing was renamed. "
-                "Close it there and try again."
-            ) from exc
-        raise DomainError(f"the song could not be renamed: {exc.strerror or exc}") from exc
+        refused = why_refused(exc, "nothing was renamed")
+        if refused is None:
+            refused = f"the song could not be renamed: {exc.strerror or exc}"
+        raise DomainError(refused) from exc
     return out

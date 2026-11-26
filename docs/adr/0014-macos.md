@@ -335,6 +335,12 @@ The rest has not been seen at all.
   3. Drag a `.mid` into a DAW at the song's tempo: the notes should sit on the stem.
   4. In the stem folder there should be a `.notes.json` beside each `.mid`.
   5. If a song's row says "its notes could not be read", send `engine.log`.
+  6. In Finder, copy any other `.mid` over the bass's `.mid` in the stem folder (same name).
+     Then rename the song in the app. The bass's `.mid` should still be the file you copied,
+     under the song's new name; the vocals' `.mid` should name its track after the new name
+     when a DAW opens it. A file somebody saved there is never written over (ADR 0030); what
+     differs on a Mac (a file marked read-only, why a write is refused) is covered by tests
+     that have only run on Windows so far.
 
 Not built: dropping files on the menu bar item itself. Queuing lives in the windows, and the
 quick-drop window is one click away.
