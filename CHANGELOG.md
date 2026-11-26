@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.5 (2026-11-25)
 
 - **Hide a stem.** Each stem in the stems panel has a Hide button, beside Solo and Mute when
   the pointer is on its row. A hidden stem leaves the list, the "Drag all" handles and the
