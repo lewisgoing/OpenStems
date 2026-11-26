@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.6 (2026-11-25)
 
 - **Undo and redo in the trimmer.** A beat grid that went wrong can be put right: Ctrl+Z
   (Cmd+Z on a Mac) takes back the last change to the tempo, to bar 1 or to the part, one
@@ -11,6 +11,11 @@
   when you leave the song and open it again, until the app is quit. The zoom, the snap and
   what is chosen to be heard are not steps. The same on Windows and a Mac, where it has not
   been seen yet.
+- **Trim lines up down the queue.** The handle that drags a song's stems is now the same
+  width whether it reads "1 stem" or "11 stems", so the Trim buttons before it stand in one
+  column. The same in History, on Windows and a Mac.
+- **Solo, Mute and Hide answer the pointer.** The small buttons at the end of a stem's row
+  show the hand cursor and light up under it.
 
 ## 0.4.5 (2026-11-25)
 

@@ -384,7 +384,7 @@ export function StemsPanel({ title, source, subtitle, directory, stems: every, h
   )
 }
 
-const TOGGLE = 'press h-6 w-6 rounded-[5px] border border-transparent text-[11px] font-bold text-muted'
+const TOGGLE = 'stem-toggle press h-6 w-6 rounded-[5px] border border-transparent text-[11px] font-bold'
 const SOLO_ON = 'border-accent-fg/50 bg-accent/15 !text-accent-fg'
 const MUTE_ON = 'border-danger/50 bg-danger/15 !text-danger'
 
@@ -465,7 +465,7 @@ function StemRow({ stem, player, state, dragging, onDragging, getProgress, onSee
             type="button"
             aria-label={out ? `Show ${stem.name} again` : `Hide ${stem.name}`}
             data-testid="stem-hide"
-            className={cn(TOGGLE, 'grid place-items-center', !out && 'reveal-on-hover')}
+            className={cn('stem-toggle pressable grid h-6 w-6 place-items-center rounded-[5px] border border-transparent', !out && 'reveal-on-hover')}
             onClick={onHide}
           >
             {out ? <Eye size={13} /> : <EyeOff size={13} />}
