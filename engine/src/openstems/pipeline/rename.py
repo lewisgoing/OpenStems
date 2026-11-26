@@ -89,7 +89,8 @@ def rename_song(directory: Path, name: str) -> list[Moved]:
     ``directory`` is one stem folder, ``<output>/<song>/<recipe>``. The song's folder is
     renamed, with every stem folder in it: their stems, notes and MIDI files where the
     naming template holds ``{track}``, the name in each manifest, and the track name inside
-    each MIDI file that has its notes file beside it. Returns every stem folder of
+    each MIDI file that still is what the app made of its notes file (one changed by hand
+    keeps its bytes). Returns every stem folder of
     the song, before and after. Nothing is written over: a folder or a file that already
     has the new name stops the rename before anything is changed, and a step that fails
     undoes the ones before it.
@@ -142,7 +143,8 @@ def rename_song(directory: Path, name: str) -> list[Moved]:
                     os.replace(here / was, here / now)
                     files.append((here / was, here / now))
             updated = _renamed(manifest, moves, name)
-            rewrite_midi(here, updated, updated.get("analysis") or {}, rewritten)
+            was = str((manifest.get("source") or {}).get("name") or "")
+            rewrite_midi(here, updated, updated.get("analysis") or {}, rewritten, written_as=was)
             _write_manifest(here, updated)
             written.append((here, manifest))
             out.append(Moved(folder, here, updated))

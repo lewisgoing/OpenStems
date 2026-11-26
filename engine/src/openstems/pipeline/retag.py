@@ -174,8 +174,8 @@ def set_analysis(directory: Path, changes: dict[str, Any]) -> dict[str, Any]:
             raise  # not a file in the way: a fault, with the folder as it was
         which = Path(str(exc.filename)).name if exc.filename else str(exc)
         raise DomainError(
-            "a stem is open in another program, so nothing was changed. Close it there "
-            f"and try again ({which})."
+            "a file of this song is open in another program, so nothing was changed. "
+            f"Close it there and try again ({which})."
         ) from exc
     return updated
 
@@ -185,12 +185,23 @@ def rewrite_midi(
     manifest: dict[str, Any],
     analysis: dict[str, Any],
     rewritten: list[tuple[Path, bytes]],
+    written_as: str | None = None,
 ) -> None:
     """Write each stem's MIDI file again from its notes file, on the manifest's song name
     and the given tempo and key: a MIDI file places its notes in beats, so the old one would
     hold them at the old tempo's, and it names its track after the song. ``rewritten``
-    collects each file with what it held, for `undo_midi`. A stem whose notes file is
-    missing, unreadable or damaged keeps its MIDI file as it is."""
+    collects each file with what it held, for `undo_midi`.
+
+    A stem whose notes file is gone or damaged keeps its MIDI file as it is. A notes file
+    that is there and cannot be read now (open in another program) raises, as a stem that
+    is does: the change is undone, where carrying on would leave that MIDI file on the old
+    tempo with nothing said.
+
+    ``written_as`` is the song's name when the files were written. Given it, a MIDI file is
+    made again only if it still holds, to the byte, what the app made of its notes file
+    under that name. A rename asks for that: it wants only the new name inside the file,
+    and must not replace one somebody changed.
+    """
     from openstems.pipeline.notes import midi_from_sidecar
 
     title = str((manifest.get("source") or {}).get("name") or "")
@@ -199,16 +210,26 @@ def rewrite_midi(
             continue
         target = directory / str(stem["midi"])
         try:
-            sidecar = json.loads((directory / str(stem["notes"])).read_text(encoding="utf-8"))
-            data = midi_from_sidecar(
-                sidecar,
-                name=f"{title} {stem['name']}".strip(),
+            raw = (directory / str(stem["notes"])).read_bytes()
+        except FileNotFoundError:
+            continue
+
+        def made(name: str, raw: bytes = raw, stem: dict[str, Any] = stem) -> bytes | None:
+            return midi_from_sidecar(
+                json.loads(raw.decode("utf-8")),
+                name=f"{name} {stem['name']}".strip(),
                 bpm=analysis.get("bpm"),
                 key=analysis.get("key"),
             )
+
+        try:
+            data = made(title)
+            untouched = made(written_as) if written_as is not None else None
         except Exception:  # whatever is wrong with a notes file, the MIDI file is not at fault
             continue
         if data is None or not target.is_file():
+            continue
+        if written_as is not None and target.read_bytes() != untouched:
             continue
         # What it held is kept before it is touched, and it is replaced whole: a write that
         # fails halfway leaves the old file, and a reader never sees half of the new one.

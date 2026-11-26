@@ -20,6 +20,10 @@
     MIDI" on. It is not separated again for that.
   - Measured on clean recordings, not yet on separated stems. The same on Windows and a
     Mac, where it has not been seen yet.
+- **A change made while a song is separated again is refused, not lost.** A tempo or key
+  typed, or a stem hidden, in a song's stems while the same song was being separated again
+  was accepted and then gone when the new stems replaced the old. Now the app says to wait
+  until it is done.
 
 ## 0.4.6 (2026-11-25)
 

@@ -590,16 +590,30 @@ class Service:
             raise DomainError("name the stems to find notes in")
         directory = self._stem_folder(files, "notes are found in stems of one song")
         where = os.path.normpath(str(directory))
-        busy = "this song is being separated again: wait until it is done"
-        if self.jobs.writing_to(where):
-            raise DomainError(busy)
+        self._not_being_written(where)
         with self._lock("notes", _path_key(where)):  # one reading of a folder at a time
             reading = read_stems(directory, [file.name for file in files])
             with self._folder(where):
-                if self.jobs.writing_to(where):
-                    raise DomainError(busy)
+                self._not_being_written(where)  # the reading took seconds
                 self._stems_changed(where, directory, write_notes(directory, reading))
         return self._indexed(where)
+
+    def _not_being_written(self, where: str) -> None:
+        """Refuse when the job that is running now may be writing the stem folder
+        ``where``: its song's folder, under any name it may go by, and its recipe's inside
+        it. Whatever is changed there meanwhile is gone when the run replaces the folder.
+
+        Known from the job itself. Its ``output_dir`` cannot say: a job has none until it
+        is done, which is when it stops being the one that runs.
+        """
+        busy = self.jobs.running()
+        if busy is None:
+            return
+        folder = Path(where)
+        if folder.name.lower() == safe_component(
+            busy["recipe_id"]
+        ).lower() and folder.parent.name.lower() in _folders_of(busy):
+            raise DomainError("this song is being separated again: wait until it is done")
 
     def _folder(self, where: str) -> threading.Lock:
         """The lock on one stem folder, for whatever rewrites its manifest in this process:
@@ -840,8 +854,7 @@ class Service:
         if not self.is_served(folder) or not folder.is_dir():
             raise DomainError("that folder does not hold a set of stems")
         where = os.path.normpath(str(folder))
-        if self.jobs.writing_to(where):
-            raise DomainError("this song is being separated again: wait until it is done")
+        self._not_being_written(where)
         with self._folder(where):
             self._stems_changed(where, folder, set_analysis(folder, changes))
         return self._indexed(where)
@@ -862,8 +875,7 @@ class Service:
         if not self.is_served(folder) or not folder.is_dir():
             raise DomainError("that folder does not hold a set of stems")
         where = os.path.normpath(str(folder))
-        if self.jobs.writing_to(where):
-            raise DomainError("this song is being separated again: wait until it is done")
+        self._not_being_written(where)
         with self._folder(where):
             self._stems_changed(where, folder, set_hidden(folder, choices), said=False)
         return self._indexed(where)
@@ -953,13 +965,16 @@ class Service:
         if busy is not None and song_folder.name.lower() in _folders_of(busy):
             raise DomainError(RENAME_BUSY)
         try:
-            sets = sorted(str(p) for p in song_folder.iterdir() if p.is_dir())
+            sets = [p.name for p in song_folder.iterdir() if p.is_dir()]
         except OSError:
             sets = []
+        # Nothing else rewrites a manifest of this song while its folders move: not under
+        # the names they have, and not under the ones they are about to take.
+        renamed = song_folder.parent / safe_component(full)
+        both = {_path_key(str(parent / one)) for one in sets for parent in (song_folder, renamed)}
         with contextlib.ExitStack() as held:
-            # Nothing else rewrites a manifest of this song while its folders move.
-            for one in sets:
-                held.enter_context(self._folder(os.path.normpath(one)))
+            for key in sorted(both):
+                held.enter_context(self._lock("folder", key))
             moved = rename_song(directory, full)
 
         under = _path_key(str(song_folder)) + os.sep

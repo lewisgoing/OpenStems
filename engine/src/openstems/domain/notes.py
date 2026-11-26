@@ -221,9 +221,11 @@ def from_sidecar(data: Any) -> tuple[list[Note], dict[str, Any]]:
         value = data.get(field)
         if value is None:
             continue
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise DomainError(f"the notes file is damaged: its {field} is not a number")
-        if not math.isfinite(value):
+        try:  # a whole number too large for a float is not one either
+            fine = not isinstance(value, bool) and math.isfinite(value)
+        except (TypeError, OverflowError):
+            fine = False
+        if not fine:
             raise DomainError(f"the notes file is damaged: its {field} is not a number")
     notes = []
     for entry in data["notes"]:

@@ -75,16 +75,37 @@ writes what it finds.
   calls it yet). Reading takes seconds and writing none, so they are two steps
   (`read_stems`, `write_notes`): the second starts from the manifest as it is then and
   changes only what the notes need, so a tempo typed, a stem hidden or a file renamed
-  meanwhile is kept. Either everything is written or every file is put back as it was. A
-  notes file and a MIDI file left by a write that was cut short before its manifest are
-  known as the stem's own the next time; a file of the user's under that name is refused.
+  meanwhile is kept. Either everything is written or every file is put back as it was.
+- **Only the manifest says which files are a stem's own.** A notes or MIDI file it does not
+  name is never written over or removed: the reading is refused. Melodyne saves the MIDI it
+  exports as `<audio name>.mid` beside the audio, which is the very name a stem's own MIDI
+  takes.
+- **A write that is cut short is finished by the next.** The manifest is written before the
+  files it names, and a stem's notes file after its MIDI file: it is the notes file that
+  says a stem is read, and on which tuning. A process that ends in between leaves a manifest
+  naming a file that is not there, or a notes file that still says the old tuning, and the
+  next reading writes what is missing. Written last, the manifest left files nothing named,
+  in the way for ever.
+- **Putting back is a rename.** What a file held is parked beside it until the whole write
+  is done, so undoing a write needs no room on the disk and cannot leave half a file. A
+  file that is open in another program cannot be parked, and then nothing is changed. The
+  same holds for a notes file of another stem that is there and cannot be read: decided
+  without it, the song's tuning could be another than that stem's MIDI file is on.
+- **The MIDI file is made from the notes file,** to the byte, with the song's name, tempo
+  and key from the manifest (`midi_from_sidecar`): in a run, afterwards, on a retag.
 - **One writer at a time:** in the API process everything that rewrites a stem folder's
   manifest (notes, a tempo or key, hidden stems, a rename) holds one lock per folder
-  (`Service._folder`).
+  (`Service._folder`), and a rename holds the folders' new names as well. While the job
+  that is running may be writing a folder, all of them are refused there
+  (`Service._not_being_written`): what they changed would be gone when the run replaces the
+  folder. The check that was there before could never say yes. It asked the running job for
+  its output folder, which a job has only once it is done.
 - **A retag** writes each MIDI file again from its notes file, since a MIDI file counts in
   beats. **A rename** takes both files along and writes the song's new name inside the MIDI
-  file, where a DAW reads the track's name. A notes file that is damaged or gone never
-  stops either: that stem's MIDI file stays as it is.
+  file, where a DAW reads the track's name, but only into a MIDI file that still is what
+  the app made of its notes file: one somebody changed keeps its bytes. A notes file that
+  is damaged or gone never stops either, and that stem's MIDI file stays as it is; one that
+  is there and cannot be read now stops both, as a stem that is open does.
 - **The cache:** the names in a run's cache key are the five the setting named up to 0.4.6
   (`KEYED_MIDI_STEMS`), written as before, so a song separated then still comes from the
   cache. On a cache hit, a stem asked for that has no notes file, or whose notes another
@@ -172,6 +193,12 @@ chords, tuning, velocity) is in `docs/research/stem-to-midi.md`, section 14.
 - **The level a stem is read at** is one figure for every kind of stem. On clean recordings
   0.25, 0.35 and 0.5 score within 0.003 of each other; separated stems, with bleed under
   the notes, may prefer another.
+- **A change made in a `.mid` itself is lost at the next tempo or key.** The MIDI file is
+  made from the notes file, so a retag makes it again. A rename leaves a changed file
+  alone.
+- **The lock on a folder goes by its path as it is spelled.** Two spellings of one folder
+  (another case on a Mac, a link) would be two locks. The app has one spelling, the one the
+  API gave it.
 - **A stem that is only bleed** but louder than the 45 dB that counts as empty (ADR 0027) is
   read at full level like any other, and can give a note or two of the part that bled in.
   On the project's three test songs one such stem (a piano, 41 dB under the loudest stem)

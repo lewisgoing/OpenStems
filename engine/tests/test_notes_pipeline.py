@@ -4,9 +4,11 @@ already written (`pipeline/notes.py`, `POST /v1/notes`)."""
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +38,7 @@ from openstems.pipeline.rename import rename_song
 from openstems.pipeline.retag import set_analysis
 from openstems.pipeline.run import Pipeline, RunOptions, read_manifest, stem_set_from_manifest
 from tests.conftest import RATE
-from tests.test_api import all_terminal, client, fake_env, songs, wait_for
+from tests.test_api import all_terminal, client, fake_env, service_of, songs, wait_for
 from tests.test_transcribe import sung
 
 __all__ = ["client", "fake_env", "songs"]  # fixtures, used by name
@@ -92,6 +94,45 @@ def separated(catalog: Any, store: Any, tmp_path: Path, **options: Any) -> Path:
 
 def by_name(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {stem["name"]: stem for stem in manifest["stems"]}
+
+
+@contextlib.contextmanager
+def ended_at(monkeypatch: pytest.MonkeyPatch, file: str) -> Iterator[None]:
+    """Within it, the process "ends" as `write_notes` is about to write ``file``: nothing
+    after that is written and nothing is put back, as when a process is killed."""
+    swap, whole = notes_module._swap, notes_module._whole
+    wrote: list[Path] = []
+
+    def swap_or_end(path: Path, data: bytes, parked: Any) -> None:
+        if path.name == file:
+            raise SystemExit("the process ends here")
+        swap(path, data, parked)
+
+    def once(path: Path, data: bytes) -> None:
+        if not wrote:  # the write itself; what would put the old manifest back is not run
+            wrote.append(path)
+            whole(path, data)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(notes_module, "_swap", swap_or_end)
+        patched.setattr(notes_module, "_whole", once)
+        patched.setattr(notes_module, "_undo", lambda parked: None)
+        yield
+
+
+@contextlib.contextmanager
+def held_open(monkeypatch: pytest.MonkeyPatch, file: str) -> Iterator[None]:
+    """Within it, ``file`` cannot be read: another program has it open."""
+    read = Path.read_bytes
+
+    def refused(self: Path) -> bytes:
+        if self.name == file:
+            raise PermissionError(13, "in use", str(self))
+        return read(self)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(Path, "read_bytes", refused)
+        yield
 
 
 def test_a_run_writes_the_notes_and_the_midi_beside_the_stem(catalog, store, tmp_path) -> None:
@@ -328,6 +369,24 @@ def test_a_tempo_that_cannot_be_written_leaves_every_file_as_it_was(
     assert files_of(folder) == held
 
 
+def test_a_notes_file_that_cannot_be_read_now_stops_a_new_tempo(
+    catalog, store, tmp_path, monkeypatch
+) -> None:
+    # Gone or damaged, a notes file never stops a new tempo. Open in another program it
+    # does: carrying on would leave the MIDI file on the old tempo with nothing said.
+    options = RunOptions(midi_stems=["vocals"])
+    result = Pipeline(catalog, store).run(tune(tmp_path), vocals_only(), tmp_path / "out", options)
+    folder = Path(result.directory)
+    held = files_of(folder)
+    locked = held_open(monkeypatch, "Tune - vocals.notes.json")
+    with locked, pytest.raises(DomainError, match="open in another program"):
+        set_analysis(folder, {"bpm": 90})
+    assert files_of(folder) == held
+    set_analysis(folder, {"bpm": 90})
+    midi = (folder / "Tune - vocals.mid").read_bytes()
+    assert read_midi_notes(midi)[1] == pytest.approx(90.0, abs=0.001)
+
+
 @pytest.mark.filterwarnings("ignore:n_fft=1024 is too large")  # tempo detection, 2 s of it
 def test_a_tempo_in_the_file_names_takes_notes_and_midi_along(catalog, store, tmp_path) -> None:
     options = RunOptions(
@@ -411,6 +470,11 @@ def test_a_new_name_takes_both_files_along(catalog, store, tmp_path) -> None:
     data = (folder / stem["midi"]).read_bytes()
     assert b"Night Drive vocals" in data and b"Tune vocals" not in data
     assert keys_of(folder / stem["midi"]) == WANTED
+    # A MIDI file somebody changed keeps its bytes: it moves with the song, no more.
+    (folder / stem["midi"]).write_bytes(b"MThd, and then the user's own edit")
+    moved = rename_song(folder, "Day Drive")
+    folder = moved[-1].now
+    assert (folder / "Day Drive - vocals.mid").read_bytes() == b"MThd, and then the user's own edit"
 
 
 def test_the_songs_tuning_comes_from_a_stem_with_fixed_pitches() -> None:
@@ -542,26 +606,65 @@ def test_a_reading_of_other_stems_is_refused(catalog, store, tmp_path) -> None:
         write_notes(tmp_path / "elsewhere", reading)
 
 
-def test_a_write_cut_short_is_not_in_the_way_afterwards(catalog, store, tmp_path) -> None:
-    # The notes file and the MIDI file are written before the manifest that names them. A
-    # process that ends in between leaves both, and used to refuse that stem for ever as
-    # "already in the stem folder".
+def test_a_write_cut_short_is_finished_by_the_next_reading(
+    catalog, store, tmp_path, monkeypatch
+) -> None:
+    # The manifest is written before the files it names, and a stem's notes file after its
+    # MIDI file. A process that ends in between (the worker is ended five seconds after the
+    # app quits) leaves a manifest naming a file that is not there, and the next reading
+    # writes it. Written in the other order, it left files no manifest named, refused for
+    # ever as "already in the stem folder".
     folder = separated(catalog, store, tmp_path)
-    before = (folder / "manifest.json").read_bytes()
-    find_notes(folder, ["Tune - bass.wav"])
-    (folder / "manifest.json").write_bytes(before)
-    (folder / "manifest.json.notes.tmp").write_bytes(b"half a manifest")
+    with ended_at(monkeypatch, "Tune - guitar.notes.json"), pytest.raises(SystemExit):
+        find_notes(folder, ["Tune - guitar.wav"])
+    left = read_manifest(folder)
+    assert left is not None and by_name(left)["guitar"]["notes"] == "Tune - guitar.notes.json"
+    assert (folder / "Tune - guitar.mid").is_file()
+    assert not (folder / "Tune - guitar.notes.json").exists()
+    # A song from the cache reads a stem whose notes file its manifest names and is not there.
+    run = Pipeline(catalog, store).run
+    again = run(tune(tmp_path), full_song(), tmp_path / "out", RunOptions(midi_stems=["guitar"]))
+    assert again.cached and (folder / "Tune - guitar.notes.json").is_file()
+    assert keys_of(folder / "Tune - guitar.mid") == WANTED and not list(folder.glob("*.tmp"))
+    # Ended a step earlier, with neither file written: asked again, nothing is in the way.
+    with ended_at(monkeypatch, "Tune - bass.mid"), pytest.raises(SystemExit):
+        find_notes(folder, ["Tune - bass.wav"])
+    assert not (folder / "Tune - bass.mid").exists()
     manifest = find_notes(folder, ["Tune - bass.wav"])
-    assert by_name(manifest)["bass"]["notes"] == "Tune - bass.notes.json"
+    assert by_name(manifest)["bass"]["midi"] == "Tune - bass.mid"
     assert keys_of(folder / "Tune - bass.mid") == WANTED and not list(folder.glob("*.tmp"))
-    # A file that is not this stem's own is refused as before: another stem's notes under
-    # its name, and something that is no notes file at all.
-    (folder / "manifest.json").write_bytes(before)
-    other = json.loads((folder / "Tune - bass.notes.json").read_text("utf-8"))
-    for foreign in (json.dumps({**other, "stem": "vocals"}), "the user's own"):
-        (folder / "Tune - bass.notes.json").write_text(foreign, encoding="utf-8")
+
+
+def test_a_file_the_manifest_does_not_name_is_never_touched(
+    catalog, store, tmp_path, monkeypatch
+) -> None:
+    # Melodyne saves the MIDI it exports as <audio name>.mid beside the audio: a file of the
+    # user's under the very name a stem's own MIDI takes. Only the manifest says which files
+    # are a stem's own, so that one is neither written over nor taken away.
+    folder = separated(catalog, store, tmp_path)
+    with monkeypatch.context() as patched:  # the stem was read once, and held no notes
+        patched.setattr(notes_module, "transcribe_line", lambda *_, **__: Transcription())
+        first = find_notes(folder, ["Tune - bass.wav"])
+    assert by_name(first)["bass"]["notes"] and by_name(first)["bass"]["midi"] is None
+    (folder / "Tune - bass.mid").write_bytes(b"the user's own notes, from Melodyne")
+    (folder / "Tune - vocals.notes.json").write_text("something of the user's", "utf-8")
+    held = files_of(folder)
+    for files in (["Tune - bass.wav"], ["Tune - vocals.wav"]):
+        with pytest.raises(DomainError, match="already in the stem folder"):
+            find_notes(folder, files)  # notes are found: they would go to that name
+    with monkeypatch.context() as patched:  # none are found: a MIDI file would be taken away
+        patched.setattr(notes_module, "transcribe_line", lambda *_, **__: Transcription())
         with pytest.raises(DomainError, match="already in the stem folder"):
             find_notes(folder, ["Tune - bass.wav"])
+    assert files_of(folder) == held
+    # A song from the cache says so on its job, and leaves the file alone too.
+    run = Pipeline(catalog, store).run
+    (folder / "Tune - guitar.mid").write_bytes(b"another of the user's")
+    again = run(tune(tmp_path), full_song(), tmp_path / "out", RunOptions(midi_stems=["guitar"]))
+    assert again.cached and "Tune - guitar.mid is already in the stem folder" in "".join(
+        again.manifest["notes"]
+    )
+    assert (folder / "Tune - guitar.mid").read_bytes() == b"another of the user's"
 
 
 def test_a_write_that_fails_puts_every_file_back(catalog, store, tmp_path, monkeypatch) -> None:
@@ -582,6 +685,18 @@ def test_a_write_that_fails_puts_every_file_back(catalog, store, tmp_path, monke
             find_notes(folder, ["Tune - bass.wav", "Tune - vocals.wav"])
     # The bass's files hold what they held, the vocals' new ones are gone, no temp file.
     assert files_of(folder) == held
+
+    def last_in_use(src: Any, dst: Any) -> None:
+        if Path(dst).name == "Tune - vocals.mid":  # the last file, after the manifest
+            raise PermissionError(13, "in use", str(dst))
+        real(src, dst)
+
+    with monkeypatch.context() as patched:
+        patched.setattr("openstems.pipeline.notes.os.replace", last_in_use)
+        patched.setattr(notes_module, "METHOD", "another transcriber")
+        with pytest.raises(DomainError, match=r"open in another program.*Tune - vocals\.mid"):
+            find_notes(folder, ["Tune - bass.wav", "Tune - vocals.wav"])
+    assert files_of(folder) == held  # the manifest too is as it was
 
 
 def test_a_stem_that_cannot_be_read_is_refused_in_plain_words(
@@ -606,33 +721,38 @@ def test_a_stem_that_cannot_be_read_is_refused_in_plain_words(
     assert not list(folder.glob("*.notes.json"))
 
 
-def test_a_midi_file_that_cannot_be_removed_is_not_in_the_way(
+def test_a_midi_file_open_elsewhere_stops_the_write_before_it_starts(
     catalog, store, tmp_path, monkeypatch
 ) -> None:
+    # A stem that had notes holds none this time, so its MIDI file goes. Open in a DAW it
+    # cannot: then nothing is changed, where once the manifest dropped it and the file stayed
+    # behind, in the way of every reading after.
     folder = separated(catalog, store, tmp_path)
     find_notes(folder, ["Tune - bass.wav"])
-    unlink = Path.unlink
+    held = files_of(folder)
+    real = os.replace
 
-    def held_open(self: Path, missing_ok: bool = False) -> None:
-        if self.suffix == ".mid":
-            raise PermissionError(13, "in use", str(self))
-        unlink(self, missing_ok=missing_ok)
+    def in_use(src: Any, dst: Any) -> None:
+        if str(src).endswith(".mid"):
+            raise PermissionError(13, "in use", str(src))
+        real(src, dst)
 
-    with monkeypatch.context() as patched:  # no notes this time, and the MIDI open in a DAW
+    with monkeypatch.context() as patched:
         patched.setattr(notes_module, "transcribe_line", lambda *_, **__: Transcription())
-        patched.setattr(Path, "unlink", held_open)
+        patched.setattr("openstems.pipeline.notes.os.replace", in_use)
+        with pytest.raises(DomainError, match="open in another program"):
+            find_notes(folder, ["Tune - bass.wav"])
+    assert files_of(folder) == held
+    # Closed there, it goes with the reading that finds no notes, and nothing is left behind.
+    with monkeypatch.context() as patched:
+        patched.setattr(notes_module, "transcribe_line", lambda *_, **__: Transcription())
         manifest = find_notes(folder, ["Tune - bass.wav"])
     assert by_name(manifest)["bass"]["midi"] is None and read_manifest(folder) == manifest
-    assert (folder / "Tune - bass.mid").is_file()  # it could not go
-    # The next reading takes the file over; it is the stem's own.
+    assert not (folder / "Tune - bass.mid").exists() and not list(folder.glob("*.tmp"))
+    # The next reading that finds notes writes it again.
     manifest = find_notes(folder, ["Tune - bass.wav"])
     assert by_name(manifest)["bass"]["midi"] == "Tune - bass.mid"
     assert keys_of(folder / "Tune - bass.mid") == WANTED
-    # And a stem with no notes takes away a MIDI file that is its own.
-    with monkeypatch.context() as patched:
-        patched.setattr(notes_module, "transcribe_line", lambda *_, **__: Transcription())
-        find_notes(folder, ["Tune - bass.wav"])
-    assert not (folder / "Tune - bass.mid").exists()
 
 
 def test_one_tuning_for_a_song_whichever_stem_is_read_first(catalog, store, tmp_path) -> None:
@@ -668,6 +788,66 @@ def test_one_tuning_for_a_song_whichever_stem_is_read_first(catalog, store, tmp_
     stale_file.write_text(json.dumps({**old, "tuning_cents": -40.0}), encoding="utf-8")
     find_notes(folder, ["Sharp - bass.wav"])
     assert tunings(folder)["bass"] == pytest.approx(30, abs=4)
+
+
+def sharp_song(catalog: Any, store: Any, tmp_path: Path) -> Path:
+    """Six stems of a song 30 cents sharp, the vocals read: their files are on A440."""
+    source = tmp_path / "Sharp.wav"
+    mono = sung([note + 0.3 for note in WANTED])
+    write_audio(source, np.stack([mono, mono]), RATE)
+    folder = Path(Pipeline(catalog, store).run(source, full_song(), tmp_path / "out").directory)
+    find_notes(folder, ["Sharp - vocals.wav"])
+    return folder
+
+
+def tuning_of(folder: Path, stem: str) -> float:
+    return json.loads((folder / f"Sharp - {stem}.notes.json").read_text("utf-8"))["tuning_cents"]
+
+
+def test_a_change_of_tuning_cut_short_is_finished_by_the_next_reading(
+    catalog, store, tmp_path, monkeypatch
+) -> None:
+    # Reading the bass settles the song's tuning, so the vocals' MIDI file is rounded again
+    # and then their notes file says so. Ended between the two, the notes file still says
+    # A440, and the next reading does both again. In the other order the notes file would
+    # say 30 cents with the MIDI file on A440 for good.
+    folder = sharp_song(catalog, store, tmp_path)
+    assert tuning_of(folder, "vocals") == 0.0
+    with ended_at(monkeypatch, "Sharp - vocals.notes.json"), pytest.raises(SystemExit):
+        find_notes(folder, ["Sharp - bass.wav"])
+    assert tuning_of(folder, "bass") == pytest.approx(30, abs=4)
+    assert tuning_of(folder, "vocals") == 0.0
+    find_notes(folder, ["Sharp - bass.wav"])
+    assert tuning_of(folder, "vocals") == tuning_of(folder, "bass") == pytest.approx(30, abs=4)
+    # Read once more, nothing is written that is as it should be already.
+    held = files_of(folder)
+    find_notes(folder, ["Sharp - bass.wav"])
+    assert files_of(folder) == held and not list(folder.glob("*.tmp"))
+
+
+def test_another_stems_damaged_notes_file_is_left_out_and_left_alone(
+    catalog, store, tmp_path, monkeypatch
+) -> None:
+    folder = sharp_song(catalog, store, tmp_path)
+    notes_file = folder / "Sharp - vocals.notes.json"
+    good = notes_file.read_text("utf-8")
+    huge = good.replace('"threshold":', '"threshold":1' + "0" * 400 + ',"was":', 1)
+    for damaged in (huge, "[" * 100_000, "not a notes file", ""):
+        notes_file.write_text(damaged, encoding="utf-8")
+        manifest = find_notes(folder, ["Sharp - bass.wav"])  # no fault of the bass's
+        assert by_name(manifest)["bass"]["midi"] == "Sharp - bass.mid"
+        assert notes_file.read_text("utf-8") == damaged
+        assert stale(notes_file)
+    # One that is there and cannot be read now stops the write: decided without it, the
+    # song's tuning could be another than the vocals' MIDI file is on.
+    notes_file.write_text(good, encoding="utf-8")
+    (folder / "Sharp - bass.notes.json").unlink()
+    (folder / "Sharp - bass.mid").unlink()
+    held = files_of(folder)
+    locked = held_open(monkeypatch, notes_file.name)
+    with locked, pytest.raises(DomainError, match="open in another program"):
+        find_notes(folder, ["Sharp - bass.wav"])
+    assert files_of(folder) == held
 
 
 def test_a_reading_takes_back_what_was_said_of_the_stem(catalog, store, tmp_path) -> None:
@@ -796,6 +976,36 @@ def test_the_api_keeps_what_is_changed_while_notes_are_being_found(
         assert listed["piano"]["hidden"] is True and listed["bass"]["notes"]
     listed = {s["name"]: s for s in client.get("/v1/jobs").json()["jobs"][0]["stems"]}
     assert listed["bass"]["notes"] and listed["bass"]["midi"]
+
+
+def test_the_api_refuses_changes_to_a_folder_that_is_being_written(
+    client: TestClient, songs: list[Path], monkeypatch
+) -> None:
+    # While a song is separated again, whatever is changed in its stem folder is gone when
+    # the run replaces the folder. (The check there was could never say yes: it asked the
+    # running job for its output folder, which a job has only once it is done.)
+    job = done_job(client, songs)
+    directory = job["output_dir"]
+    bass = {s["name"]: s for s in job["stems"]}["bass"]["path"]
+    asks = (
+        ("/v1/notes", {"paths": [bass]}),
+        ("/v1/stemsets/analysis", {"directory": directory, "bpm": 90}),
+        ("/v1/stemsets/hidden", {"directory": directory, "stems": {"piano": True}}),
+    )
+    held = files_of(Path(directory))
+    again = {**job, "state": "running"}
+    with monkeypatch.context() as patched:  # the same song and recipe is on the GPU again
+        patched.setattr(service_of(client).jobs, "running", lambda: again)
+        for route, body in asks:
+            answer = client.post(route, json=body)
+            assert answer.status_code == 400 and "being separated again" in answer.text, route
+    assert files_of(Path(directory)) == held
+    # Another song running, or this one with another recipe, is no reason to refuse.
+    for other in ({**again, "track_path": str(songs[1])}, {**again, "recipe_id": "vocals"}):
+        with monkeypatch.context() as patched:
+            patched.setattr(service_of(client).jobs, "running", lambda other=other: other)
+            for route, body in asks:
+                assert client.post(route, json=body).status_code == 200, route
 
 
 def test_the_api_refuses_a_stem_it_cannot_read(client: TestClient, songs: list[Path]) -> None:

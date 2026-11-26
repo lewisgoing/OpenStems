@@ -608,19 +608,25 @@ tuning, what wrote it, and `texture`, `chords` for a stem that plays several not
 and was read as one line: `transcribe.clarity`) and `<stem>.mid`, the notes that count, one
 track, on the song's tempo and key. A stem in which no note counts gets the notes file alone.
 `Stem.notes` and `StemFile.notes` carry it; `STEM_FILES` (`domain/stem.py`) names the files a
-rename or a replaced run must take along. A retag writes the MIDI again from the notes file
-and a rename puts the song's new name inside it (`retag.rewrite_midi`); a damaged or missing
-notes file stops neither. The keys are at A440 unless a stem with fixed pitches agrees firmly
+rename or a replaced run must take along. Every MIDI file is made from its notes file, to
+the byte (`midi_from_sidecar`): a retag makes it again, and a rename puts the song's new
+name inside one that is still what the app made (`retag.rewrite_midi`). A damaged or missing
+notes file stops neither; one that cannot be read now stops both. The keys are at A440 unless a stem with fixed pitches agrees firmly
 on another tuning, one tuning for the song over every stem whose notes are known
 (`pipeline/notes.song_tuning`): a stem read later can settle it, and the MIDI of the stems
 read before is then rounded again from their notes files. If reading a stem fails the stems
 are still written and the job says so (`extras._read_notes`). `POST /v1/notes` reads stems
 that are already written; nothing in the app calls it yet. It is two steps: `read_stems`
-(seconds, writes nothing) and `write_notes`, which starts from the manifest as it is then,
-writes everything or puts every file back, and knows a notes and MIDI file left by a write
-cut short as the stem's own (`_in_the_way`). In the API process whatever rewrites a stem
-folder's manifest (notes, a tempo or key, hidden stems, a rename) holds `Service._folder`,
-one lock per folder: take it in anything new that does. The cache: `KEYED_MIDI_STEMS` are
+(seconds, writes nothing) and `write_notes`, which starts from the manifest as it is then
+and writes everything or puts every file back. Only the manifest says which files are a
+stem's own: one it does not name is never written over or removed (`_in_the_way`; Melodyne
+saves its export as `<audio name>.mid` beside the audio), and the manifest is written before
+the files it names (a stem's notes file last), so a write cut short is finished by the
+next. Putting back is a rename: what a file held is parked beside it (`.old.tmp`) until the
+write is done. In the API process whatever rewrites a stem folder's manifest (notes, a tempo
+or key, hidden stems, a rename) holds `Service._folder`, one lock per folder, and is refused
+while the running job may be writing that folder (`Service._not_being_written`): do both in
+anything new that does. The cache: `KEYED_MIDI_STEMS` are
 the only names in a run's key, written as 0.4.x wrote them, and a song from the cache whose
 stems have no notes file, or notes from another transcriber, is read where it lies, not
 separated again (`Pipeline._with_notes`, `notes.stale`). Raise the number in `METHOD`
