@@ -115,7 +115,11 @@ def _mix16(folder: Path, names: tuple[str, ...], kept: Path) -> np.ndarray:
 def _rest(item: mb.Item, profile: str, bench: Path, samples: int) -> np.ndarray:
     """What bleeds into a clip, as 16 kHz mono of its length. For a bass, its own song's
     other stems, in time with it. A voice and a guitar solo come alone, so each gets a
-    Slakh song's whole mix, the same song every time, from 20 seconds in and round again."""
+    Slakh song's whole mix, the same song every time, from 20 seconds in and round again.
+
+    Which song that is follows from the clip's name and the songs under ``slakh-oracle``,
+    and the pitch frames of a reading are kept per clip and level, not per song: when the
+    songs there change, clear the ``.b*.npz`` files under ``cache/f0`` first."""
     import zlib
 
     cache = bench / "cache" / "f0"
@@ -160,7 +164,9 @@ def transcribe(
         rest = _rest(item, profile, bench, len(audio))
         level = float(np.sqrt(np.mean(np.square(audio, dtype=np.float64))))
         under = float(np.sqrt(np.mean(np.square(rest, dtype=np.float64))))
-        audio = audio + rest * np.float32(level / max(under, 1e-9) * 10 ** (-bleed / 20))
+        # A rest that is silent stays silent: its noise floor is not raised into the clip.
+        if under > 1e-4:
+            audio = audio + rest * np.float32(level / under * 10 ** (-bleed / 20))
     T.pitch_frames = _frames  # type: ignore[assignment]
     return T.transcribe_line(audio, T.RATE, stem)
 
