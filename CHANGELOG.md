@@ -18,6 +18,10 @@
   - The MIDI file follows the song when you change its tempo or key, or rename it.
   - A stem with chords still gives one line only, and the song now says so.
   - A stem in which no notes are found gets no `.mid`. Before, it got an empty one.
+  - A MIDI file you saved over the app's, or edited, is yours from then on. The app does
+    not write over it or remove it, not when the song is separated again either, and says
+    which file it left alone. Melodyne, for one, saves its MIDI under the very name the app
+    uses. Move or rename it and the app writes its own again.
   - A song separated before this gets the new MIDI the next time it is queued with "Write
     MIDI" on. It is not separated again for that.
   - Measured on clean recordings, not yet on separated stems. The same on Windows and a

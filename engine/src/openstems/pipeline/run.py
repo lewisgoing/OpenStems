@@ -125,11 +125,38 @@ def output_dir_for(output_root: Path, track_name: str, recipe_id: str) -> Path:
 
 
 def read_manifest(directory: Path) -> dict[str, Any] | None:
+    """The manifest of a stem folder, or None when there is none that can be trusted: not
+    there, not JSON, another schema, or naming a file outside its own folder."""
     try:
         data = json.loads((directory / MANIFEST_NAME).read_text("utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         return None
-    return data if isinstance(data, dict) and data.get("schema") == MANIFEST_SCHEMA else None
+    if not isinstance(data, dict) or data.get("schema") != MANIFEST_SCHEMA:
+        return None
+    stems = data.get("stems", [])
+    if not isinstance(stems, list) or not all(isinstance(s, dict) and _in_folder(s) for s in stems):
+        return None
+    return data
+
+
+def _in_folder(stem: dict[str, Any]) -> bool:
+    """Whether a stem's files are named as files of its own folder. They are joined to the
+    folder and then moved, written over and removed, so a name such as ``../../x`` in a
+    manifest somebody made by hand would reach outside it."""
+    for which in STEM_FILES:
+        name = stem.get(which)
+        if not name and which != "file":
+            continue  # the stem has no such file
+        if not isinstance(name, str) or name in ("", ".", "..") or Path(name).name != name:
+            return False
+        if "/" in name or "\\" in name:
+            return False
+    peaks = stem.get("peaks")
+    if peaks is not None:
+        inside = isinstance(peaks, str) and not Path(peaks).is_absolute()
+        if not inside or ".." in Path(peaks).parts or Path(peaks).drive:
+            return False
+    return True
 
 
 def stem_set_from_manifest(directory: Path, manifest: dict[str, Any]) -> StemSet | None:
@@ -157,6 +184,7 @@ def stem_set_from_manifest(directory: Path, manifest: dict[str, Any]) -> StemSet
                 group=raw.get("group", ""),
                 peak=raw.get("peak"),
                 hidden=raw.get("hidden"),
+                midi_hash=raw.get("midi_hash"),
             )
         )
     return StemSet(directory=str(directory), manifest=manifest, stems=stems)
@@ -227,7 +255,13 @@ class Pipeline:
         song is not separated again for it."""
         if not options.midi_stems:
             return cached
-        from openstems.pipeline.notes import find_notes, readable, stale, unwritten_note
+        from openstems.pipeline.notes import (
+            find_notes,
+            not_theirs,
+            readable,
+            stale,
+            unwritten_note,
+        )
 
         peaks = {s.name: s.peak for s in cached.stems}
         names = readable([s.name for s in cached.stems], options.midi_stems, peaks)
@@ -238,20 +272,28 @@ class Pipeline:
         ]
         if not files:
             return cached
+
+        def saying(result: StemSet, more: list[str]) -> StemSet:
+            # Only the job says it: the manifest on the disk is as it was.
+            said = [*(result.manifest.get("notes") or []), *more]
+            return StemSet(result.directory, {**result.manifest, "notes": said}, result.stems)
+
+        # A stem with somebody's file where its notes would go is left out, and said.
+        files, theirs = not_theirs(out_dir, files)
+        if not files:
+            return saying(cached, theirs)
         try:
             manifest = find_notes(out_dir, files)
         except DomainError as exc:
-            # A file in the way, one open in another program, a stem that cannot be read:
-            # what is there stays, and the job says why it has no new notes. Only the job:
-            # the manifest on the disk is as it was.
+            # A file open in another program, a stem that cannot be read: what is there
+            # stays, and the job says why it has no new notes.
             why = str(exc)
         except Exception:  # the cached stems are good whatever became of their notes
             log.exception("stem to MIDI failed on the cached stems in %s", out_dir)
             why = "something went wrong (engine.log has it)"
         else:
-            return stem_set_from_manifest(out_dir, manifest) or cached
-        said = [*(cached.manifest.get("notes") or []), unwritten_note(why)]
-        return StemSet(cached.directory, {**cached.manifest, "notes": said}, cached.stems)
+            return saying(stem_set_from_manifest(out_dir, manifest) or cached, theirs)
+        return saying(cached, [*theirs, unwritten_note(why)])
 
     def run(
         self,
@@ -566,6 +608,11 @@ class Pipeline:
         }
         # A stem the user hid, or kept, stays so when the song is separated again.
         kept = _hidden_choices(out_dir)
+        # What the folder holds now: a notes or MIDI file there that is not a stem's own
+        # (somebody saved it, or changed the app's) is not written over by this run.
+        from openstems.pipeline.notes import digest, theirs, theirs_note
+
+        before = {str(s.get("name")): s for s in (read_manifest(out_dir) or {}).get("stems", [])}
         try:
             stems: list[Stem] = []
             used: set[str] = set()
@@ -589,13 +636,20 @@ class Pipeline:
                     final = _fit_length(audio_decode.resample(final, SAMPLE_RATE, out_rate), wanted)
                 bpm = extras.get("bpm") if options.tempo_sync else None
                 write_audio(tmp / file_name, final, out_rate, options.output_format, bpm)
-                midi_name = None
                 midi_writer = extras.get("midi", {}).get(out.name)
+                notes_writer = extras.get("notes", {}).get(out.name)
+                in_the_way = None
+                if midi_writer is not None or notes_writer is not None:
+                    in_the_way = theirs(out_dir, before.get(out.name), base)
+                if in_the_way is not None:
+                    notes.append(theirs_note(out.name, *in_the_way))
+                    midi_writer = notes_writer = None
+                midi_name = midi_hash = None
                 if midi_writer is not None:
                     midi_name = base + MIDI_SUFFIX
                     midi_writer(tmp / midi_name)
+                    midi_hash = digest((tmp / midi_name).read_bytes())
                 notes_name = None
-                notes_writer = extras.get("notes", {}).get(out.name)
                 if notes_writer is not None:
                     notes_name = base + NOTES_SUFFIX
                     notes_writer(tmp / notes_name)
@@ -616,6 +670,7 @@ class Pipeline:
                         group=out.group,
                         peak=extras.get("levels", {}).get(out.name),
                         hidden=kept.get(out.name),
+                        midi_hash=midi_hash,
                     )
                 )
                 report(
@@ -775,13 +830,19 @@ def _remove_stale_temp(out_dir: Path, max_age: float = 600.0) -> None:
 
 def _replace_dir(tmp: Path, out_dir: Path) -> None:
     """Swap a finished temp folder into place. An existing result of ours is replaced:
-    only files named by its manifest (and its peaks) are removed, never anything else."""
+    only files named by its manifest (and its peaks) are removed, never anything else, and
+    not a MIDI file somebody changed since the app wrote it."""
+    from openstems.pipeline.notes import changed
+
     if out_dir.exists():
         old = read_manifest(out_dir)
         if old is not None:
             for raw in old.get("stems", []):
-                for name in (raw.get(field) for field in STEM_FILES):
-                    if name:
+                # Asked while the stem is still there: whose a MIDI file from before its
+                # hash was kept is, is told by its time against its stem's.
+                theirs = raw.get("midi") if changed(out_dir, raw) else None
+                for name in (raw.get(which) for which in STEM_FILES):
+                    if name and name != theirs:
                         (out_dir / name).unlink(missing_ok=True)
         (out_dir / MANIFEST_NAME).unlink(missing_ok=True)
         shutil.rmtree(out_dir / PEAKS_DIR, ignore_errors=True)

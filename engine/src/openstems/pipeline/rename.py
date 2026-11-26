@@ -144,7 +144,8 @@ def rename_song(directory: Path, name: str) -> list[Moved]:
                     files.append((here / was, here / now))
             updated = _renamed(manifest, moves, name)
             was = str((manifest.get("source") or {}).get("name") or "")
-            rewrite_midi(here, updated, updated.get("analysis") or {}, rewritten, written_as=was)
+            now = updated.get("analysis") or {}
+            rewrite_midi(here, updated, now, rewritten, written_as=was, on_disk=manifest)
             _write_manifest(here, updated)
             written.append((here, manifest))
             out.append(Moved(folder, here, updated))

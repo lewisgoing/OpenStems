@@ -10,9 +10,12 @@ in which nothing was found gets the notes file alone, so the app can say that it
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import logging
 import os
+import stat
+import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from importlib.metadata import version
@@ -74,6 +77,90 @@ def song_tuning(found: Mapping[str, Transcription]) -> float:
         if weight > best[0]:
             best = (weight, transcription.tuning_cents)
     return best[1] if abs(best[1]) >= TUNING_LEAST else 0.0
+
+
+# How much newer than its stem a MIDI file from before its hash was kept may be and still be
+# the app's: the two were written one after the other.
+LATER_S = 120.0
+NOT_WRITTEN = ", so this stem's notes and MIDI were not written"
+
+
+def track_name(song: str, stem: str) -> str:
+    """The name a stem's MIDI file gives its track: the song's and the stem's."""
+    return f"{song} {stem}".strip()
+
+
+def digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def changed(directory: Path, stem: Mapping[str, Any]) -> bool:
+    """Whether a stem's MIDI file is no longer what the app wrote: somebody saved another
+    over it, or edited it. Such a file is theirs, and the app neither replaces nor removes
+    it.
+
+    The manifest keeps the sha256 of the bytes the app wrote (``midi_hash``), and of what
+    the file held just before that (``midi_was``): the manifest is written before the
+    files it names, so a write that is cut short leaves the older bytes, which are the
+    app's as well. A MIDI file from before the hash was kept came with its stem, in the
+    same moment. One that is a good deal newer than its stem was saved there later.
+    False when the file is gone, or cannot be told from the app's."""
+    name = stem.get("midi")
+    if not name:
+        return False
+    path = directory / str(name)
+    known = {stem.get("midi_hash"), stem.get("midi_was")} - {None, ""}
+    try:
+        if known:
+            return digest(path.read_bytes()) not in known
+        if stem.get("notes"):
+            return False  # a development build wrote it, which kept no hash
+        return path.stat().st_mtime - (directory / str(stem["file"])).stat().st_mtime > LATER_S
+    except OSError:
+        return False
+
+
+def theirs(directory: Path, stem: Mapping[str, Any] | None, base: str) -> tuple[str, str] | None:
+    """The file that stands where a stem's notes file or MIDI file (``base`` and a suffix)
+    would be written and is not the stem's own to replace, with why; None when there is
+    none. ``stem`` is the stem's entry in the folder's manifest, if it has one. Melodyne,
+    for one, saves the MIDI it exports as ``<audio name>.mid`` beside the audio."""
+    for field, suffix in (("notes", NOTES_SUFFIX), ("midi", MIDI_SUFFIX)):
+        name = base + suffix
+        if not (directory / name).exists():
+            continue
+        if stem is None or stem.get(field) != name:
+            return name, "is already in the stem folder"
+        if field == "midi" and changed(directory, stem):
+            return name, "was changed since the app wrote it"
+    return None
+
+
+def theirs_note(stem: str, name: str, why: str) -> str:
+    """What a job says of a stem whose notes it did not write, for a file that is not its."""
+    return f"{stem}: {name} {why}{NOT_WRITTEN}"
+
+
+def not_theirs(directory: Path, files: list[str]) -> tuple[list[str], list[str]]:
+    """Of the stems named by their files, those whose notes can be written, and what a job
+    says of each of the others: where its notes file or MIDI file would go stands a file
+    that is not the stem's own (`theirs`). For a run that reads several stems unasked, so
+    that one such file does not keep the others from their notes."""
+    manifest = read_manifest(directory)
+    if manifest is None:
+        return files, []
+    stems = {str(s["file"]): s for s in manifest.get("stems", [])}
+    _adopt(directory, manifest, [stems[file] for file in files if file in stems])
+    free: list[str] = []
+    said: list[str] = []
+    for file in files:
+        stem = stems.get(file)
+        found = theirs(directory, stem, Path(file).stem) if stem is not None else None
+        if stem is None or found is None:
+            free.append(file)
+        else:
+            said.append(theirs_note(str(stem["name"]), *found))
+    return free, said
 
 
 def midi_of(
@@ -228,13 +315,13 @@ def write_notes(directory: Path, reading: Reading) -> dict[str, Any]:
     stems read before are rounded again from their notes files. Either all of it is written
     or the folder is left as it was.
 
-    A stem's own files are the ones the manifest names (and ones that are, to the byte,
-    what the app writes there: `_adopt`). Any other file is never written over or removed.
-    The manifest is written before the files it names: a process that ends in between
-    leaves a manifest naming files that are not there yet, which the next reading writes.
-    The other order left files no manifest named. For the same reason a stem's notes file
-    is written after its MIDI file: it is the notes file that says the stem is read, and
-    on which tuning.
+    Only a stem's own files are written over or removed: the ones the manifest names (a
+    MIDI file only while it is still what the app wrote, `changed`), and ones that are, to
+    the byte, what the app writes there (`_adopt`). The manifest is written before the
+    files it names: a process that ends in between leaves a manifest naming files that are
+    not there yet, which the next reading writes. The other order left files no manifest
+    named. For the same reason a stem's notes file is written after its MIDI file: it is
+    the notes file that says the stem is read, and on which tuning.
     """
     manifest = read_manifest(directory)
     if manifest is None or not manifest.get("complete"):
@@ -252,6 +339,7 @@ def write_notes(directory: Path, reading: Reading) -> dict[str, Any]:
     for stem in chosen:
         if not (directory / str(stem["file"])).is_file():
             raise DomainError(f"{stem['file']} is no longer in its folder")
+    _recover(directory, manifest)
     _adopt(directory, manifest, chosen)
     _in_the_way(directory, chosen)
 
@@ -262,10 +350,7 @@ def write_notes(directory: Path, reading: Reading) -> dict[str, Any]:
 
     def midi(sidecar: dict[str, Any], name: str) -> bytes | None:
         return midi_from_sidecar(
-            sidecar,
-            name=f"{title} {name}".strip(),
-            bpm=analysis.get("bpm"),
-            key=analysis.get("key"),
+            sidecar, name=track_name(title, name), bpm=analysis.get("bpm"), key=analysis.get("key")
         )
 
     # What every file will hold, before anything is touched. Per stem the MIDI file comes
@@ -276,57 +361,86 @@ def write_notes(directory: Path, reading: Reading) -> dict[str, Any]:
         name = str(stem["name"])
         base = Path(str(stem["file"])).stem
         had = stem.get("midi")
+        ours = not changed(directory, stem)  # asked before its entry is written anew
         sidecar = sidecar_of(reading.found[name], stem=name, tuning=tuning)
         data = midi(sidecar, name)
         if data is not None:
             files.append((directory / (base + MIDI_SUFFIX), data))
+            _names(stem, directory, base + MIDI_SUFFIX, data)
+        else:
+            _names(stem, directory, None, None)
         files.append((directory / (base + NOTES_SUFFIX), dump(sidecar)))
-        stem["midi"] = base + MIDI_SUFFIX if data is not None else None
         stem["notes"] = base + NOTES_SUFFIX
-        if had and had != stem["midi"]:
+        if had and had != stem["midi"] and ours:
             gone.append(directory / str(had))
-    # The stems read before, on the song's tuning if it is another now.
+    for path in (*(path for path, _ in files), *gone):
+        if _read_only(path):
+            raise DomainError(f"{path.name} is read-only, so its notes were not written")
+    # The stems read before: on the song's tuning if it is another now, and with their MIDI
+    # file made again if it has gone missing. A MIDI file somebody changed stays as it is.
+    # A stem with a file marked read-only is left whole, on the tuning its notes file says:
+    # half of it moved would leave its MIDI file on another tuning than its notes file says.
     for name, (sidecar, _) in others.items():
-        if abs(float(sidecar.get("tuning_cents") or 0.0) - tuning) < 0.05:
-            continue
         stem = by_name[name]
+        notes_path = directory / str(stem["notes"])
+        midi_path = directory / str(stem["midi"]) if stem.get("midi") else None
+        if midi_path is not None and changed(directory, stem):
+            midi_path = None
+        moved = abs(float(sidecar.get("tuning_cents") or 0.0) - tuning) >= 0.05
+        missing = midi_path is not None and not midi_path.exists()
+        if not (moved or missing):
+            continue
+        if _read_only(notes_path) or (midi_path is not None and _read_only(midi_path)):
+            continue
         sidecar["tuning_cents"] = tuning
-        data = midi(sidecar, name) if stem.get("midi") else None
-        if data is not None:
-            files.append((directory / str(stem["midi"]), data))
-        files.append((directory / str(stem["notes"]), dump(sidecar)))
+        data = midi(sidecar, name) if midi_path is not None else None
+        if midi_path is not None and data is not None:
+            files.append((midi_path, data))
+            _names(stem, directory, midi_path.name, data)
+        if moved:
+            files.append((notes_path, dump(sidecar)))
     # What the song's notes say of the stems read now: said once, and taken back for a
     # stem that reads as a line, or reads at all, this time.
     said = {note(name) for name in reading.found for note in (chords_note, failed_note)}
-    kept = [n for n in manifest.get("notes") or [] if n not in said]
+    kept = [
+        n
+        for n in manifest.get("notes") or []
+        if n not in said
+        and not (
+            n.endswith(NOT_WRITTEN) and n.startswith(tuple(f"{name}: " for name in reading.found))
+        )
+    ]
     manifest["notes"] = [*kept, *job_notes(reading.found)]
 
     target = directory / MANIFEST_NAME
+    backup = target.with_name(target.name + PARKED)
     parked: list[tuple[Path, Path | None]] = []
-    before: bytes | None = None
+    swapped = False
     try:
-        # A MIDI file its stem no longer has is moved aside first: open in another program
+        # The manifest as it is, kept while there is room for it: putting it back is then a
+        # rename, which needs none.
+        backup.write_bytes(target.read_bytes())
+        # A MIDI file its stem no longer has is moved aside next: open in another program
         # it cannot be, and then nothing has been changed yet.
         for path in gone:
             _park(path, parked)
-        held = target.read_bytes()
         _whole(target, json.dumps(manifest, indent=2, ensure_ascii=False).encode("utf-8"))
-        before = held
+        swapped = True
         for path, data in files:
             _swap(path, data, parked)
     except BaseException as exc:
         _undo(parked)
-        if before is not None:
+        if swapped:
             with contextlib.suppress(OSError):
-                _whole(target, before)
+                os.replace(backup, target)
+        _remove(backup)
         if not isinstance(exc, OSError):
             raise
         raise DomainError(_why(exc)) from exc
-    # Done: what was parked goes, and with it anything a write that was cut short left
-    # parked under these names.
+    # Done: what was parked goes.
+    _remove(backup)
     for path, _ in parked:
-        with contextlib.suppress(OSError):
-            path.with_name(path.name + PARKED).unlink(missing_ok=True)
+        _remove(path.with_name(path.name + PARKED))
     return manifest
 
 
@@ -335,13 +449,76 @@ def _run_of(manifest: Mapping[str, Any]) -> str:
     return f"{manifest.get('created_at')} {manifest.get('cache_key')}"
 
 
-def _why(exc: OSError) -> str:
-    """Why nothing was written, for the user."""
+def _why(exc: OSError, platform: str = sys.platform) -> str:
+    """Why nothing was written, for the user. Windows refuses to replace a file another
+    program has open. A Mac does not: there, being refused means the folder is not the
+    app's to write in (its permissions, or macOS guarding the folder)."""
     which = Path(str(exc.filename)).name if exc.filename else ""
     where = f" ({which})" if which else ""
     if isinstance(exc, PermissionError):
-        return f"a file is open in another program, so its notes were not written{where}"
+        if platform == "win32":
+            return f"a file is open in another program, so its notes were not written{where}"
+        return f"this folder cannot be written to, so its notes were not written{where}"
     return f"the notes could not be written: {exc.strerror or exc}{where}"
+
+
+def _read_only(path: Path) -> bool:
+    """Whether the file is there and marked not to be written: its owner's word."""
+    return path.exists() and not os.access(path, os.W_OK)
+
+
+def _remove(path: Path) -> None:
+    """Remove a file of the app's own making (a parked file, a backup), read-only or not.
+    A failure is not worth stopping for: the next write clears it."""
+    try:
+        path.unlink(missing_ok=True)
+    except PermissionError:
+        with contextlib.suppress(OSError):
+            path.chmod(stat.S_IWRITE | stat.S_IREAD)
+            path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _names(stem: dict[str, Any], directory: Path, name: str | None, data: bytes | None) -> None:
+    """Name in a stem's entry the MIDI file it is about to have, holding ``data``: its hash,
+    and with it the hash of what the file holds now, which stays the app's own until the
+    new bytes are in its place. None for a stem that has no MIDI file from now on."""
+    was = stem.get("midi")
+    held: str | None = None
+    if was and was == name and not changed(directory, stem):
+        with contextlib.suppress(OSError):
+            held = digest((directory / str(was)).read_bytes())
+    stem["midi"] = name
+    for field in ("midi_hash", "midi_was"):
+        stem.pop(field, None)
+    if name is None or data is None:
+        return
+    stem["midi_hash"] = digest(data)
+    if held and held != stem["midi_hash"]:
+        stem["midi_was"] = held
+
+
+def _recover(directory: Path, manifest: Mapping[str, Any]) -> None:
+    """Clear up after a write that was cut short (the process ended partway). A file the
+    manifest names that was moved aside and never replaced comes back; whatever else was
+    left beside the stems' notes and MIDI files goes."""
+    _remove(directory / (MANIFEST_NAME + PARKED))
+    _remove(directory / (MANIFEST_NAME + ".notes.tmp"))
+    for stem in manifest.get("stems", []):
+        base = Path(str(stem["file"])).stem
+        named = {str(stem[field]) for field in ("notes", "midi") if stem.get(field)}
+        for name in {base + NOTES_SUFFIX, base + MIDI_SUFFIX, *named}:
+            _remove(directory / (name + ".tmp"))
+            parked = directory / (name + PARKED)
+            if not parked.exists():
+                continue
+            if name in named and not (directory / name).exists():
+                # The only copy: if it cannot be brought back now, it is left where it is.
+                with contextlib.suppress(OSError):
+                    os.replace(parked, directory / name)
+                continue
+            _remove(parked)
 
 
 def _adopt(directory: Path, manifest: Mapping[str, Any], chosen: Iterable[dict[str, Any]]) -> None:
@@ -369,10 +546,7 @@ def _adopt(directory: Path, manifest: Mapping[str, Any], chosen: Iterable[dict[s
             if data.get("format") != SIDECAR_FORMAT or data.get("stem") != name:
                 continue
             made = midi_from_sidecar(
-                data,
-                name=f"{title} {name}".strip(),
-                bpm=analysis.get("bpm"),
-                key=analysis.get("key"),
+                data, name=track_name(title, name), bpm=analysis.get("bpm"), key=analysis.get("key")
             )
         except Exception:  # no notes file there, not one of ours, or damaged: nothing to take
             continue
@@ -385,14 +559,18 @@ def _adopt(directory: Path, manifest: Mapping[str, Any], chosen: Iterable[dict[s
 
 def _in_the_way(directory: Path, chosen: Iterable[Mapping[str, Any]]) -> None:
     """Refuse when a notes file or a MIDI file would be written over one that is not the
-    stem's own (`_adopt` has taken what is). Melodyne, for one, saves its MIDI as
-    ``<audio name>.mid`` beside the audio: that is the user's file, not ours."""
+    stem's own (`theirs`; `_adopt` has taken what is)."""
     for stem in chosen:
-        base = Path(str(stem["file"])).stem
-        for field, suffix in (("notes", NOTES_SUFFIX), ("midi", MIDI_SUFFIX)):
-            target = base + suffix
-            if stem.get(field) != target and (directory / target).exists():
-                raise DomainError(f"a file named {target} is already in the stem folder")
+        found = theirs(directory, stem, Path(str(stem["file"])).stem)
+        if found is None:
+            continue
+        name, why = found
+        if why.startswith("was changed"):
+            raise DomainError(
+                f"{name} was changed since the app wrote it. Move or rename it, and this "
+                "stem's notes can be found again"
+            )
+        raise DomainError(f"a file named {name} is already in the stem folder")
 
 
 def _read_before(
@@ -456,6 +634,7 @@ def _park(path: Path, parked: list[tuple[Path, Path | None]]) -> None:
     another program cannot be moved (on Windows), and then nothing has been changed."""
     if path.is_file():
         beside = path.with_name(path.name + PARKED)
+        _remove(beside)  # left by a write that was cut short
         os.replace(path, beside)
         parked.append((path, beside))
     else:

@@ -269,8 +269,9 @@ already uses the stems will need to find them again.
   Settings), on the song's tempo and key. It follows one note at a time, so it suits single
   lines, not chords: a voice, a bass, a lead. A notes file beside it (`.notes.json`) keeps
   every note found with how sure the app is of it. A stem in which no notes are found gets
-  no `.mid`. Measured on clean recordings so far, not on separated stems, and not yet seen
-  on a Mac.
+  no `.mid`. A `.mid` you saved over the app's or edited is yours: the app leaves it as it
+  is and says so. Measured on clean recordings so far, not on separated stems, and not yet
+  seen on a Mac.
 - **Trim silence and normalize**, per stem. Both are off by default, because trimmed stems no
   longer line up at bar 1 and normalized stems no longer sit at their level in the mix.
 - **Keyboard.** Ctrl+1 to Ctrl+4 switch between Queue, History, Models and Settings; Ctrl+V

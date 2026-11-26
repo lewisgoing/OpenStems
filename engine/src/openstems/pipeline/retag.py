@@ -153,7 +153,7 @@ def set_analysis(directory: Path, changes: dict[str, Any]) -> dict[str, Any]:
                 if stem.get(field) in moves:
                     stem[field] = moves[stem[field]]
         if any(new.get(name) != old.get(name) for name in ("bpm", "key")):
-            rewrite_midi(directory, updated, new, rewritten)
+            rewrite_midi(directory, updated, new, rewritten, on_disk=manifest)
         updated["analysis"] = new
         updated["notes"] = notes_after_retag(list(updated.get("notes") or []), new.get("bpm"))
         tmp = directory / (MANIFEST_NAME + ".tmp")
@@ -186,6 +186,7 @@ def rewrite_midi(
     analysis: dict[str, Any],
     rewritten: list[tuple[Path, bytes]],
     written_as: str | None = None,
+    on_disk: dict[str, Any] | None = None,
 ) -> None:
     """Write each stem's MIDI file again from its notes file, on the manifest's song name
     and the given tempo and key: a MIDI file places its notes in beats, so the old one would
@@ -193,18 +194,28 @@ def rewrite_midi(
     collects each file with what it held, for `undo_midi`.
 
     A stem whose notes file is gone or damaged keeps its MIDI file as it is. A notes file
-    that is there and cannot be read now (open in another program) raises, as a stem that
-    is does: the change is undone, where carrying on would leave that MIDI file on the old
-    tempo with nothing said.
+    that is there and cannot be read now (open in another program) raises before anything
+    is written, as a stem that is open does: the change is undone, where carrying on would
+    leave that MIDI file on the old tempo with nothing said.
 
-    ``written_as`` is the song's name when the files were written. Given it, a MIDI file is
-    made again only if it still holds, to the byte, what the app made of its notes file
-    under that name. A rename asks for that: it wants only the new name inside the file,
-    and must not replace one somebody changed.
+    A MIDI file somebody changed since the app wrote it is theirs, and stays as it is: the
+    manifest keeps the sha256 of what the app wrote (``midi_hash``, set here anew). Of a
+    file from before that was kept, a new tempo cannot tell, and makes it again.
+    ``written_as`` is the song's name when the files were written. Given it, such a file is
+    made again only if it still holds, to the byte, what the app makes of its notes file
+    under that name: a rename wants only the new name inside the file.
+
+    ``on_disk`` is the manifest as the folder holds it while this runs: the caller writes
+    the new one only afterwards. Before a file is touched it is written once more, with
+    the hash each file is about to have beside the one it has (``midi_hash``,
+    ``midi_was``). Were the process to end between a file and the manifest that follows
+    it, the app would otherwise take its own MIDI file for one somebody changed. What the
+    manifest held goes into ``rewritten`` too, first, so `undo_midi` puts it back last.
     """
-    from openstems.pipeline.notes import midi_from_sidecar
+    from openstems.pipeline.notes import changed, digest, midi_from_sidecar, track_name
 
     title = str((manifest.get("source") or {}).get("name") or "")
+    plan: list[tuple[dict[str, Any], Path, bytes, bytes]] = []
     for stem in manifest.get("stems", []):
         if not (stem.get("midi") and stem.get("notes")):
             continue
@@ -217,7 +228,7 @@ def rewrite_midi(
         def made(name: str, raw: bytes = raw, stem: dict[str, Any] = stem) -> bytes | None:
             return midi_from_sidecar(
                 json.loads(raw.decode("utf-8")),
-                name=f"{name} {stem['name']}".strip(),
+                name=track_name(name, str(stem["name"])),
                 bpm=analysis.get("bpm"),
                 key=analysis.get("key"),
             )
@@ -227,26 +238,56 @@ def rewrite_midi(
             untouched = made(written_as) if written_as is not None else None
         except Exception:  # whatever is wrong with a notes file, the MIDI file is not at fault
             continue
-        if data is None or not target.is_file():
+        if data is None or not target.is_file() or changed(directory, stem):
             continue
-        if written_as is not None and target.read_bytes() != untouched:
+        held = target.read_bytes()
+        if written_as is not None and not stem.get("midi_hash") and held != untouched:
             continue
+        plan.append((stem, target, held, data))
+    if not plan:
+        return
+    if on_disk is not None:
+        saying = json.loads(json.dumps(on_disk))  # the caller's own is left as it is
+        entries = {str(entry.get("name")): entry for entry in saying.get("stems", [])}
+        for stem, _, held, data in plan:
+            entry = entries.get(str(stem["name"]))
+            if entry is not None:
+                entry["midi_hash"], entry["midi_was"] = digest(data), digest(held)
+        target = directory / MANIFEST_NAME
+        rewritten.append((target, target.read_bytes()))
+        tmp = directory / (MANIFEST_NAME + ".tmp")
+        tmp.write_text(json.dumps(saying, indent=2, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, target)
+    for stem, target, held, data in plan:
+        stem["midi_hash"] = digest(data)
+        stem.pop("midi_was", None)
         # What it held is kept before it is touched, and it is replaced whole: a write that
         # fails halfway leaves the old file, and a reader never sees half of the new one.
-        rewritten.append((target, target.read_bytes()))
+        rewritten.append((target, held))
         tmp = target.with_name(target.name + ".tmp")
         tmp.write_bytes(data)
         os.replace(tmp, target)
 
 
 def undo_midi(rewritten: list[tuple[Path, bytes]]) -> None:
-    """Put back what `rewrite_midi` replaced, the last file first."""
+    """Put back what `rewrite_midi` replaced, the last file first, each one whole. The
+    manifest it wrote before the MIDI files comes last, and only if every one of them is
+    back: failing that, it stays as the one that knows a file's new bytes and its old."""
+    back = True
     for file, data in reversed(rewritten):
+        tmp = file.with_name(file.name + ".tmp")
         with contextlib.suppress(OSError):
-            file.with_name(file.name + ".tmp").unlink(missing_ok=True)
-        with contextlib.suppress(OSError):
+            tmp.unlink(missing_ok=True)
+        if file.name == MANIFEST_NAME and not back:
+            continue
+        try:
             if file.read_bytes() != data:
-                file.write_bytes(data)
+                tmp.write_bytes(data)
+                os.replace(tmp, file)
+        except OSError:
+            back = False
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
 
 
 def _marked_files(manifest: dict[str, Any], directory: Path) -> list[Path]:

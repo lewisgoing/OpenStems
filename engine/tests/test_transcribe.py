@@ -498,5 +498,5 @@ def test_a_short_sound_is_read_on_every_profile() -> None:
     short = sung([45], seconds=0.3, gap=0.0)
     for stem in ("vocals", "bass", "guitar"):
         found = transcribe_line(short, RATE, stem)
-        assert [round(n.pitch) for n in found.shown()] in ([45], []), stem
+        assert [round(n.pitch) for n in found.shown()] == [45], stem
     assert transcribe_line(short[: int(0.2 * RATE)], RATE, "bass").notes == ()  # too short

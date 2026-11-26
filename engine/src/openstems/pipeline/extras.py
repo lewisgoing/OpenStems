@@ -119,7 +119,7 @@ def _read_notes(
         extras["notes"][name] = _writer(Path.write_bytes, notes.dump(sidecar))
         # The MIDI file is made from the notes file, as everywhere (`midi_from_sidecar`).
         data = notes.midi_from_sidecar(
-            sidecar, name=f"{track.name} {name}", bpm=extras["bpm"], key=extras["key"]
+            sidecar, name=notes.track_name(track.name, name), bpm=extras["bpm"], key=extras["key"]
         )
         if data is not None:
             extras["midi"][name] = _writer(Path.write_bytes, data)
