@@ -188,10 +188,11 @@ def _swiftf0() -> Any:
         return _detector
 
 
-def mono16(audio: np.ndarray, sample_rate: int) -> np.ndarray:
-    """Any audio, ``(channels, samples)`` or mono, as float32 mono at 16 kHz. A sample that
-    is not a number, or lies far outside full scale, is a defect in the file (a decoder's
-    answer to one, or a model's): it counts as silence, where SwiftF0 would refuse the stem."""
+def mono16(audio: np.ndarray, sample_rate: int, rate: int = RATE) -> np.ndarray:
+    """Any audio, ``(channels, samples)`` or mono, as float32 mono at 16 kHz (or at ``rate``).
+    A sample that is not a number, or lies far outside full scale, is a defect in the file (a
+    decoder's answer to one, or a model's): it counts as silence, where SwiftF0 would refuse
+    the stem."""
     import soxr
 
     audio = np.asarray(audio)
@@ -209,8 +210,8 @@ def mono16(audio: np.ndarray, sample_rate: int) -> np.ndarray:
         mono = np.array(audio, dtype=np.float32)
     np.nan_to_num(mono, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
     mono[np.abs(mono) > LIMIT] = 0.0
-    if sample_rate != RATE and mono.size:
-        mono = soxr.resample(mono, sample_rate, RATE).astype(np.float32)
+    if sample_rate != rate and mono.size:
+        mono = soxr.resample(mono, sample_rate, rate).astype(np.float32)
     return mono
 
 
