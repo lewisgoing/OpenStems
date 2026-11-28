@@ -713,6 +713,14 @@ Component classes live in `@layer components` so Tailwind utilities can override
   crashes that day were bugcheck 0x124 with a WHEA "fatal hardware error, Component: Memory,
   Machine Check Exception" at different addresses, and the DDR5 (V-Color, rated 4800) runs at
   6400 MT/s through EXPO. Kernel-Power 41 events go back to 2026-11-06.
+- It lost power again on 2026-11-26 at 11:27 (Kernel-Power 41, no bugcheck, no WHEA record),
+  two and a half minutes after six Python processes were started at once (the stem-to-MIDI
+  benchmark, CPU only, the GPU idle at 34 W). And again on 2026-11-27 between 16:19 and
+  16:33 with ONE benchmark process pinned to two cores, about an hour into such runs, the
+  GPU idle. So no load here is known to be safe: long compute runs (the benchmark,
+  calibration, separation on the CPU) wait for the owner's word, and agents get nothing that
+  runs Python, pytest or uv. Short runs (the unit tests, a script of seconds) have not cut
+  it. The system log also shows unclean restarts on 2026-11-24 (21:04 and 23:02).
 
 - Test songs (CC-BY, Kevin MacLeod) are in `D:\lew-stems\test-audio`; they are never committed.
 - Target: Windows, NVIDIA RTX 5070 Ti (16 GB). C: is nearly full; keep models and outputs on D:
