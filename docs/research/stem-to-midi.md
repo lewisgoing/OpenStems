@@ -1446,6 +1446,11 @@ single-line reader of section 14 beside it:
 - Basic Pitch saw part of GuitarSet in training: those figures are not held out.
 - Slakh's guitar stems hold every guitar of a song, and spread widely: 0.31 to 0.81 a
   stem (the single line 0.05 to 0.81). The other settings were not run on them.
+- With the rest of the song left in the stem (six pianos, six guitars, through `read_stem`;
+  clean, 25 dB under, 15 dB under): pianos 0.736, 0.651, 0.601, with precision 0.724, 0.587,
+  0.516 and recall 0.760, 0.763, 0.764; guitars 0.589, 0.573, 0.513. Bleed is written down
+  as notes; none are lost. Which reader a stem goes to held at 25 dB for all twelve, and at
+  15 dB one guitar line went to the chord reader (0.499 to 0.273).
 - Not measured: separated stems, anything on a Mac.
 
 ## Sources

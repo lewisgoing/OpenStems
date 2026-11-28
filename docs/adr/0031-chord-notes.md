@@ -70,8 +70,13 @@ reader (0.903, Melodyne 0.886).
 
 ## Not done, not measured
 
-- **Separated stems.** Every figure is from clean recordings. No separated piano or guitar
-  stem has been read, and what bleed does to the chord reader is unknown.
+- **Separated stems.** No separated piano or guitar stem has been read. A stand-in was:
+  six Slakh pianos and six guitars through `read_stem`, with the rest of the song put back
+  under the stem. Pianos read 0.736 clean, 0.651 with the rest 25 dB under and 0.601 at
+  15 dB; guitars 0.589, 0.573 and 0.513. Recall holds (0.76 on pianos at every level) and
+  precision falls (0.72, 0.59, 0.52): the chord reader writes down the bleed as notes. The
+  plan's bleed pass across stems is what answers that, and it is not built. One guitar
+  line was called chords at 15 dB and fell from 0.50 to 0.27.
 - **Slakh's guitars are the weak set** (0.590): several guitars play in one stem there,
   and three songs read under 0.36.
 - **The app's button** has been run by a component test and the FakeEngine's stand-in
