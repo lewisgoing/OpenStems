@@ -328,5 +328,10 @@ export function useMaintenance() {
     }),
     exportDiagnostics: useMutation({ mutationFn: () => unwrap(api.POST('/v1/diagnostics')) }),
     selfTest: useMutation({ mutationFn: () => unwrap(api.POST('/v1/selftest')) }),
+    /** Download the model that reads chords for MIDI (230 KB); the system info then says it is there. */
+    chordModel: useMutation({
+      mutationFn: () => unwrap(api.POST('/v1/notes/model')),
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.system }),
+    }),
   }
 }

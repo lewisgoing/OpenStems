@@ -256,18 +256,15 @@ def models_pull(
 @models_app.command("pull-chords")
 def models_pull_chords() -> None:
     """Download the model that reads chords for stem to MIDI (Basic Pitch, 230 KB)."""
-    from openstems.catalog.download import download_file
-    from openstems.pipeline.notes import CHORD_MODEL, chord_model, chord_model_path
+    from openstems.pipeline.notes import CHORD_MODEL, pull_chord_model
     from openstems.settings import load_settings
 
-    models_dir = load_settings().models_path
-    if chord_model(models_dir) is None:
-        try:
-            download_file(CHORD_MODEL, chord_model_path(models_dir))
-        except DomainError as exc:
-            console.print(f"[red]{CHORD_MODEL.name}:[/red] {exc}")
-            raise typer.Exit(code=1) from None
-    console.print(f"[green]ok[/green] {chord_model_path(models_dir)}")
+    try:
+        path = pull_chord_model(load_settings().models_path)
+    except DomainError as exc:
+        console.print(f"[red]{CHORD_MODEL.name}:[/red] {exc}")
+        raise typer.Exit(code=1) from None
+    console.print(f"[green]ok[/green] {path}")
 
 
 @models_app.command("verify")

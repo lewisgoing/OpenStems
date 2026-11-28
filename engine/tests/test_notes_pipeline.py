@@ -252,6 +252,8 @@ def test_only_stems_with_a_line_are_read(catalog, store, tmp_path) -> None:
     assert readable(every, every, peaks) == ["vocals", "bass"]  # no drums, mixture or hiss
     assert readable(every, ["bass"], peaks) == ["bass"]
     assert readable(every, [], peaks) == []
+    more = {**peaks, "piano": 0.5}
+    assert readable([*every, "piano"], ["*"], more) == ["vocals", "bass", "piano"]
     # A recipe of the user's may write its names otherwise than the setting does.
     assert readable(["Bass", "Lead Vocals"], ["bass", "lead vocals"], {}) == ["Bass", "Lead Vocals"]
     # In a run: the kit of a full song is asked for and left alone.

@@ -674,8 +674,12 @@ call. It reads a stem as a line, and when that says the stem plays chords, the p
 `line` and Basic Pitch's model is installed (`chord_model`: the pinned file, sha256 checked
 once per process), the notes are every note `audio/chords.py` finds, the notes file names
 `CHORDS_METHOD` and the job no longer says "plays chords". Never a bass or a voice. No torch:
-onnxruntime. The model is outside the catalog, and only `models pull-chords` fetches it: the
-app has no button yet, and without the file everything is as before. Raise `CHORDS_METHOD`
+onnxruntime. The model is outside the catalog: `models pull-chords` and `POST /v1/notes/model`
+fetch it (Settings > Chords in MIDI; `chord_model` in the system info; with the FakeEngine a
+mark file stands in and nothing is fetched), and without the file a chord stem gives one
+line. "Write MIDI" reads every pitched stem since 2026-11-27 (`EVERY_PITCHED` in
+`MIDI_STEMS`); the cache key keeps its five names. `writeMidiHint` in `SettingsView.tsx` says
+what it gives. Raise `CHORDS_METHOD`
 when the notes such a stem gives can change. Measured on clean recordings only (GuitarSet
 chords 0.74 for 0.33, Slakh pianos 0.80 for 0.42); not on separated stems, not on a Mac.
 `docs/adr/0031-chord-notes.md`, research notes section 15.

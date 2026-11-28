@@ -1,6 +1,20 @@
 {
   "components": {
     "schemas": {
+      "ChordModel": {
+        "description": "The model that reads chords for stem to MIDI (Basic Pitch, 230 KB).",
+        "properties": {
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "installed"
+        ],
+        "title": "ChordModel",
+        "type": "object"
+      },
       "ClipGrid": {
         "description": "The beat grid a selection was made on. It names the clip (\"bars 9-16\"), and its\ntempo is the one a tempo-synced clip is marked with. Taken as it is, not rounded.",
         "properties": {
@@ -2581,6 +2595,12 @@
       },
       "SystemInfo": {
         "properties": {
+          "chord_model": {
+            "default": false,
+            "description": "Whether the model that reads chords for stem to MIDI is installed.",
+            "title": "Chord Model",
+            "type": "boolean"
+          },
           "config_dir": {
             "title": "Config Dir",
             "type": "string"
@@ -5138,6 +5158,70 @@
           }
         ],
         "summary": "Find Notes"
+      }
+    },
+    "/v1/notes/model": {
+      "post": {
+        "description": "Download the model that reads chords (230 KB), unless it is installed. With it a\nstem that plays chords gives every note of them, not one line.",
+        "operationId": "pull_chord_model",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChordModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Pull Chord Model"
       }
     },
     "/v1/peaks": {

@@ -307,6 +307,7 @@ class Service:
             "worker": self.jobs.worker_status,
             "config_dir": str(config_dir()),
             "logs_dir": str(self.runtime.settings.logs_path),
+            "chord_model": self.has_chord_model(),
         }
 
     def _inspect(self) -> dict[str, Any]:
@@ -575,6 +576,27 @@ class Service:
         return directory
 
     # -- notes ----------------------------------------------------------------
+
+    def has_chord_model(self) -> bool:
+        from openstems.pipeline.notes import chord_model, chord_model_path
+
+        root = self.runtime.store.root
+        if fake_mode():  # the stand-in's mark: no test fetches the real file
+            return chord_model_path(root).with_suffix(".fake").is_file()
+        return chord_model(root) is not None
+
+    def pull_chord_model(self) -> bool:
+        """Download the chord model unless it is installed. 230 KB: the request waits."""
+        from openstems.pipeline.notes import chord_model_path, pull_chord_model
+
+        root = self.runtime.store.root
+        if fake_mode():
+            mark = chord_model_path(root).with_suffix(".fake")
+            mark.parent.mkdir(parents=True, exist_ok=True)
+            mark.write_bytes(b"")
+        else:
+            pull_chord_model(root)
+        return self.has_chord_model()
 
     def find_notes(self, paths: list[str]) -> dict[str, Any]:
         """Read stems that are already written and write each one's notes and MIDI beside

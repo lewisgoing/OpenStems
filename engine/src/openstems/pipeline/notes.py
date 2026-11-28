@@ -30,6 +30,7 @@ from openstems.domain.errors import DomainError
 from openstems.domain.levels import empty_stems
 from openstems.domain.model import ModelFile
 from openstems.domain.notes import (
+    EVERY_PITCHED,
     MIDI_SUFFIX,
     NOTES_SUFFIX,
     SIDECAR_FORMAT,
@@ -53,8 +54,8 @@ METHOD = f"swift-f0 {version('swift-f0')}, line segmenter 5"
 CHORDS_METHOD = "basic-pitch 0.4.0, chord notes 1"
 # Basic Pitch's model (Spotify, Apache-2.0), as its 0.4.0 release holds it. Not a pickle:
 # an ONNX file, run by onnxruntime on the CPU. It is fetched only when asked for
-# (`openstems models pull-chords`), and a stem that plays chords is read with it only when
-# the file is in the models folder and is this very file.
+# (`openstems models pull-chords`, `POST /v1/notes/model`), and a stem that plays chords is
+# read with it only when the file is in the models folder and is this very file.
 CHORD_MODEL = ModelFile(
     kind="checkpoint",
     name="nmp.onnx",
@@ -97,6 +98,18 @@ def chord_model(models_dir: Path | None = None) -> Path | None:
     return path if _checked[key] else None
 
 
+def pull_chord_model(models_dir: Path) -> Path:
+    """Download the chord model unless it is there and whole. Its sha256 is checked before
+    the file takes its place."""
+    path = chord_model_path(models_dir)
+    if chord_model(models_dir) is None:
+        from openstems.catalog.download import download_file
+
+        path.unlink(missing_ok=True)  # another file of its name: never used, now replaced
+        download_file(CHORD_MODEL, path)
+    return path
+
+
 def read_stem(audio: Any, sample_rate: int, stem: str) -> Transcription:
     """A stem's notes. It is read as a single line; when that reading says the stem plays
     chords and the chord model is installed, its notes are every note of the chords instead.
@@ -127,10 +140,16 @@ def readable(
     names: Iterable[str], wanted: Iterable[str], peaks: Mapping[str, float | None]
 ) -> list[str]:
     """The stems to read: asked for (whatever the case of the name: a recipe of the user's
-    may call its stem "Bass"), with a line to follow, and not empty."""
+    may call its stem "Bass"; ``EVERY_PITCHED`` asks for them all), with a pitch to follow,
+    and not empty."""
     asked = {name.lower() for name in wanted}
+    every = EVERY_PITCHED in asked
     empty = empty_stems(peaks)
-    return [n for n in names if n.lower() in asked and line_kind(n) is not None and n not in empty]
+    return [
+        n
+        for n in names
+        if (every or n.lower() in asked) and line_kind(n) is not None and n not in empty
+    ]
 
 
 def song_tuning(found: Mapping[str, Transcription]) -> float:

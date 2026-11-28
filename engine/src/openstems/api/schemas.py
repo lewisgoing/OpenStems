@@ -62,6 +62,10 @@ class SystemInfo(BaseModel):
     worker: WorkerStatus
     config_dir: str
     logs_dir: str
+    chord_model: bool = Field(
+        default=False,
+        description="Whether the model that reads chords for stem to MIDI is installed.",
+    )
 
 
 class TrackInfo(BaseModel):
@@ -598,6 +602,12 @@ class Peaks(BaseModel):
 
 class Diagnostics(BaseModel):
     path: str
+
+
+class ChordModel(BaseModel):
+    """The model that reads chords for stem to MIDI (Basic Pitch, 230 KB)."""
+
+    installed: bool
 
 
 class SelfTestOp(BaseModel):

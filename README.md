@@ -265,9 +265,12 @@ already uses the stems will need to find them again.
   information" (General settings) must be on. As accurate as the detected tempo.
 - **Watch folder.** New files that appear in a folder are queued with the default recipe and
   quality once they have finished copying.
-- **Stem to MIDI.** A draggable `.mid` next to vocal, bass and melody stems ("Write MIDI" in
-  Settings), on the song's tempo and key. It follows one note at a time, so it suits single
-  lines, not chords: a voice, a bass, a lead. A notes file beside it (`.notes.json`) keeps
+- **Stem to MIDI.** A draggable `.mid` next to every stem with notes to read ("Write MIDI"
+  in Settings): vocals, bass, guitar, piano and the like, not drums. It is on the song's
+  tempo and key. By itself it follows one note at a time, which suits a voice, a bass or a
+  lead. For chords, Settings > Chords in MIDI downloads a small extra model (Basic Pitch by
+  Spotify, 230 KB): a piano or a strummed guitar then gives every note of its chords. That
+  part is new, and measured on clean recordings only. A notes file beside it (`.notes.json`) keeps
   every note found with how sure the app is of it. A stem in which no notes are found gets
   no `.mid`. A `.mid` you saved over the app's or edited is yours: the app leaves it as it
   is and says so. Measured on clean recordings and, so far, on 5 separated bass

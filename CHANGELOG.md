@@ -22,9 +22,10 @@
     is cut a little more often.
   - A stem that plays chords, such as a piano or a strummed guitar, can give every note of
     them, where it gave one line. On test recordings that finds about twice as many of the
-    notes. It needs a small extra model, which for now only the command line can fetch
-    (`openstems models pull-chords`), and it has not been tried on separated stems or on a
-    Mac.
+    notes. It needs a small extra model (230 KB): Settings > Chords in MIDI downloads it.
+    It has not been tried on separated stems or on a Mac yet.
+  - "Write MIDI" now writes a `.mid` for every stem with notes to read (guitar, piano,
+    other and the like), not only vocals, bass and melody. Drums are still left out.
   - Each stem also gets a `.notes.json` file beside its `.mid`, with every note found and how
     sure the app is of it. Nothing shows it yet: it is what a note editor will open.
   - The MIDI file follows the song when you change its tempo or key, or rename it.

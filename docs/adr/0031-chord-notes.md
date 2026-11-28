@@ -27,8 +27,15 @@ guitar after it.
   There are no bends and no candidates yet.
 - **The model** is one file of 230 KB, `nmp.onnx` from Basic Pitch's 0.4.0 release, pinned
   by URL, size and sha256 in `pipeline/notes.CHORD_MODEL`. `openstems models pull-chords`
-  downloads it into `<models>/basic-pitch/`. Nothing fetches it by itself, and a file there
-  that is not this very file is not used. Without it everything is as before.
+  and `POST /v1/notes/model` download it into `<models>/basic-pitch/`; the app's button is
+  Settings > Chords in MIDI, and `chord_model` in the system info says whether it is there.
+  Nothing fetches it by itself, and a file there that is not this very file is not used.
+  Without it a stem that plays chords gives one line, as before.
+- **"Write MIDI" reads every pitched stem** (the owner's decision, 2026-11-27), where it read
+  vocal, bass and melody stems: `EVERY_PITCHED` in `MIDI_STEMS`, which `readable` takes for
+  every stem with a pitch to follow that is not empty. Drums and mixtures are still not
+  read. The cache key holds the five names it always held, so no song is separated again;
+  a cached song's other stems are read where they lie the next time it is asked for.
 
 ## Measured
 
@@ -39,6 +46,7 @@ Clean recordings, onset F1 (`scratch` lab of 2026-11-27, through `midi_bench.py`
 | GuitarSet chords, 12 recordings | 0.332 | 0.737 |
 | GuitarSet solos, 12 recordings | 0.870 | 0.853 |
 | Slakh pianos, 12 test songs | 0.424 | 0.796 |
+| Slakh guitars, 12 test songs | 0.383 | 0.590 |
 
 Through the code a run uses, the two chord recordings Melodyne was run on read 0.726 and
 0.689 (Melodyne's Polyphonic Decay: 0.549 and 0.623), and a solo stays with the single-line
@@ -64,11 +72,12 @@ reader (0.903, Melodyne 0.886).
 
 - **Separated stems.** Every figure is from clean recordings. No separated piano or guitar
   stem has been read, and what bleed does to the chord reader is unknown.
-- **Slakh guitars** were read for 9 of 12 songs before the PC ran short of memory; no mean
-  is given.
-- **The app** has no way to fetch the model: only the command line does. "Write MIDI"
-  still reads vocal, bass and melody stems in a run (`MIDI_STEMS`); a piano or guitar stem
-  is read when its notes are asked for.
+- **Slakh's guitars are the weak set** (0.590): several guitars play in one stem there,
+  and three songs read under 0.36.
+- **The app's button** has been run by a component test and the FakeEngine's stand-in
+  only: nobody has pressed it in the app, on either system.
+- **Time.** A recipe with many pitched stems now has each of them read. How long that adds
+  to a run has not been measured.
 - **A Mac.** The unit tests run in CI on `macos-15` without the model file. The model has
   not been run on a Mac by anyone.
 - **Piano with Kong's model, guitar with a specialist**, and anything the app trains itself.

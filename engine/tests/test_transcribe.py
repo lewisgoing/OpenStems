@@ -555,9 +555,9 @@ def test_which_stems_are_read_how() -> None:
     assert [line_kind(s) for s in ("bass", "double-bass")] == ["bass", "bass"]
     assert [line_kind(s) for s in ("guitar", "piano", "other", "melody", "violin")] == ["line"] * 5
     assert [line_kind(s) for s in ("drums", "kick", "hh", "instrumental", "drumless")] == [None] * 5
-    # What the write_midi setting reads by itself: single lines by nature.
-    assert {"vocals", "bass", "lead vocals", "melody"} <= set(MIDI_STEMS)
-    assert not {"drums", "guitar", "piano", "other"} & set(MIDI_STEMS)
+    # What the write_midi setting reads by itself: every pitched stem. The names it had
+    # before stay in the list, for the cache key.
+    assert {"vocals", "bass", "lead vocals", "melody", "*"} <= set(MIDI_STEMS)
     assert set(T.PROFILES) == {"voice", "bass", "line"}
     for profile in T.PROFILES.values():
         assert len(profile.weights) == len(T.FEATURES) + 1 and 0 < profile.threshold < 1

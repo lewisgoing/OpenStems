@@ -1434,6 +1434,7 @@ single-line reader of section 14 beside it:
 | GuitarSet chords | 0.332 | 0.725 | 0.737 | 0.486 |
 | GuitarSet solos | 0.870 | 0.828 | 0.853 | 0.722 |
 | Slakh pianos (test songs) | 0.424 | 0.757 | 0.796 | 0.356 |
+| Slakh guitars (test songs) | 0.383 | 0.567 | 0.590 | 0.202 |
 
 - Other settings of the note maker did no better over the three sets: an onset threshold of
   0.4 (0.688, 0.797, 0.697), a frame threshold of 0.4 (0.697, 0.836, 0.778), notes from 6
@@ -1443,8 +1444,9 @@ single-line reader of section 14 beside it:
 - A solo is better read as a line, so a stem goes to the chord reader only when the line
   reading calls it chords.
 - Basic Pitch saw part of GuitarSet in training: those figures are not held out.
-- Not measured: separated stems, Slakh's guitars as a set (9 of 12 read before the PC ran
-  short of memory: 0.31 to 0.81 a stem, the single line 0.05 to 0.81), anything on a Mac.
+- Slakh's guitar stems hold every guitar of a song, and spread widely: 0.31 to 0.81 a
+  stem (the single line 0.05 to 0.81). The other settings were not run on them.
+- Not measured: separated stems, anything on a Mac.
 
 ## Sources
 

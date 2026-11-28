@@ -78,8 +78,8 @@ class Note:
 # -- which stems hold a line to read ------------------------------------------------------
 #
 # The recipes name their stems; the name says how a stem is read (the routing table in
-# docs/research/stem-to-midi.md, section 5). Chords are stage M4: until then a stem that may
-# hold them is read as a line, and gives its most prominent one.
+# docs/research/stem-to-midi.md, section 5). A stem that plays chords is read as a line, and
+# gives its most prominent one, unless the chord model is installed (`pipeline/notes.py`).
 
 VOICE_STEMS = frozenset({"vocals", "lead vocals", "lead", "dry vocals", "lead-vocal", "vocal"})
 BASS_STEMS = frozenset({"bass", "double-bass", "tuba"})
@@ -90,9 +90,13 @@ DRUM_STEMS = frozenset(
 )
 # Several parts at once, by design: never transcribed.
 MIXTURE_STEMS = frozenset({"instrumental", "drumless", "no-drums", "clean", "dry", "mix"})
-# The stems that get a MIDI file when the write_midi setting is on: the ones that are a
-# single line by nature, and the melody recipe's stem.
-MIDI_STEMS = tuple(sorted(VOICE_STEMS | BASS_STEMS | {"melody"}))
+# In a list of stems to read: every stem with a pitch to follow, whatever its name.
+EVERY_PITCHED = "*"
+# The stems that get a MIDI file when the write_midi setting is on. Up to 2026-11-27 the
+# ones that are a single line by nature and the melody recipe's stem; since then every
+# pitched stem (the owner's decision, with the chord reader). The names stay in the list for
+# the cache key below.
+MIDI_STEMS = (*sorted(VOICE_STEMS | BASS_STEMS | {"melody"}), EVERY_PITCHED)
 # The names that are in a run's cache key when MIDI is asked for them: the five the setting
 # named up to 0.4.6. They stay as they were, so a song separated then still comes from the
 # cache. No other name enters the key: a cached song's stems are read where they lie
