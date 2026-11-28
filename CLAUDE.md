@@ -38,6 +38,30 @@ Engine (run from `engine/`):
 - `uv run python ../scripts/benchmark.py SONG [--markdown]`: run time and peak VRAM
 - `uv run python ../scripts/check_stems.py FOLDER [--sum-to-mix]`: alignment check
 - `uv run python ../scripts/accept_recipes.py SONG`: run every recipe with alignment checks
+- Stem to MIDI benchmark (Phase 7, `docs/research/stem-to-midi.md`):
+  - `python -I ../scripts/midi_bench_data.py [--skip-slakh] [--max-gb N]`: fetch the CC BY
+    sets into `D:\lew-stems\bench`. Slakh's archive is shuffled, so it is downloaded whole to D:
+    (104 GB free needed; it resumes after a drop or a restart), checked, the test songs
+    extracted and the archive deleted.
+  - `uv run --with mido==1.3.3 --with mir_eval==0.8.2 python ../scripts/midi_bench.py score|pack`:
+    score transcribers with mir_eval, or build the audio pack the owner runs through Melodyne
+    and NeuralNote. `--methods openstems,openstems-midi` is the engine's own transcriber, at
+    exact pitch and as the keys its MIDI holds; `yin` is the tracker it replaced.
+    `--sets slakh-low` is Slakh's bass played 7 semitones lower, for notes under SwiftF0's
+    floor. `score --pack-only --methods ...,openstems-midi,melodyne` compares with
+    Melodyne on the same clips. Melodyne's notes file says 120 BPM, but its notes sit on the
+    tempo in the `<document>.tempo.mid` it writes beside it. The scorer pairs each export with
+    the tempo file written at the same moment (`melodyne_tempo`). The owner's exports go in
+    `baseline-pack/midi/` as `<clip>.melodyne.mid`, copied with their times kept (`cp -p`)
+    from the `<clip>.mid` Melodyne names them; the originals are left as they are.
+  - `python ../scripts/make_midi_import_tests.py`: the MIDI files that show how a DAW imports
+    bends, MPE and tempo maps.
+  - `uv run --with mir_eval==0.8.2 --with mido==1.3.3 python ../scripts/midi_calibrate.py fit|report`:
+    fit the transcriber's confidence model on every other clip, read alone and with the rest
+    of a song bleeding in (`BLEED`), and print the `weights` and `threshold` for `PROFILES`
+    (`fit`), or say how far the weights now in the code can be trusted on the clips between,
+    alone and with bleed (`report`). Each clip's audio and frames are kept in
+    `<bench>/cache/f0`: delete it after changing how frames are made
 - `python ../scripts/compare_builds.py run --out DIR MODEL...` in each environment, then
   `compare DIR DIR`: the same stems from two PyTorch builds (on the CPU)
 - `uv run pytest tests/test_links_mixes.py`: links and mixes, with a stand-in for the fetch
@@ -52,9 +76,17 @@ Engine (run from `engine/`):
   name, stems renamed on the disk, both routes), with the FakeEngine
 - `uv run pytest tests/test_empty_stems.py`: which stems are empty (the rule, the peak a run
   measures, stems from before it, the setting), with the FakeEngine
+- `uv run pytest tests/test_swiftf0.py`: SwiftF0 (the pitch tracker stem to MIDI uses, pinned
+  with `onnxruntime` in `pyproject.toml`) is installed with its model and hears a tone on the CPU
+- `uv run pytest tests/test_transcribe.py tests/test_notes_pipeline.py tests/test_notes_midi.py`:
+  stem to MIDI: the transcriber on synthetic lines, the files a run writes, `POST /v1/notes`,
+  and the notes file and MIDI writer
 - `uv run openstems serve`: start the local API (prints a JSON line with port and token)
 - `uv run openstems openapi --out openapi.json`: export the schema after any API change, then
   `pnpm gen:api` in `app/` (a test fails if `engine/openapi.json` is stale)
+- `uv run openstems models pull-chords`: fetch the model that reads chords for stem to MIDI
+  (Basic Pitch's `nmp.onnx`, 230 KB, into `<models>/basic-pitch/`). `OPENSTEMS_BASIC_PITCH=<file>`
+  before `uv run pytest tests/test_chords.py` runs the two tests that need the file
 - `uv run python ../scripts/gen_catalog.py --write`: regenerate `catalog/models.toml` (never
   edit that file by hand). A model's `memory_gb` comes from `MEMORY_GB` in that script,
   copied from the Peak VRAM column of `docs/benchmarks.md`
@@ -190,7 +222,9 @@ App (run from `app/`):
   setup, tray), `src/` (React UI: `api/`, `components/`, `views/`, `audio/`, `state/`, `tray/`,
   `trimmer/`), `e2e/`
 - `site/`: the landing page (static, no build tool), deployed to GitHub Pages
-- `docs/adr/`: decision records; `docs/benchmarks.md`: speed and VRAM per model
+- `docs/adr/`: decision records; `docs/benchmarks.md`: speed and VRAM per model;
+  `docs/research/`: research and plans for features not yet built (`stem-to-midi.md`, the plan
+  behind Phase 7)
 - `scripts/`: dev start, benchmarks
 
 Engine structure: `runtime.build_runtime()` wires settings, catalog, `ModelStore`, recipes and
@@ -560,6 +594,96 @@ it differently, `null` when it is cleared), its readout says "Start separates on
 <label>.", and the queue rows of both windows add "<label> only" (`statusText`, `jobRange`).
 Off, the editor sends nothing and nothing mentions a part. `docs/adr/0023-trimmer.md`.
 
+Stem to MIDI: with `write_midi` on (off by default), a stem that plays one note at a time is
+read by `audio/transcribe.py` (`transcribe_line`: no torch, so the API process may call it).
+Every stem is read at one level (`LEVEL`; its peak is its 32nd largest sample, `peak_level`), so
+the notes do not depend on its gain, and a sample that is no number counts as silence. SwiftF0
+gives a pitch every 16 ms; its own segmenter, ported there, cuts them into notes. The stem's
+name picks one of three profiles (`domain/notes.line_kind`): `voice`, `bass` (a second pass at
+double speed for notes under SwiftF0's 46.9 Hz floor; and in a stem that is mostly pure tone, a
+clean sub-bass or 808, a frame SwiftF0 hears no pitch in takes the frequency of its one partial,
+`with_pure_tones`: never frame by frame in any stem, since a kick's tail that leaked in is the
+same sound) and `line` for any other pitched stem; `bass` and `line` cut a note where it is
+struck again (an onset in the spectrum with a rise in the stem's own level, `struck_again`:
+bleed from a drum has only the first) and move each start back to the attack. Drums, mixtures
+and empty stems are not read. `MIDI_STEMS` is what the setting reads by itself: voices, basses
+and `melody`. A second, more willing pass adds candidates, which never move a note of the first
+pass (`_placed`). Every note has a confidence from a logistic model whose weights are in
+`PROFILES` (printed by `scripts/midi_calibrate.py fit`: never typed by hand; fitted on each clip
+alone and with the rest of a song 25 and 15 dB under it, the stand-in for separated stems); a
+profile's `threshold` is where a note counts. `pipeline/notes.py` writes two files beside the
+stem: `<stem>.notes.json` (`domain/notes.py`: every note, the threshold, the tuning, what wrote
+it, and `texture`, `chords` for a stem that plays several notes at once and was read as one
+line: `transcribe.clarity`) and `<stem>.mid`, the notes that count, one track, on the song's
+tempo and key. A stem in which no note counts gets the notes file alone. `Stem.notes` and
+`StemFile.notes` carry it; `STEM_FILES` (`domain/stem.py`) names the files a rename or a
+replaced run must take along. Every MIDI file is made from its notes file, to the byte
+(`midi_from_sidecar`, its track named by `notes.track_name`): a retag makes it again, and a
+rename puts the song's new name inside it (`retag.rewrite_midi`), unless somebody changed it. A
+damaged or missing notes file stops neither; one that cannot be read now stops both. The keys
+are at A440 unless a stem with fixed pitches agrees firmly on another tuning, one tuning for the
+song over every stem whose notes are known (`pipeline/notes.song_tuning`): a stem read later can
+settle it, and the MIDI of the stems read before is then rounded again from their notes files.
+If reading a stem fails the stems are still written and the job says so (`extras._read_notes`).
+`POST /v1/notes` reads stems that are already written; nothing in the app calls it yet. It is
+two steps: `read_stems` (seconds, writes nothing) and `write_notes`, which starts from the
+manifest as it is then and writes everything or puts every file back. A file that is not a
+stem's own is never written over or removed, by a reading, a new run, a new tempo or a rename
+(`notes.theirs`, `notes.own`; Melodyne saves its export as `<audio name>.mid` beside the audio):
+a reading that was asked for is refused, and a run leaves that stem's notes out and says so on
+the job. It is asked last: a reading asks again just before it writes, a run once every stem is
+written, and `_replace_dir` never writes over a notes or MIDI file that is not the old
+manifest's own. Whether a file is the one the manifest names is asked of the disk (`_one_file`),
+which does not tell case. A stem's own are the files the manifest names and ones that are, to
+the byte, what the app writes there (`_adopt`). A MIDI file is its own only while it holds what
+the app wrote (`notes.changed`): the manifest keeps the sha256 as `midi_hash`, and as `midi_was`
+that of what the file held before, since the manifest is written first. One from before hashes
+(the old tracker's) goes by the run's time in the manifest (`created_at`), never by its stem's,
+which a new tempo moves. `changed` raises OSError for a file that is there and cannot be read:
+whose it is cannot be told, so a reading, a new tempo and a rename stop. Whatever writes a
+stem's MIDI file must set it, and ask `changed` before it replaces or removes one. A retag and a
+rename write their manifest last, so `rewrite_midi` first writes the one on the disk with both
+hashes (`on_disk`). A file marked read-only is left as it is, by all four and on both systems.
+The manifest is written before the files it names (a stem's notes file last), so a write cut
+short is finished by the next, which first brings back what was parked (`recover`); a song from
+the cache with nothing to read does that by itself (`mend`), and a rename and a new tempo call
+`recover` before they move the names. Putting back is a rename: what a file held is parked
+beside it (`.old.tmp`) until the write is done, the manifest too. `read_manifest` gives None for
+a manifest that names a file outside its own folder. Why a change was refused is said per system
+by a reading, a new tempo and a rename alike (`notes.refused`, `why_refused`, the platform
+passed in; `REFUSED` in `tests/conftest.py` is what tests match). In the API process whatever
+rewrites a stem folder's manifest (notes, a tempo or key, hidden stems, a rename) holds
+`Service._folder`, one lock per folder, and is refused while the running job may be writing that
+folder (`Service._not_being_written`): do both in anything new that does. The cache:
+`KEYED_MIDI_STEMS` are the only names in a run's key, written as 0.4.x wrote them, and a song
+from the cache whose stems have no notes file, or notes from another transcriber, is read where
+it lies, not separated again (`Pipeline._with_notes`, `notes.stale`). Raise the number in
+`METHOD` (`pipeline/notes.py`) whenever the notes a stem gives change. Measured on clean
+recordings, with the rest of a song under the stem as a stand-in for bleed, and on 5 bass
+excerpts the app separated on the CPU on 2026-11-26 (0.945 against 0.970 on the clean stems);
+every stem class on separated stems waits for the GPU. On real sub-basses and 808s (two sample
+packs on D:, not in the repository) the pure tone's own pitch changes little, and an 808 whose
+pitch dives reads as several notes. A bass's onset threshold is 1.0 since 2026-11-27 (2.0 before: a
+separated bass has few sounding bands, so soft second strikes were lost); the benchmark
+tables in the research notes are from before it (`docs/research/stem-to-midi.md`, "A second strike in a separated bass"). Its tests ran on a Mac in CI on 2026-11-26 (pull request 48,
+`macos-15`); nothing of it has been seen on a Mac by hand.
+`docs/adr/0030-single-line-transcriber.md`, `docs/research/stem-to-midi.md` section 14.
+
+Chords (stage M4, first step): `pipeline/notes.read_stem` is what a run and "find notes"
+call. It reads a stem as a line, and when that says the stem plays chords, the profile is
+`line` and Basic Pitch's model is installed (`chord_model`: the pinned file, sha256 checked
+once per process), the notes are every note `audio/chords.py` finds, the notes file names
+`CHORDS_METHOD` and the job no longer says "plays chords". Never a bass or a voice. No torch:
+onnxruntime. The model is outside the catalog: `models pull-chords` and `POST /v1/notes/model`
+fetch it (Settings > Chords in MIDI; `chord_model` in the system info; with the FakeEngine a
+mark file stands in and nothing is fetched), and without the file a chord stem gives one
+line. "Write MIDI" reads every pitched stem since 2026-11-27 (`EVERY_PITCHED` in
+`MIDI_STEMS`); the cache key keeps its five names. `writeMidiHint` in `SettingsView.tsx` says
+what it gives. Raise `CHORDS_METHOD`
+when the notes such a stem gives can change. Measured on clean recordings only (GuitarSet
+chords 0.74 for 0.33, Slakh pianos 0.80 for 0.42); not on separated stems, not on a Mac.
+`docs/adr/0031-chord-notes.md`, research notes section 15.
+
 Dependencies point inward: `domain` imports nothing from the other packages and never imports
 torch. `cli` and `api` are the only entry points.
 
@@ -601,6 +725,22 @@ Component classes live in `@layer components` so Tailwind utilities can override
   self-test ran real models on the GPU and then on every CPU core. Do not run `openstems
   selftest` with models, the Settings button or `PACKAGED_SELFTEST=1` here without asking.
   `selftest --ops-only` is light.
+- It lost power twice more on 2026-11-23 (Kernel-Power 41 at the 15:52 and 16:13 boots)
+  while the stem-to-MIDI benchmark ran CREPE on the GPU (batch 512) with pYIN on 4 CPU
+  threads and a network download: far lighter than the self-test. Ask before running any GPU
+  model work here, the benchmark's `crepe` method and `separate` subcommand included, until
+  the cause is found. Lead suspect (2026-11-23): the memory overclock. Two of the four
+  crashes that day were bugcheck 0x124 with a WHEA "fatal hardware error, Component: Memory,
+  Machine Check Exception" at different addresses, and the DDR5 (V-Color, rated 4800) runs at
+  6400 MT/s through EXPO. Kernel-Power 41 events go back to 2026-11-06.
+- It lost power again on 2026-11-26 at 11:27 (Kernel-Power 41, no bugcheck, no WHEA record),
+  two and a half minutes after six Python processes were started at once (the stem-to-MIDI
+  benchmark, CPU only, the GPU idle at 34 W). And again on 2026-11-27 between 16:19 and
+  16:33 with ONE benchmark process pinned to two cores, about an hour into such runs, the
+  GPU idle. So no load here is known to be safe: long compute runs (the benchmark,
+  calibration, separation on the CPU) wait for the owner's word, and agents get nothing that
+  runs Python, pytest or uv. Short runs (the unit tests, a script of seconds) have not cut
+  it. The system log also shows unclean restarts on 2026-11-24 (21:04 and 23:02).
 
 - Test songs (CC-BY, Kevin MacLeod) are in `D:\lew-stems\test-audio`; they are never committed.
 - Target: Windows, NVIDIA RTX 5070 Ti (16 GB). C: is nearly full; keep models and outputs on D:

@@ -1,6 +1,20 @@
 {
   "components": {
     "schemas": {
+      "ChordModel": {
+        "description": "The model that reads chords for stem to MIDI (Basic Pitch, 230 KB).",
+        "properties": {
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "installed"
+        ],
+        "title": "ChordModel",
+        "type": "object"
+      },
       "ClipGrid": {
         "description": "The beat grid a selection was made on. It names the clip (\"bars 9-16\"), and its\ntempo is the one a tempo-synced clip is marked with. Taken as it is, not rounded.",
         "properties": {
@@ -445,6 +459,23 @@
           "detail"
         ],
         "title": "ErrorBody",
+        "type": "object"
+      },
+      "FindNotes": {
+        "properties": {
+          "paths": {
+            "description": "Stem files of one song to find notes in: voices, basses and other pitched stems. Drums and mixtures are refused.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Paths",
+            "type": "array"
+          }
+        },
+        "required": [
+          "paths"
+        ],
+        "title": "FindNotes",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -2402,11 +2433,24 @@
                 "type": "null"
               }
             ],
+            "description": "The stem's MIDI file, when it was read and held notes.",
             "title": "Midi"
           },
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The stem's notes file (`<stem>.notes.json`), when it was read: every note found with its confidence, and the confidence at which a note counts. A stem with this and no `midi` was read and held no notes.",
+            "title": "Notes"
           },
           "path": {
             "title": "Path",
@@ -2551,6 +2595,12 @@
       },
       "SystemInfo": {
         "properties": {
+          "chord_model": {
+            "default": false,
+            "description": "Whether the model that reads chords for stem to MIDI is installed.",
+            "title": "Chord Model",
+            "type": "boolean"
+          },
           "config_dir": {
             "title": "Config Dir",
             "type": "string"
@@ -5034,6 +5084,144 @@
           }
         ],
         "summary": "Verify Model"
+      }
+    },
+    "/v1/notes": {
+      "post": {
+        "description": "Find the notes in stems that are already written (stem to MIDI) and write each\none's notes file and MIDI file beside it. A stem that has them is read again.",
+        "operationId": "find_notes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FindNotes"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemSetInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Find Notes"
+      }
+    },
+    "/v1/notes/model": {
+      "post": {
+        "description": "Download the model that reads chords (230 KB), unless it is installed. With it a\nstem that plays chords gives every note of them, not one line.",
+        "operationId": "pull_chord_model",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChordModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Pull Chord Model"
       }
     },
     "/v1/peaks": {

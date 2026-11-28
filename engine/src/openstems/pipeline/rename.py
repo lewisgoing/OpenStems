@@ -21,8 +21,8 @@ from typing import Any
 
 from openstems.domain.errors import DomainError
 from openstems.domain.naming import DEFAULT_TEMPLATE, render_name, safe_component
-from openstems.domain.stem import MANIFEST_NAME
-from openstems.pipeline.retag import tokens_of
+from openstems.domain.stem import MANIFEST_NAME, STEM_FILES
+from openstems.pipeline.retag import rewrite_midi, tokens_of, undo_midi
 from openstems.pipeline.run import read_manifest
 
 
@@ -48,7 +48,7 @@ def _file_moves(manifest: dict[str, Any], directory: Path, name: str) -> dict[st
     for stem in manifest.get("stems", []):
         was = render_name(template, stem=str(stem["name"]), **before)
         now = render_name(template, stem=str(stem["name"]), **after)
-        for field in ("file", "midi"):
+        for field in STEM_FILES:
             file = stem.get(field)
             if file and str(file).startswith(was) and was != now:
                 moves[str(file)] = now + str(file)[len(was) :]
@@ -58,7 +58,7 @@ def _file_moves(manifest: dict[str, Any], directory: Path, name: str) -> dict[st
 def _renamed(manifest: dict[str, Any], moves: dict[str, str], name: str) -> dict[str, Any]:
     updated = json.loads(json.dumps(manifest))
     for stem in updated.get("stems", []):
-        for field in ("file", "midi"):
+        for field in STEM_FILES:
             if stem.get(field) in moves:
                 stem[field] = moves[stem[field]]
     updated.setdefault("source", {})["name"] = name
@@ -87,8 +87,10 @@ def rename_song(directory: Path, name: str) -> list[Moved]:
     """Name the song whose stems are in ``directory`` ``name``, on the disk.
 
     ``directory`` is one stem folder, ``<output>/<song>/<recipe>``. The song's folder is
-    renamed, with every stem folder in it: their stems and MIDI files where the naming
-    template holds ``{track}``, and the name in each manifest. Returns every stem folder of
+    renamed, with every stem folder in it: their stems, notes and MIDI files where the
+    naming template holds ``{track}``, the name in each manifest, and the track name inside
+    each MIDI file that still is what the app made of its notes file (one changed by hand
+    keeps its bytes). Returns every stem folder of
     the song, before and after. Nothing is written over: a folder or a file that already
     has the new name stops the rename before anything is changed, and a step that fails
     undoes the ones before it.
@@ -102,6 +104,12 @@ def rename_song(directory: Path, name: str) -> list[Moved]:
     except OSError as exc:
         raise DomainError(f"cannot read the song's folder: {exc}") from exc
     sets = [(folder, manifest) for folder in folders if (manifest := read_manifest(folder))]
+    # What a write of notes that was cut short left is cleared first: once the files have
+    # other names it would not be found.
+    from openstems.pipeline.notes import recover, why_refused
+
+    for folder, manifest in sets:
+        recover(folder, manifest)
 
     move_folder = new_folder.name != old_folder.name
     if move_folder and new_folder.exists() and not _same_folder(old_folder, new_folder):
@@ -128,6 +136,7 @@ def rename_song(directory: Path, name: str) -> list[Moved]:
     moved_folder = False
     files: list[tuple[Path, Path]] = []
     written: list[tuple[Path, dict[str, Any]]] = []
+    rewritten: list[tuple[Path, bytes]] = []
     out: list[Moved] = []
     try:
         if move_folder:
@@ -140,10 +149,14 @@ def rename_song(directory: Path, name: str) -> list[Moved]:
                     os.replace(here / was, here / now)
                     files.append((here / was, here / now))
             updated = _renamed(manifest, moves, name)
+            was = str((manifest.get("source") or {}).get("name") or "")
+            now = updated.get("analysis") or {}
+            rewrite_midi(here, updated, now, rewritten, written_as=was, on_disk=manifest)
             _write_manifest(here, updated)
             written.append((here, manifest))
             out.append(Moved(folder, here, updated))
     except OSError as exc:
+        undo_midi(rewritten)
         for here, manifest in reversed(written):
             with contextlib.suppress(OSError):
                 _write_manifest(here, manifest)
@@ -153,10 +166,8 @@ def rename_song(directory: Path, name: str) -> list[Moved]:
         if moved_folder:
             with contextlib.suppress(OSError):
                 os.rename(new_folder, old_folder)
-        if isinstance(exc, PermissionError):
-            raise DomainError(
-                "a file of this song is open in another program, so nothing was renamed. "
-                "Close it there and try again."
-            ) from exc
-        raise DomainError(f"the song could not be renamed: {exc.strerror or exc}") from exc
+        refused = why_refused(exc, "nothing was renamed")
+        if refused is None:
+            refused = f"the song could not be renamed: {exc.strerror or exc}"
+        raise DomainError(refused) from exc
     return out

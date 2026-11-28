@@ -268,6 +268,11 @@ def test_progress_from_another_thread_can_cancel(catalog, store, song, tmp_path)
 
 
 def test_out_of_memory_drops_other_warm_models_and_retries(catalog, store, song, tmp_path) -> None:
+    # The pipeline asks whether an error is out-of-memory only once PyTorch is loaded
+    # (`run._out_of_memory`), as it is whenever a real model has run. Without this line the
+    # test passed only when a test file before it had loaded PyTorch.
+    import torch  # noqa: F401
+
     import openstems.engines.host as host
     from openstems.engines.fake import FakeEngine, FakeLoadedModel
 

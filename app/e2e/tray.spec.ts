@@ -58,7 +58,9 @@ test('a click on the tray icon opens the quick-drop window by the taskbar, and a
     expect(bounds.height).toBeLessThanOrEqual(500)
     expect(bounds.height).toBe(Math.min(500, area.y + area.height - 12 - bounds.y))
   } else {
-    expect(bounds.height).toBe(500)
+    // Shorter only on a screen too small for the usual size, such as a small remote
+    // desktop: the work area less the margin above and below (`popupPlacement`).
+    expect(bounds.height).toBe(Math.min(500, area.height - 24))
     expect(bounds.y).toBeGreaterThanOrEqual(area.y + 12)
   }
 

@@ -6,6 +6,7 @@ stems keep the source's length, start and level.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -13,20 +14,12 @@ from typing import Any
 import numpy as np
 
 from openstems.audio import analysis
-from openstems.audio.midi import write_midi
 from openstems.domain.stem import Track
 from openstems.engines.base import CancelToken
+from openstems.pipeline.levels import measure_peak
 
 NORMALIZE_PEAK_DB = -1.0
-# Pitch ranges per stem kind for stem-to-MIDI. Unknown stems use the wide default.
-_RANGES: dict[str, tuple[float, float]] = {
-    "bass": (30.0, 400.0),
-    "vocals": (70.0, 1100.0),
-    "dry vocals": (70.0, 1100.0),
-    "lead": (70.0, 1100.0),
-    "melody": (55.0, 1600.0),
-}
-MIDI_STEMS = tuple(_RANGES)
+log = logging.getLogger(__name__)
 
 
 def post_process(
@@ -38,7 +31,8 @@ def post_process(
     sample_rate: int = 44100,
 ) -> dict[str, Any]:
     """Returns extras for the writer: ``bpm``, ``key``, ``downbeat`` (where bar 1 starts,
-    in seconds), ``trim`` and ``midi``.
+    in seconds), ``trim``, and for stem to MIDI ``midi`` and ``notes`` (a writer per stem)
+    and ``said`` (what the job should say of it).
 
     ``outputs`` is modified in place when normalization is on.
     """
@@ -65,15 +59,8 @@ def post_process(
                 extras[name] = value
     cancel.raise_if_cancelled()
 
-    wanted_midi = set(getattr(options, "midi_stems", None) or ())
-    for name in outputs:
-        if name in wanted_midi:
-            low, high = _RANGES.get(name, (55.0, 1600.0))
-            notes = analysis.track_notes(outputs[name], sample_rate, fmin=low, fmax=high)
-            cancel.raise_if_cancelled()
-            extras["midi"][name] = _midi_writer(
-                notes, extras["bpm"] or 120.0, f"{track.name} {name}"
-            )
+    # Measured before normalize, as the run measures them: a stem of hiss is not read.
+    peaks = {name: measure_peak(audio) for name, audio in outputs.items()}
 
     if getattr(options, "normalize", False):
         target = 10 ** (NORMALIZE_PEAK_DB / 20)
@@ -88,11 +75,57 @@ def post_process(
             if end > start and (start > 0 or end < audio.shape[1]):
                 extras["trim"][name] = np.ascontiguousarray(audio[:, start:end])
                 extras["offsets"][name] = start
+
+    # Stem to MIDI comes last and reads each stem as it will be written, trimmed start
+    # included, so a note's time is its place in the stem's own file.
+    wanted = getattr(options, "midi_stems", None) or ()
+    if wanted:
+        _read_notes(track, outputs, peaks, wanted, extras, cancel, sample_rate)
     return extras
 
 
-def _midi_writer(notes: list, bpm: float, name: str) -> Callable[[Path], None]:
-    def write(path: Path) -> None:
-        write_midi(path, notes, bpm, name)
+def _read_notes(
+    track: Track,
+    outputs: dict[str, np.ndarray],
+    peaks: dict[str, float],
+    wanted: Any,
+    extras: dict[str, Any],
+    cancel: CancelToken,
+    sample_rate: int,
+) -> None:
+    """The notes of every stem asked for that has a line to read, as writers for its notes
+    file and, when notes were found, its MIDI file."""
+    from openstems.pipeline import notes
 
-    return write
+    found = {}
+    failed = []
+    for name in notes.readable(outputs, wanted, peaks):
+        trimmed = extras["trim"].get(name)
+        audio = outputs[name] if trimmed is None else trimmed
+        try:
+            found[name] = notes.read_stem(audio, sample_rate, name)
+        except Exception:
+            # The stems are what the run is for: they are written whatever became of the
+            # notes, and the job says which stem has none.
+            log.exception("stem to MIDI failed for %s", name)
+            failed.append(name)
+        cancel.raise_if_cancelled()
+    tuning = notes.song_tuning(found)
+    extras["said"] = [*notes.job_notes(found), *map(notes.failed_note, failed)]
+    extras["notes"] = {}
+    for name, transcription in found.items():
+        sidecar = notes.sidecar_of(transcription, stem=name, tuning=tuning)
+        extras["notes"][name] = _writer(Path.write_bytes, notes.dump(sidecar))
+        # The MIDI file is made from the notes file, as everywhere (`midi_from_sidecar`).
+        data = notes.midi_from_sidecar(
+            sidecar, name=notes.track_name(track.name, name), bpm=extras["bpm"], key=extras["key"]
+        )
+        if data is not None:
+            extras["midi"][name] = _writer(Path.write_bytes, data)
+
+
+def _writer(write: Callable[[Path, Any], Any], data: Any) -> Callable[[Path], None]:
+    def to(path: Path) -> None:
+        write(path, data)
+
+    return to

@@ -62,6 +62,10 @@ class SystemInfo(BaseModel):
     worker: WorkerStatus
     config_dir: str
     logs_dir: str
+    chord_model: bool = Field(
+        default=False,
+        description="Whether the model that reads chords for stem to MIDI is installed.",
+    )
 
 
 class TrackInfo(BaseModel):
@@ -289,6 +293,13 @@ class CreateMix(BaseModel):
     paths: list[str] = Field(description="Two or more stem files of one song.")
 
 
+class FindNotes(BaseModel):
+    paths: list[str] = Field(
+        description="Stem files of one song to find notes in: voices, basses and other "
+        "pitched stems. Drums and mixtures are refused."
+    )
+
+
 class MixInfo(BaseModel):
     path: str
     name: str
@@ -398,7 +409,15 @@ class StemFile(BaseModel):
     file: str
     path: str
     peaks: str | None = None
-    midi: str | None = None
+    midi: str | None = Field(
+        default=None, description="The stem's MIDI file, when it was read and held notes."
+    )
+    notes: str | None = Field(
+        default=None,
+        description="The stem's notes file (`<stem>.notes.json`), when it was read: every "
+        "note found with its confidence, and the confidence at which a note counts. A stem "
+        "with this and no `midi` was read and held no notes.",
+    )
     samples: int | None = None
     sample_rate: int | None = None
     group: str | None = Field(
@@ -583,6 +602,12 @@ class Peaks(BaseModel):
 
 class Diagnostics(BaseModel):
     path: str
+
+
+class ChordModel(BaseModel):
+    """The model that reads chords for stem to MIDI (Basic Pitch, 230 KB)."""
+
+    installed: bool
 
 
 class SelfTestOp(BaseModel):

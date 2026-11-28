@@ -556,3 +556,11 @@ def test_only_the_development_server_may_call_from_another_origin(
         assert allowed.headers["access-control-allow-origin"] == "http://localhost:5173"
         other = dev.options("/v1/settings", headers={**ask, "Origin": "http://example.com"})
         assert "access-control-allow-origin" not in other.headers
+
+
+def test_the_api_fetches_the_chord_model_with_a_stand_in(client: TestClient) -> None:
+    # The FakeEngine's stand-in: nothing is fetched from the web.
+    assert client.get("/v1/system").json()["chord_model"] is False
+    assert client.post("/v1/notes/model").json() == {"installed": True}
+    assert client.get("/v1/system").json()["chord_model"] is True
+    assert client.post("/v1/notes/model").json() == {"installed": True}

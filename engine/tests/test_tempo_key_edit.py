@@ -18,7 +18,7 @@ from openstems.domain.tempo import TEMPO_FORMAT_NOTE, TEMPO_MISSING_NOTE
 from openstems.pipeline.mix import render_mix
 from openstems.pipeline.retag import clean_bpm, clean_key, set_analysis
 from openstems.pipeline.run import RunOptions, read_manifest
-from tests.conftest import RATE, tone
+from tests.conftest import RATE, REFUSED, tone
 from tests.test_api import all_terminal, client, fake_env, songs, wait_for
 from tests.test_producer_features import acid_tempo, click_track, full_song
 
@@ -328,7 +328,7 @@ def test_a_stem_that_is_open_elsewhere_leaves_the_folder_as_it_was(
         real(src, dst)
 
     monkeypatch.setattr(retag.os, "replace", busy)
-    with pytest.raises(DomainError, match="open in another program"):
+    with pytest.raises(DomainError, match=REFUSED):
         set_analysis(folder, {"bpm": 99})
     monkeypatch.setattr(retag.os, "replace", real)
 

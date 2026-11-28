@@ -95,8 +95,24 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
             <Row label="Tempo-sync for FL Studio" hint={<TempoSyncHint settings={settings} />}>
               <Switch label="Tempo-sync for FL Studio" checked={settings.tempo_sync} onChange={(v) => save({ tempo_sync: v })} />
             </Row>
-            <Row label="Write MIDI" hint="A draggable .mid next to vocal, bass and melody stems. Monophonic: one note at a time.">
+            <Row label="Write MIDI" hint={writeMidiHint(system?.chord_model ?? false)}>
               <Switch label="Write MIDI" checked={settings.write_midi} onChange={(v) => save({ write_midi: v })} />
+            </Row>
+            <Row
+              label="Chords in MIDI"
+              hint="A small extra model (230 KB, Basic Pitch by Spotify) that hears several notes at once, for stems such as a piano or a strummed guitar. New: tested on clean recordings only."
+            >
+              {system?.chord_model ? (
+                <span className="text-muted">Installed</span>
+              ) : (
+                <Button
+                  disabled={maintenance.chordModel.isPending || !system}
+                  onClick={() => maintenance.chordModel.mutate(undefined, { onError: toast.error })}
+                >
+                  {maintenance.chordModel.isPending && <span className="spinner" />}
+                  {maintenance.chordModel.isPending ? 'Downloading' : 'Download'}
+                </Button>
+              )}
             </Row>
           </Group>
 
@@ -234,6 +250,14 @@ export function SettingsView({ recipes }: { recipes: Recipe[] }) {
       </div>
     </div>
   )
+}
+
+/** What Write MIDI gives, by whether the model that reads chords is installed. */
+export function writeMidiHint(chords: boolean): string {
+  const which = 'A draggable .mid next to every stem with notes to read: vocals, bass, guitar, piano and the like, not drums.'
+  return chords
+    ? `${which} A stem that plays chords gives every note of them.`
+    : `${which} One note at a time: a stem that plays chords gives one line of them, until the chord model below is downloaded.`
 }
 
 interface SelfTestReport {

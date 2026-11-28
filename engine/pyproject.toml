@@ -23,6 +23,13 @@ dependencies = [
     "websockets>=15",
     "librosa>=0.11",
     "yt-dlp[default,deno]==2026.11.23",
+    # Stem to MIDI (Phase 7): SwiftF0, the pitch tracker for single-line stems. Its ONNX
+    # model (135 KB) is inside the wheel and runs on the CPU through onnxruntime on every
+    # system, Macs included (onnxruntime's Apple Silicon wheels need macOS 14, as the app
+    # does). Both are pinned to the versions the benchmark's figures were measured with.
+    "swift-f0==0.3.0",
+    "onnxruntime==1.32.0",
+    "soxr>=1.0",  # the resampler in front of SwiftF0 (librosa already brings it)
 ]
 
 [project.scripts]

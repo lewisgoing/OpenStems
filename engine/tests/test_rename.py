@@ -17,7 +17,7 @@ from openstems.domain.stem import Track
 from openstems.pipeline.mix import render_mix
 from openstems.pipeline.rename import rename_song
 from openstems.pipeline.run import RunOptions, read_manifest
-from tests.conftest import RATE, tone
+from tests.conftest import RATE, REFUSED, tone
 from tests.test_api import all_terminal, client, fake_env, service_of, songs, wait_for
 from tests.test_producer_features import full_song
 
@@ -213,7 +213,7 @@ def test_a_file_that_is_open_elsewhere_leaves_the_song_as_it_was(
         monkeypatch.setattr(rename.os, "rename", busy_folder)
     else:
         monkeypatch.setattr(rename.os, "replace", busy_file)
-    with pytest.raises(DomainError, match="open in another program"):
+    with pytest.raises(DomainError, match=REFUSED):
         rename_song(folder, "Night Drive")
     monkeypatch.undo()
 

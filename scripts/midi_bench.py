@@ -1,0 +1,1002 @@
+"""Stem-to-MIDI benchmark (Phase 7, stage M0): transcribe, score, and build the baseline pack.
+
+The data comes from scripts/midi_bench_data.py (default D:\\lew-stems\\bench). Run from
+engine/, with mido and mir_eval added for the run only (they are not engine dependencies):
+
+    uv run --with mido==1.3.3 --with mir_eval==0.8.2 \\
+        python ../scripts/midi_bench.py score [--sets guitarset,vocadito,slakh,slakh-low] \\
+        [--methods yin,openstems,openstems-midi,annotator2,melodyne,neuralnote] [--pack-only]
+    ... midi_bench.py pack     # audio for Melodyne and NeuralNote, with instructions
+
+Methods:
+
+- ``openstems``, ``openstems-midi``: the engine's transcriber for single-line stems (stage
+  M3, ``openstems.audio.transcribe``): its notes at their exact pitch, and as the keys its
+  MIDI file holds.
+- ``yin``: the engine's transcriber up to 0.4.6 (``_yin_notes`` here), the baseline it
+  replaced. Monophonic, so polyphonic guitar is expected to score low.
+- ``annotator2``: vocadito's second annotator scored against the first, the human ceiling.
+- ``pyin``, ``swiftf0``, ``swiftf0-notes``, ``crepe``: pitch trackers (see below).
+- ``swiftf0-midi``: ``swiftf0-notes`` as the whole keys the app's MIDI file would carry (M1's
+  tuning-aware rounding). Use it to compare with exports that hold whole keys only, such as
+  Melodyne's: a fractional pitch gains from the 50-cent window near a semitone's edge.
+- ``onsets``, ``superflux``: drum hits with no weights, librosa's spectral flux and its
+  SuperFlux variant. Drum stems are scored on timing alone (onset within 50 ms, hits closer
+  than 30 ms counted once), with recall per drum part read from the General MIDI notes.
+- ``melodyne``, ``neuralnote``: MIDI the owner exported for the pack, read from
+  ``<bench>/baseline-pack/midi/<item>.<tool>.mid`` and shifted by one global offset found by
+  matching onsets. The offset applied is reported, and a file with notes past the end of its
+  audio is flagged (a wrong tempo, or another file's notes in it). Melodyne's notes file says
+  120 BPM, but its notes sit on the beats of Melodyne's document tempo, which Melodyne writes
+  to a second file, ``<document>.tempo.mid`` (``melodyne_tempo``). Its export starts at the
+  document's 0, so its offset is searched within 0.3 s; NeuralNote's within 6 s.
+
+Scores are mir_eval's note metrics at their defaults: onset within 50 ms and pitch within 50
+cents; the offset variant also needs the offset within 20% of the note or 50 ms. Octave errors
+are estimated notes left unmatched that sit an octave from a reference note at the same onset.
+The summary averages each group (a set, a stem and, for GuitarSet, solo or comp) over only the
+items every method in it scored, and names the items it left out.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import shutil
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import numpy as np
+
+DEFAULT_BENCH = Path(r"D:\lew-stems\bench")
+Note = tuple[float, float, float, int]  # start s, end s, MIDI pitch (fractional), velocity
+
+# The pack: a few items per set, chosen to vary player, style and singer.
+PACK = {
+    "guitarset": [
+        "00_BN1-129-Eb_comp",
+        "01_Jazz3-137-Eb_comp",
+        "02_Funk2-119-G_comp",
+        "03_SS1-68-E_comp",
+        "01_BN3-119-G_solo",
+        "02_Rock2-142-D_solo",
+        "04_Funk1-114-Ab_solo",
+    ],
+    "vocadito": [
+        "vocadito_1",
+        "vocadito_5",
+        "vocadito_9",
+        "vocadito_14",
+        "vocadito_22",
+        "vocadito_31",
+    ],
+}
+
+
+def melodyne_algorithm(clip_id: str) -> str:
+    """Melodyne's algorithm for a pack clip: Melodic for single lines (vocals, guitar solos),
+    Polyphonic Decay for chords (GuitarSet's comps). The first exports, of 2026-11-24, ran every
+    guitar clip through Polyphonic Decay."""
+    return "Polyphonic Decay" if clip_id.endswith("_comp") else "Melodic"
+
+
+@dataclass
+class Item:
+    set: str
+    id: str
+    kind: str  # the app's stem name this stands in for
+    audio: Path
+    reference: list[Note]
+    extra: dict[str, list[Note]] = field(default_factory=dict)
+
+    @property
+    def name(self) -> str:
+        return f"{self.set} - {self.id}"
+
+
+# -- data sets ---------------------------------------------------------------------------
+
+
+def load_guitarset(bench: Path, ids: list[str] | None) -> list[Item]:
+    folder = bench / "guitarset"
+    items = []
+    for jams in sorted(folder.glob("*.jams")):
+        if ids is not None and jams.stem not in ids:
+            continue
+        data = json.loads(jams.read_text("utf-8"))
+        notes: list[Note] = []
+        for ann in data["annotations"]:
+            if ann["namespace"] != "note_midi":
+                continue
+            for obs in ann["data"]:
+                start = float(obs["time"])
+                notes.append((start, start + float(obs["duration"]), float(obs["value"]), 0))
+        audio = folder / f"{jams.stem}_mic.wav"
+        if audio.is_file():
+            items.append(Item("guitarset", jams.stem, "guitar", audio, sorted(notes)))
+    return items
+
+
+def _vocadito_notes(path: Path) -> list[Note]:
+    notes: list[Note] = []
+    for row in csv.reader(path.read_text("utf-8").splitlines()):
+        if len(row) < 3:
+            continue
+        start, hz, duration = float(row[0]), float(row[1]), float(row[2])
+        notes.append((start, start + duration, 69 + 12 * np.log2(hz / 440.0), 0))
+    return sorted(notes)
+
+
+def load_vocadito(bench: Path, ids: list[str] | None) -> list[Item]:
+    folder = bench / "vocadito"
+    items = []
+    for audio in sorted(
+        folder.glob("Audio/vocadito_*.wav"), key=lambda p: int(p.stem.split("_")[1])
+    ):
+        if ids is not None and audio.stem not in ids:
+            continue
+        first = folder / "Annotations" / "Notes" / f"{audio.stem}_notesA1.csv"
+        second = folder / "Annotations" / "Notes" / f"{audio.stem}_notesA2.csv"
+        if not first.is_file():
+            continue
+        item = Item("vocadito", audio.stem, "vocals", audio, _vocadito_notes(first))
+        if second.is_file():
+            item.extra["annotator2"] = _vocadito_notes(second)
+        items.append(item)
+    return items
+
+
+# Slakh2100: the app's separated stems scored against Slakh's MIDI, next to Slakh's own clean
+# stems ("oracle"). Slakh's instruments are grouped the way the app's recipes split them.
+SLAKH_CLASS = {"Bass": "bass", "Guitar": "guitar", "Piano": "piano"}  # the rest: "other"
+DRUM_PARTS = {  # General MIDI drum notes per DrumSep part
+    "kick": {35, 36},
+    "snare": {37, 38, 40},
+    "toms": {41, 43, 45, 47, 48, 50},
+    "hh": {42, 44, 46},
+    "ride": {51, 53, 59},
+    "crash": {49, 52, 55, 57},
+}
+DRUM_KINDS = {"drums", *DRUM_PARTS}
+RECIPE_FOR = {
+    **{kind: "full-song" for kind in ("drums", "bass", "guitar", "piano", "other")},
+    **{part: "drum-kit" for part in DRUM_PARTS},
+}
+# Slakh renders its bass patches an octave below the written MIDI (the usual bass
+# convention). Measured on the 142 test songs with bass: 140 sit exactly 12 semitones down
+# and two (Track01931, Track01937) 14 down, a quirk of those renders (`SOUNDS_AT_SONG`).
+SOUNDS_AT = {"bass": -12}
+# The two songs whose bass sounds 14 semitones under its MIDI, read as they sound: scored an
+# octave down, every one of their notes counted as two semitones wrong (254 of the 338 pitch
+# mismatches left on 30 songs, measured 2026-11-25).
+SOUNDS_AT_SONG = {("Track01931", "bass"): -14, ("Track01937", "bass"): -14}
+SLAKH_CONDITIONS = ["separated", "oracle"]
+SLAKH_KINDS: set[str] = set()  # empty: every class
+
+
+def slakh_songs(bench: Path) -> list[Path]:
+    from midi_bench_data import slakh_complete
+
+    folder = bench / "slakh"
+    return sorted(p for p in folder.glob("Track*") if slakh_complete(p)) if folder.is_dir() else []
+
+
+def _slakh_class(stem: dict) -> str:
+    return "drums" if stem.get("is_drum") else SLAKH_CLASS.get(stem.get("inst_class", ""), "other")
+
+
+def _slakh_meta(song: Path) -> dict:
+    import yaml
+
+    return yaml.safe_load((song / "metadata.yaml").read_text("utf-8"))
+
+
+def slakh_reference(song: Path, meta: dict) -> dict[str, list[Note]]:
+    refs: dict[str, list[Note]] = {}
+    for sid, stem in sorted(meta["stems"].items()):
+        if not stem.get("audio_rendered"):
+            continue
+        kind = _slakh_class(stem)
+        shift = SOUNDS_AT_SONG.get((song.name, kind), SOUNDS_AT.get(kind, 0))
+        notes = [(a, b, p + shift, v) for a, b, p, v in read_midi(song / "MIDI" / f"{sid}.mid")]
+        refs.setdefault(kind, []).extend(notes)
+        if kind == "drums":
+            for part, keys in DRUM_PARTS.items():
+                refs.setdefault(part, []).extend(n for n in notes if int(n[2]) in keys)
+    return {kind: sorted(notes) for kind, notes in refs.items() if notes}
+
+
+def _oracle_audio(bench: Path, song: Path, meta: dict, kind: str) -> Path | None:
+    """Slakh's own stems of one class, summed once and kept. None for drum parts: Slakh renders
+    the kit as one stem."""
+    target = bench / "slakh-oracle" / song.name / f"{kind}.wav"
+    if target.is_file():
+        return target
+    if kind in DRUM_PARTS:
+        return None
+    import soundfile as sf
+
+    total: np.ndarray | None = None
+    rate = 44100
+    for sid, stem in meta["stems"].items():
+        path = song / "stems" / f"{sid}.flac"
+        if not stem.get("audio_rendered") or _slakh_class(stem) != kind or not path.is_file():
+            continue
+        audio, rate = sf.read(path, dtype="float32", always_2d=True)
+        if total is None:
+            total = audio
+        else:
+            length = max(total.shape[0], audio.shape[0])
+            total = np.pad(total, ((0, length - total.shape[0]), (0, 0)))
+            total[: audio.shape[0]] += audio
+    if total is None:
+        return None
+    target.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(target, total, rate, subtype="FLOAT")
+    return target
+
+
+def _separated_audio(bench: Path, song: Path, kind: str) -> Path | None:
+    from openstems.pipeline.run import read_manifest
+
+    folder = bench / "runs" / "slakh" / song.name / RECIPE_FOR.get(kind, "full-song")
+    manifest = read_manifest(folder)
+    if not manifest or not manifest.get("complete"):
+        return None
+    for stem in manifest.get("stems", []):
+        if stem["name"] == kind:
+            return folder / stem["file"]
+    return None
+
+
+def load_slakh(bench: Path, ids: list[str] | None) -> list[Item]:
+    items = []
+    for song in slakh_songs(bench):
+        if ids is not None and song.name not in ids:
+            continue
+        meta = _slakh_meta(song)
+        for kind, notes in slakh_reference(song, meta).items():
+            if SLAKH_KINDS and kind not in SLAKH_KINDS:
+                continue
+            for condition in SLAKH_CONDITIONS:
+                if condition == "separated":
+                    audio = _separated_audio(bench, song, kind)
+                else:
+                    audio = _oracle_audio(bench, song, meta, kind)
+                if audio is not None:
+                    item_id = f"{song.name}/{kind}/{condition}"
+                    items.append(Item("slakh", item_id, kind, audio, notes))
+    return items
+
+
+# Low bass. No Slakh bass note lies under SwiftF0's 46.9 Hz floor, so the set does not test
+# what a real bass does there: a 4-string's low E is 41.2 Hz and a 5-string's low B 30.9 Hz.
+# This set is Slakh's own bass stems played slower, as a tape would: every pitch moves down
+# by LOW_SHIFT semitones (Slakh's lowest bass note, an A1 at 55 Hz, becomes a D1 at 36.7 Hz)
+# and every time stretches by the same ratio, reference included. A slowed bass is harder
+# than a real low one, since every error in time stretches too: read its scores against each
+# other, not against the plain set's.
+LOW_SHIFT = 7
+
+
+def load_slakh_low(bench: Path, ids: list[str] | None) -> list[Item]:
+    import soundfile as sf
+    import soxr
+
+    ratio = 2 ** (-LOW_SHIFT / 12)
+    conditions, kinds = list(SLAKH_CONDITIONS), set(SLAKH_KINDS)
+    SLAKH_CONDITIONS[:] = ["oracle"]
+    SLAKH_KINDS.clear()
+    SLAKH_KINDS.add("bass")
+    try:
+        source = load_slakh(bench, ids)
+    finally:
+        SLAKH_CONDITIONS[:] = conditions
+        SLAKH_KINDS.clear()
+        SLAKH_KINDS.update(kinds)
+    items = []
+    for item in source:
+        song = item.id.split("/")[0]
+        target = bench / "slakh-low" / f"{song}.flac"
+        if not target.is_file():
+            audio, rate = sf.read(item.audio, dtype="float32", always_2d=True)
+            mono = soxr.resample(audio.mean(axis=1), rate, 16000)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            sf.write(target, soxr.resample(mono, 16000, 16000 / ratio), 16000, subtype="PCM_16")
+        notes = [(s / ratio, e / ratio, n - LOW_SHIFT, v) for s, e, n, v in item.reference]
+        items.append(Item("slakh-low", song, "bass", target, notes))
+    return items
+
+
+LOADERS: dict[str, Callable[[Path, list[str] | None], list[Item]]] = {
+    "guitarset": load_guitarset,
+    "vocadito": load_vocadito,
+    "slakh": load_slakh,
+    "slakh-low": load_slakh_low,
+}
+
+
+# -- methods -----------------------------------------------------------------------------
+
+
+def _yin_notes(
+    audio: np.ndarray,
+    sample_rate: int,
+    fmin: float = 55.0,
+    fmax: float = 1200.0,
+    min_note_seconds: float = 0.08,
+) -> list[tuple[float, float, int, int]]:
+    """The engine's transcriber up to 0.4.6 (``analysis.track_notes``), kept here as the
+    baseline the new one is measured against: YIN per frame, frames too quiet unvoiced, a
+    five-frame median, runs of one semitone as notes."""
+    import librosa
+
+    rate = 16000
+    mono = audio.mean(axis=0) if audio.ndim == 2 else audio
+    mono = librosa.resample(mono.astype(np.float32), orig_sr=sample_rate, target_sr=rate)
+    if mono.shape[0] < rate // 4:
+        return []
+    frame, hop = 2048, 256
+    f0 = librosa.yin(mono, fmin=fmin, fmax=fmax, sr=rate, frame_length=frame, hop_length=hop)
+    rms = librosa.feature.rms(y=mono, frame_length=frame, hop_length=hop)[0]
+    count = min(len(f0), len(rms))
+    f0, rms = f0[:count], rms[:count]
+    peak = float(rms.max())
+    if peak < 1e-4:
+        return []
+    voiced = (rms > max(peak * 0.06, 1e-4)) & (f0 > fmin * 1.02) & (f0 < fmax * 0.98)
+    midi = np.where(voiced, np.round(librosa.hz_to_midi(np.maximum(f0, 1e-6))), -1).astype(int)
+    padded = np.pad(midi, 2, mode="edge")
+    midi = np.median(np.lib.stride_tricks.sliding_window_view(padded, 5), axis=1).astype(int)
+    seconds = hop / rate
+    min_frames = max(1, round(min_note_seconds / seconds))
+    notes: list[tuple[float, float, int, int]] = []
+    start = 0
+    for i in range(1, count + 1):
+        if i == count or midi[i] != midi[start]:
+            note = int(midi[start])
+            if note >= 0 and i - start >= min_frames:
+                loudness = float(rms[start:i].mean()) / peak
+                velocity = int(np.clip(round(40 + 87 * np.sqrt(loudness)), 1, 127))
+                notes.append((start * seconds, i * seconds, note, velocity))
+            start = i
+    merged: list[tuple[float, float, int, int]] = []
+    for note in notes:
+        if merged and merged[-1][2] == note[2] and note[0] - merged[-1][1] <= 2 * seconds:
+            prev = merged.pop()
+            merged.append((prev[0], note[1], prev[2], max(prev[3], note[3])))
+        else:
+            merged.append(note)
+    return merged
+
+
+# The pitch range the old transcriber searched per stem (``pipeline/extras.py`` up to 0.4.6).
+_RANGES: dict[str, tuple[float, float]] = {
+    "bass": (30.0, 400.0),
+    "vocals": (70.0, 1100.0),
+    "dry vocals": (70.0, 1100.0),
+    "lead": (70.0, 1100.0),
+    "melody": (55.0, 1600.0),
+}
+
+
+def method_yin(item: Item, bench: Path) -> list[Note] | None:
+    from openstems.audio.decode import decode
+
+    low, high = _RANGES.get(item.kind, (55.0, 1600.0))
+    audio = decode(item.audio)
+    return [(s, e, float(n), v) for s, e, n, v in _yin_notes(audio, 44100, fmin=low, fmax=high)]
+
+
+def method_openstems(item: Item, bench: Path) -> list[Note] | None:
+    """The engine's transcriber for single-line stems (stage M3), as a run would call it:
+    the notes it shows, at their exact pitch."""
+    from openstems.audio.decode import decode
+    from openstems.audio.transcribe import transcribe_line
+
+    shown = transcribe_line(decode(item.audio), 44100, item.kind).shown()
+    return [(n.start, n.end, n.pitch, n.velocity) for n in shown]
+
+
+def method_openstems_midi(item: Item, bench: Path) -> list[Note] | None:
+    """The same notes as the keys the stem's MIDI file holds: rounded at A440, or in the
+    stem's own tuning when its notes agree on one (``pipeline/notes.py``)."""
+    from openstems.audio.decode import decode
+    from openstems.audio.transcribe import transcribe_line
+    from openstems.domain.notes import round_pitch
+    from openstems.pipeline.notes import song_tuning
+
+    found = transcribe_line(decode(item.audio), 44100, item.kind)
+    tuning = song_tuning({item.kind: found})
+    return [
+        (n.start, n.end, float(round_pitch(n.pitch, tuning)[0]), n.velocity) for n in found.shown()
+    ]
+
+
+def method_annotator2(item: Item, bench: Path) -> list[Note] | None:
+    return item.extra.get("annotator2")
+
+
+# Pitch trackers compared on equal terms: each one's pitch and voicing go through the same
+# note segmentation as the old tracker's (semitone runs, a 5-frame median, 80 ms minimum), so
+# only the tracker differs. ``swiftf0-notes`` instead uses SwiftF0's own segmenter (MIT).
+
+
+def notes_from_f0(times: np.ndarray, hz: np.ndarray, voiced: np.ndarray) -> list[Note]:
+    if times.size < 3:
+        return []
+    hop = float(np.median(np.diff(times)))
+    safe = np.where(voiced & (hz > 0), hz, 1.0)
+    midi = np.where(voiced & (hz > 0), np.round(69 + 12 * np.log2(safe / 440.0)), -1).astype(int)
+    padded = np.pad(midi, 2, mode="edge")
+    midi = np.median(np.lib.stride_tricks.sliding_window_view(padded, 5), axis=1).astype(int)
+    min_frames = max(1, round(0.08 / hop))
+    notes: list[Note] = []
+    start = 0
+    for i in range(1, midi.size + 1):
+        if i == midi.size or midi[i] != midi[start]:
+            if midi[start] >= 0 and i - start >= min_frames:
+                notes.append(
+                    (float(times[start]), float(times[i - 1] + hop), float(midi[start]), 0)
+                )
+            start = i
+    merged: list[Note] = []
+    for note in notes:
+        if merged and merged[-1][2] == note[2] and note[0] - merged[-1][1] <= 2 * hop:
+            prev = merged.pop()
+            merged.append((prev[0], note[1], prev[2], 0))
+        else:
+            merged.append(note)
+    return merged
+
+
+def _mono(item: Item, rate: int) -> np.ndarray:
+    from openstems.audio.decode import decode
+
+    return decode(item.audio, sample_rate=rate).mean(axis=0)
+
+
+def method_pyin(item: Item, bench: Path) -> list[Note] | None:
+    import librosa
+
+    low, high = _RANGES.get(item.kind, (55.0, 1600.0))
+    rate, hop = 22050, 256
+    f0, voiced, _ = librosa.pyin(_mono(item, rate), fmin=low, fmax=high, sr=rate, hop_length=hop)
+    times = np.arange(f0.size) * hop / rate
+    return notes_from_f0(times, np.nan_to_num(f0), voiced)
+
+
+def _swiftf0(item: Item):
+    from swift_f0 import SwiftF0
+
+    return SwiftF0(threads=2).detect(_mono(item, 16000), 16000)  # kept light on this PC
+
+
+def method_swiftf0(item: Item, bench: Path) -> list[Note] | None:
+    result = _swiftf0(item)
+    return notes_from_f0(result.timestamps, result.pitch_hz, result.confidence >= 0.5)
+
+
+def method_swiftf0_notes(item: Item, bench: Path) -> list[Note] | None:
+    from swift_f0 import segment_notes
+
+    notes = segment_notes(_swiftf0(item))
+    return [(n.start, n.end, 69 + 12 * float(np.log2(n.pitch_hz / 440.0)), 0) for n in notes]
+
+
+def method_swiftf0_midi(item: Item, bench: Path) -> list[Note] | None:
+    from openstems.domain.notes import estimate_tuning, round_pitch
+
+    notes = method_swiftf0_notes(item, bench) or []
+    tuning = estimate_tuning([n[2] for n in notes], [n[1] - n[0] for n in notes])
+    return [(s, e, float(round_pitch(p, tuning)[0]), v) for s, e, p, v in notes]
+
+
+def method_crepe(item: Item, bench: Path) -> list[Note] | None:
+    import torch
+    import torchcrepe
+
+    low, high = _RANGES.get(item.kind, (55.0, 1600.0))
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    audio = torch.from_numpy(_mono(item, 16000)).unsqueeze(0)
+    hop = 160  # 10 ms
+    pitch, periodicity = torchcrepe.predict(
+        audio,
+        16000,
+        hop,
+        low,
+        high,
+        "full",
+        return_periodicity=True,
+        batch_size=512,
+        device=device,
+    )
+    hz = pitch[0].cpu().numpy()
+    voiced = periodicity[0].cpu().numpy() >= 0.5
+    return notes_from_f0(np.arange(hz.size) * hop / 16000, hz, voiced)
+
+
+# Drum hits with no weights (stage M2a's starting point): spectral-flux onsets from librosa
+# (ISC). Each hit is written as one note; the kit stem is scored on timing alone.
+
+
+def _hits(item: Item, superflux: bool) -> list[Note]:
+    import librosa
+
+    rate = 22050
+    mono = _mono(item, rate)
+    if superflux:  # Boeck and Widmer 2013: a maximum filter across bands suppresses vibrato
+        hop = 220
+        strength = librosa.onset.onset_strength(
+            y=mono, sr=rate, hop_length=hop, lag=2, max_size=3, n_mels=138, fmin=27.5
+        )
+    else:
+        hop = 256
+        strength = librosa.onset.onset_strength(y=mono, sr=rate, hop_length=hop)
+    times = librosa.onset.onset_detect(
+        onset_envelope=strength, sr=rate, hop_length=hop, units="time"
+    )
+    return [(float(t), float(t) + 0.05, 36.0, 100) for t in times]
+
+
+def method_onsets(item: Item, bench: Path) -> list[Note] | None:
+    return _hits(item, superflux=False)
+
+
+def method_superflux(item: Item, bench: Path) -> list[Note] | None:
+    return _hits(item, superflux=True)
+
+
+def _tempo_changes(mid) -> list[tuple[float, int]]:
+    """A MIDI file's tempo map as (beat, microseconds per beat) pairs, the first at beat 0."""
+    import mido
+
+    changes: list[tuple[float, int]] = []
+    ticks = 0
+    for msg in mido.merge_tracks(mid.tracks):
+        ticks += msg.time
+        if msg.type == "set_tempo":
+            beat = ticks / mid.ticks_per_beat
+            if changes and changes[-1][0] == beat:
+                changes.pop()
+            changes.append((beat, msg.tempo))
+    if not changes or changes[0][0] > 0:
+        changes.insert(0, (0.0, 500_000))  # MIDI's default, 120 BPM
+    return changes
+
+
+def _seconds(beat: float, changes: list[tuple[float, int]]) -> float:
+    seconds = 0.0
+    for i, (start, tempo) in enumerate(changes):
+        end = changes[i + 1][0] if i + 1 < len(changes) else float("inf")
+        if beat <= end:
+            return seconds + (beat - start) * tempo / 1e6
+        seconds += (end - start) * tempo / 1e6
+    return seconds
+
+
+def read_midi(path: Path, tempo_from: Path | None = None) -> list[Note]:
+    """Notes in seconds, read through the file's own tempo map, or through the tempo map of
+    ``tempo_from`` when given (Melodyne's tempo file). Pitch bends are ignored."""
+    import mido
+
+    mid = mido.MidiFile(path)
+    changes = _tempo_changes(mido.MidiFile(tempo_from) if tempo_from else mid)
+    notes: list[Note] = []
+    open_notes: dict[tuple[int, int], tuple[float, int]] = {}
+    ticks = 0
+    for msg in mido.merge_tracks(mid.tracks):
+        ticks += msg.time
+        if msg.type not in ("note_on", "note_off"):
+            continue
+        now = _seconds(ticks / mid.ticks_per_beat, changes)
+        if msg.type == "note_on" and msg.velocity > 0:
+            open_notes[(msg.channel, msg.note)] = (now, msg.velocity)
+        else:
+            started = open_notes.pop((msg.channel, msg.note), None)
+            if started is not None:
+                notes.append((started[0], now, float(msg.note), started[1]))
+    return sorted(notes)
+
+
+def melodyne_tempo(path: Path) -> Path | None:
+    """The tempo file to read a Melodyne export with, in this order:
+
+    - ``<clip>.melodyne.tempo.mid`` beside it, when someone has named one;
+    - the ``*.tempo*.mid`` written within 2 s of it. Each export overwrites
+      ``<document>.tempo.mid``, keeps the one before as ``.origN``, and writes both files
+      within milliseconds (7 to 30 s apart from the next export in the owner's set). A copy of
+      an export must keep its time (``cp -p``);
+    - any of the folder's tempo files, when they all hold the same tempo map.
+
+    Raises LookupError when none of these applies, and the caller leaves that clip out.
+
+    In the owner's exports of 2026-11-24 every notes file said 120 BPM, but its notes sat on
+    the beats of Melodyne's document tempo, 64.511 BPM, which only the ``Untitled.tempo.mid``
+    Melodyne wrote beside each export held. Read at 120, every note came out at 0.538 times
+    its real time and each file scored about 0.1; at 64.511 the notes line up within 10 ms."""
+    import mido
+
+    own = path.with_name(path.name.removesuffix(".mid") + ".tempo.mid")
+    if own.is_file():
+        return own
+    found = sorted(path.parent.glob("*.tempo*.mid"))
+    if not found:
+        print(f"  ! {path.name}: no Melodyne tempo file beside it; read at its own tempo")
+        return None
+    written = path.stat().st_mtime
+    nearest = min(found, key=lambda p: abs(p.stat().st_mtime - written))
+    if abs(nearest.stat().st_mtime - written) <= 2.0:
+        return nearest
+    if len({tuple(_tempo_changes(mido.MidiFile(p))) for p in found}) == 1:
+        return found[0]
+    raise LookupError(
+        f"no tempo file was written with it, and the ones beside it disagree; name the one "
+        f"Melodyne wrote with it {own.name}"
+    )
+
+
+def best_offset(reference: list[Note], estimate: list[Note], window: float = 6.0) -> float:
+    """The single shift that lines up the most onsets of the same pitch, within ``window``."""
+    if not reference or not estimate:
+        return 0.0
+    ref = np.array([(n[0], n[2]) for n in reference])
+    diffs = []
+    for start, _, pitch, _ in estimate:
+        same = ref[np.abs(ref[:, 1] - pitch) < 0.5, 0] - start
+        diffs.extend(same[np.abs(same) <= window])
+    if not diffs:
+        return 0.0
+    values = np.array(diffs)
+    bins = np.arange(-window, window + 0.01, 0.01)
+    counts, edges = np.histogram(values, bins=bins)
+    centre = edges[int(np.argmax(counts))] + 0.005
+    near = values[np.abs(values - centre) <= 0.025]
+    return float(np.median(near)) if near.size else float(centre)
+
+
+def external(tool: str, window: float) -> Callable[[Item, Path], list[Note] | None]:
+    def method(item: Item, bench: Path) -> list[Note] | None:
+        import soundfile
+
+        path = bench / "baseline-pack" / "midi" / f"{item.name}.{tool}.mid"
+        if not path.is_file():
+            return None
+        tempo = None
+        if tool == "melodyne":
+            import mido
+
+            try:
+                tempo = melodyne_tempo(path)
+            except LookupError as exc:
+                print(f"  ! {path.name}: left out, {exc}")
+                return None
+            if tempo is not None:
+                bpm = [round(mido.tempo2bpm(t), 3) for _, t in _tempo_changes(mido.MidiFile(tempo))]
+                print(f"    {path.name}: tempo {bpm} BPM from {tempo.name}")
+        notes = read_midi(path, tempo)
+        shift = best_offset(item.reference, notes, window)
+        notes = [(s + shift, e + shift, p, v) for s, e, p, v in notes]
+        length = soundfile.info(str(item.audio)).duration
+        late = sum(1 for n in notes if n[0] >= length)
+        early = sum(1 for n in notes if n[0] < 0)
+        if late or early:
+            print(
+                f"  ! {path.name}: {late} notes start after its audio ends ({length:.2f} s) "
+                f"and {early} before 0 (left out): a wrong tempo, or another file's notes?"
+            )
+        item.extra[f"{tool}-offset"] = [(shift, shift, 0.0, 0)]
+        return [n for n in notes if n[0] >= 0]
+
+    return method
+
+
+METHODS: dict[str, Callable[[Item, Path], list[Note] | None]] = {
+    "yin": method_yin,
+    "openstems": method_openstems,
+    "openstems-midi": method_openstems_midi,
+    "annotator2": method_annotator2,
+    "pyin": method_pyin,
+    "swiftf0": method_swiftf0,
+    "swiftf0-notes": method_swiftf0_notes,
+    "swiftf0-midi": method_swiftf0_midi,
+    "crepe": method_crepe,
+    "onsets": method_onsets,
+    "superflux": method_superflux,
+    "melodyne": external("melodyne", window=0.3),
+    "neuralnote": external("neuralnote", window=6.0),
+}
+
+
+# -- scoring -----------------------------------------------------------------------------
+
+
+def _arrays(notes: list[Note]) -> tuple[np.ndarray, np.ndarray]:
+    if not notes:
+        return np.zeros((0, 2)), np.zeros(0)
+    intervals = np.array([(s, max(e, s + 0.01)) for s, e, _, _ in notes])
+    hz = 440.0 * 2 ** ((np.array([n[2] for n in notes]) - 69) / 12)
+    return intervals, hz
+
+
+def score(reference: list[Note], estimate: list[Note]) -> dict[str, float]:
+    import mir_eval
+
+    ref_i, ref_p = _arrays(reference)
+    est_i, est_p = _arrays(estimate)
+    row: dict[str, float] = {"ref_notes": len(reference), "est_notes": len(estimate)}
+    if not estimate or not reference:
+        row.update(onset_p=0.0, onset_r=0.0, onset_f=0.0, offset_f=0.0, octave_errors=0)
+        return row
+    p, r, f, _ = mir_eval.transcription.precision_recall_f1_overlap(
+        ref_i, ref_p, est_i, est_p, offset_ratio=None
+    )
+    _, _, f_off, _ = mir_eval.transcription.precision_recall_f1_overlap(ref_i, ref_p, est_i, est_p)
+    matched = {
+        e
+        for _, e in mir_eval.transcription.match_notes(
+            ref_i, ref_p, est_i, est_p, offset_ratio=None
+        )
+    }
+    octave = 0
+    for k, (start, _, pitch, _) in enumerate(estimate):
+        if k in matched:
+            continue
+        if any(
+            abs(start - rs) <= 0.05 and abs(abs(pitch - rp) - 12) < 0.5
+            for rs, _, rp, _ in reference
+        ):
+            octave += 1
+    row.update(onset_p=p, onset_r=r, onset_f=f, offset_f=f_off, octave_errors=octave)
+    return row
+
+
+def _onset_times(notes: list[Note], merge: float = 0.03) -> np.ndarray:
+    """Note starts, with hits closer than ``merge`` taken as one (a kick and a hi-hat played
+    together are one onset to a detector that does not name the drum)."""
+    times = np.sort(np.array([n[0] for n in notes]))
+    if times.size == 0:
+        return times
+    keep = np.concatenate([[True], np.diff(times) > merge])
+    return times[keep]
+
+
+def score_hits(reference: list[Note], estimate: list[Note]) -> dict[str, float]:
+    """Timing only, for drum stems: mir_eval's onset F-measure within 50 ms, plus recall per
+    drum part, read from the reference's General MIDI notes."""
+    import mir_eval
+
+    ref = _onset_times(reference)
+    est = _onset_times(estimate)
+    row: dict[str, float] = {"ref_notes": int(ref.size), "est_notes": int(est.size)}
+    nan = float("nan")
+    if ref.size == 0 or est.size == 0:
+        row.update(onset_p=0.0, onset_r=0.0, onset_f=0.0, offset_f=nan, octave_errors=0)
+        return row
+    f, p, r = mir_eval.onset.f_measure(ref, est, window=0.05)
+    row.update(onset_p=p, onset_r=r, onset_f=f, offset_f=nan, octave_errors=0)
+    for part, keys in DRUM_PARTS.items():
+        hits = np.array([n[0] for n in reference if int(n[2]) in keys])
+        if hits.size:
+            index = np.searchsorted(est, hits)
+            after = np.abs(est[np.clip(index, 0, est.size - 1)] - hits)
+            before = np.abs(est[np.clip(index - 1, 0, est.size - 1)] - hits)
+            row[f"recall_{part}"] = float(np.mean(np.minimum(after, before) <= 0.05))
+    return row
+
+
+PITCH_TRACKERS = {
+    *("yin", "pyin", "swiftf0", "swiftf0-notes", "swiftf0-midi", "crepe"),
+    *("openstems", "openstems-midi"),
+}  # not drums
+HIT_DETECTORS = {"onsets", "superflux"}  # drum stems only
+
+
+def cmd_score(args: argparse.Namespace) -> None:
+    bench: Path = args.bench
+    sets = [s for s in args.sets.split(",") if s]
+    methods = [m for m in args.methods.split(",") if m]
+    SLAKH_CONDITIONS[:] = [c for c in args.conditions.split(",") if c]
+    SLAKH_KINDS.update(k for k in args.kinds.split(",") if k)
+    rows = []
+    for set_name in sets:
+        ids = PACK.get(set_name) if args.pack_only else None
+        items = [i for i in LOADERS[set_name](bench, ids) if args.match in i.id]
+        items = items[: args.limit or None]
+        for item in items:
+            for name in methods:
+                drum = item.kind in DRUM_KINDS
+                if (name in PITCH_TRACKERS and drum) or (name in HIT_DETECTORS and not drum):
+                    continue
+                started = time.time()
+                estimate = METHODS[name](item, bench)
+                if estimate is None:
+                    continue
+                condition = item.id.rsplit("/", 1)[-1] if set_name == "slakh" else "clean"
+                texture = item.id.rsplit("_", 1)[-1] if set_name == "guitarset" else ""
+                row = {
+                    "set": set_name,
+                    "item": item.id,
+                    "kind": item.kind,
+                    "texture": texture,  # GuitarSet: "solo" (single lines) or "comp" (chords)
+                    "condition": condition,
+                    "method": name,
+                }
+                row.update((score_hits if drum else score)(item.reference, estimate))
+                row["seconds"] = round(time.time() - started, 2)
+                offset = item.extra.get(f"{name}-offset")
+                row["offset"] = round(offset[0][0], 3) if offset else ""
+                rows.append(row)
+                print(
+                    f"{set_name:10} {item.id:28} {name:11} onset F {row['onset_f']:.3f}  "
+                    f"+offset F {row['offset_f']:.3f}  notes {row['est_notes']}/{row['ref_notes']}"
+                    + (f"  shift {row['offset']} s" if row["offset"] != "" else "")
+                    + "".join(
+                        f"  {k[7:]} {v:.2f}" for k, v in row.items() if k.startswith("recall_")
+                    )
+                )
+    if not rows:
+        print("nothing scored")
+        return
+    out = bench / "results"
+    out.mkdir(exist_ok=True)
+    path = out / f"score-{time.strftime('%Y%m%d-%H%M%S')}.csv"
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        fields = list(dict.fromkeys(k for r in rows for k in r))
+        writer = csv.DictWriter(fh, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"\nrows written to {path}\n")
+    drum_rows = [r for r in rows if r["kind"] in DRUM_KINDS]
+    if drum_rows:
+        print("Drum hits, recall per part (whole-kit stem, timing only):\n")
+        print("| Condition | Method | " + " | ".join(DRUM_PARTS) + " |")
+        print("| --- | --- | " + " | ".join("---" for _ in DRUM_PARTS) + " |")
+        for condition, name in sorted({(r["condition"], r["method"]) for r in drum_rows}):
+            group = [r for r in drum_rows if (r["condition"], r["method"]) == (condition, name)]
+            cells = []
+            for part in DRUM_PARTS:
+                values = [r[f"recall_{part}"] for r in group if f"recall_{part}" in r]
+                cells.append(f"{np.mean(values):.3f}" if values else "")
+            print(f"| {condition} | {name} | " + " | ".join(cells) + " |")
+        print()
+    print(
+        "| Set | Stem | Condition | Method | Items | Onset P | Onset R | Onset F1 | +Offset F1 "
+        "| Octave errors |"
+    )
+    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    left_out = []
+    keys = sorted({(r["set"], r["kind"], r["texture"], r["condition"]) for r in rows})
+    for key in keys:
+        rows_in = [r for r in rows if (r["set"], r["kind"], r["texture"], r["condition"]) == key]
+        scored = {m: {r["item"] for r in rows_in if r["method"] == m} for m in methods}
+        scored = {m: items for m, items in scored.items() if items}
+        common = set.intersection(*scored.values())
+        missing = sorted({r["item"] for r in rows_in} - common)
+        if missing:
+            left_out.append(f"{key[0]} {key[1]} {key[2]}: {', '.join(missing)}")
+        set_name, kind, texture, condition = key
+        stem = f"{kind} ({texture})" if texture else kind
+        for name in scored:
+            group = [r for r in rows_in if r["method"] == name and r["item"] in common]
+
+            def mean(field: str, group: list[dict] = group) -> float:
+                return float(np.nanmean([r[field] for r in group]))
+
+            print(
+                f"| {set_name} | {stem} | {condition} | {name} | {len(group)} | "
+                f"{mean('onset_p'):.3f} | {mean('onset_r'):.3f} | {mean('onset_f'):.3f} | "
+                f"{mean('offset_f'):.3f} | {sum(r['octave_errors'] for r in group)} |"
+            )
+    for line in left_out:
+        print(f"\nLeft out of the summary, not scored by every method: {line}")
+
+
+def cmd_separate(args: argparse.Namespace) -> None:
+    """Run the app's recipes on the Slakh mixes through its real CLI, a batch at a time with a
+    pause between batches. Songs already separated (a complete manifest) are skipped."""
+    import os
+    import subprocess
+
+    from openstems.pipeline.run import read_manifest
+
+    songs = slakh_songs(args.bench)
+    links = args.bench / "slakh-mixes"  # one name per song: the output folder is named after it
+    links.mkdir(parents=True, exist_ok=True)
+    out = args.bench / "runs" / "slakh"
+    engine = Path(__file__).resolve().parents[1] / "engine"
+    env = {**os.environ, "OMP_NUM_THREADS": "4", "MKL_NUM_THREADS": "4"}
+    for recipe in [r for r in args.recipes.split(",") if r]:
+        todo = []
+        for song in songs:
+            manifest = read_manifest(out / song.name / recipe)
+            if manifest and manifest.get("complete"):
+                continue
+            link = links / f"{song.name}.flac"
+            if not link.exists():
+                os.link(song / "mix.flac", link)
+            todo.append(link)
+        todo = todo[: args.limit or None]
+        print(f"{recipe}: {len(todo)} songs to separate", flush=True)
+        for start in range(0, len(todo), args.batch):
+            batch = todo[start : start + args.batch]
+            command = ["uv", "run", "--no-sync", "openstems", "separate", *map(str, batch)]
+            command += ["--recipe", recipe, "--out", str(out)]
+            subprocess.run(command, cwd=engine, env=env, check=True)
+            if start + args.batch < len(todo):
+                time.sleep(args.pause)
+
+
+# -- the baseline pack -------------------------------------------------------------------
+
+PACK_README = """\
+Baseline pack for the stem-to-MIDI benchmark (Phase 7, stage M0)
+=================================================================
+
+Each file in audio/ is one instrument on its own. For each one, export MIDI from Melodyne
+and from NeuralNote, and save it in midi/ under the same name with the tool added:
+
+    audio/guitarset - 00_BN1-129-Eb_comp.wav
+    midi/guitarset - 00_BN1-129-Eb_comp.melodyne.mid
+    midi/guitarset - 00_BN1-129-Eb_comp.neuralnote.mid
+
+Melodyne: open each file in a new document of its own, at the start of the timeline, and let
+Melodyne detect it with the algorithm listed below. One file per document: an export takes
+the document's notes, and a second file left in it ends up in the first one's MIDI. Do not
+correct any notes: the benchmark measures the first pass, as the app's would be. Then
+Settings > Save as MIDI (or drag the MIDI out). Melodyne also writes <document>.tempo.mid
+beside each export, and keeps the one before as .orig1, .orig2 and so on: leave them all in
+midi/. The notes file says 120 BPM, but its notes sit on the document's tempo, and the scorer
+finds each export's tempo file by the moment both were written.
+
+NeuralNote: load the file and export with the default settings.
+
+When both are in midi/, run the scorer with
+--pack-only --methods yin,openstems,openstems-midi,melodyne,neuralnote.
+
+Files and the Melodyne algorithm for each:
+"""
+
+
+def cmd_pack(args: argparse.Namespace) -> None:
+    pack = args.bench / "baseline-pack"
+    (pack / "audio").mkdir(parents=True, exist_ok=True)
+    (pack / "midi").mkdir(exist_ok=True)
+    lines = []
+    for set_name, ids in PACK.items():
+        for item in LOADERS[set_name](args.bench, ids):
+            target = pack / "audio" / f"{item.name}.wav"
+            if not target.exists():
+                shutil.copyfile(item.audio, target)
+            lines.append(f"  {target.name}  ->  {melodyne_algorithm(item.id)}")
+    (pack / "README.txt").write_text(PACK_README + "\n".join(lines) + "\n", encoding="utf-8")
+    print(f"{len(lines)} files in {pack / 'audio'}; instructions in {pack / 'README.txt'}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Stem-to-MIDI benchmark (Phase 7, M0).")
+    parser.add_argument("--bench", type=Path, default=DEFAULT_BENCH)
+    sub = parser.add_subparsers(dest="command", required=True)
+    s = sub.add_parser("score", help="transcribe and score")
+    s.add_argument("--sets", default="guitarset,vocadito")
+    s.add_argument("--methods", default="yin,annotator2")
+    s.add_argument("--limit", type=int, default=0, help="items per set (0: all)")
+    s.add_argument("--pack-only", action="store_true", help="only the items in the pack")
+    s.add_argument("--match", default="", help="only items whose id contains this")
+    s.add_argument("--conditions", default="separated,oracle", help="Slakh: separated, oracle")
+    s.add_argument("--kinds", default="", help="Slakh: only these classes, e.g. bass,drums")
+    sub.add_parser("pack", help="copy the pack's audio and write its instructions")
+    sep = sub.add_parser("separate", help="run the app's recipes on the Slakh mixes")
+    sep.add_argument("--recipes", default="full-song,drum-kit")
+    sep.add_argument("--limit", type=int, default=0, help="songs per recipe (0: all)")
+    sep.add_argument("--batch", type=int, default=5, help="songs per CLI run")
+    sep.add_argument("--pause", type=float, default=20.0, help="seconds between batches")
+    args = parser.parse_args()
+    {"score": cmd_score, "pack": cmd_pack, "separate": cmd_separate}[args.command](args)
+
+
+if __name__ == "__main__":
+    main()

@@ -8,9 +8,9 @@ from openstems.catalog.catalog import Catalog, load_catalog
 from openstems.catalog.store import ModelStore
 from openstems.domain.errors import DomainError
 from openstems.domain.grid import SongPart
+from openstems.domain.notes import MIDI_STEMS
 from openstems.domain.recipe import Recipe, single_model_recipe
 from openstems.engines.host import ModelHost, fake_mode
-from openstems.pipeline.extras import MIDI_STEMS
 from openstems.pipeline.run import Pipeline, RunOptions
 from openstems.recipes import load_recipes
 from openstems.settings import Settings, load_settings

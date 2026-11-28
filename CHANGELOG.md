@@ -1,5 +1,50 @@
 # Changelog
 
+## Unreleased
+
+- **MIDI from vocals and bass, rewritten.** "Write MIDI" finds notes with a new transcriber.
+  On test recordings it scores about twice as high on vocals as the old one (0.73 against
+  0.39) and well above it on bass (0.94 against 0.66), on a scale where 1 means every note
+  found, with none wrong.
+  - A note struck twice in a row comes out as two notes, not one long one.
+  - A bass note starts where it was struck, not a moment later where its pitch settles.
+  - A quiet stem gives the same notes as a loud one.
+  - A drum that bleeds into a bass or a lead stem no longer cuts its held notes in two, and
+    a quiet sound between the notes is less often taken for one.
+  - Notes below a bass's low G are found by listening a second time at double speed. Tested
+    on test tones down to a 5-string's low B and on a slowed-down bass, not on a real one.
+  - A clean sine sub-bass gives its notes. A pure tone with nothing above it lost notes,
+    most of all short ones, low ones and ones that die away. That is on sines made for the
+    test; real sub-basses and 808s were read well already. An 808 whose pitch dives still
+    comes out as several notes.
+  - A bass note struck twice is heard as two more often in a separated stem, where the
+    separator has taken the highs away. Not every soft one yet, and a held sub that wobbles
+    is cut a little more often.
+  - A stem that plays chords, such as a piano or a strummed guitar, can give every note of
+    them, where it gave one line. On test recordings that finds about twice as many of the
+    notes. It needs a small extra model (230 KB): Settings > Chords in MIDI downloads it.
+    It has not been tried on separated stems or on a Mac yet.
+  - "Write MIDI" now writes a `.mid` for every stem with notes to read (guitar, piano,
+    other and the like), not only vocals, bass and melody. Drums are still left out.
+  - Each stem also gets a `.notes.json` file beside its `.mid`, with every note found and how
+    sure the app is of it. Nothing shows it yet: it is what a note editor will open.
+  - The MIDI file follows the song when you change its tempo or key, or rename it.
+  - A stem with chords still gives one line only, and the song now says so.
+  - A stem in which no notes are found gets no `.mid`. Before, it got an empty one.
+  - A MIDI file you saved over the app's, or edited, is yours from then on. The app does
+    not write over it or remove it, not when the song is separated again either, and says
+    which file it left alone. Melodyne, for one, saves its MIDI under the very name the app
+    uses. Move or rename it and the app writes its own again.
+  - A song separated before this gets the new MIDI the next time it is queued with "Write
+    MIDI" on. It is not separated again for that.
+  - Measured on clean recordings, and on 5 excerpts the app separated itself (0.945
+    on their bass stems, 0.970 on the clean ones). The same on Windows and a
+    Mac, where it has not been seen yet.
+- **A change made while a song is separated again is refused, not lost.** A tempo or key
+  typed, or a stem hidden, in a song's stems while the same song was being separated again
+  was accepted and then gone when the new stems replaced the old. Now the app says to wait
+  until it is done.
+
 ## 0.4.6 (2026-11-25)
 
 - **Undo and redo in the trimmer.** A beat grid that went wrong can be put right: Ctrl+Z

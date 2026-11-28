@@ -348,14 +348,6 @@ class JobManager:
                     job.options["name"] = name
                 self._changed(job)
 
-    def writing_to(self, directory: str) -> bool:
-        """Whether a job that is running now has, or last had, its output in ``directory``."""
-        with self._lock:
-            job = self._jobs.get(self._current or "")
-            if job is None or not job.output_dir:
-                return False
-            return os.path.normcase(os.path.normpath(job.output_dir)) == os.path.normcase(directory)
-
     def cancel(self, job_id: str) -> dict[str, Any]:
         with self._lock:
             job = self._job(job_id)

@@ -265,8 +265,16 @@ already uses the stems will need to find them again.
   information" (General settings) must be on. As accurate as the detected tempo.
 - **Watch folder.** New files that appear in a folder are queued with the default recipe and
   quality once they have finished copying.
-- **Stem to MIDI.** A draggable `.mid` next to vocal, bass and melody stems ("Write MIDI" in
-  Settings). It tracks one note at a time, so it suits single lines, not chords.
+- **Stem to MIDI.** A draggable `.mid` next to every stem with notes to read ("Write MIDI"
+  in Settings): vocals, bass, guitar, piano and the like, not drums. It is on the song's
+  tempo and key. By itself it follows one note at a time, which suits a voice, a bass or a
+  lead. For chords, Settings > Chords in MIDI downloads a small extra model (Basic Pitch by
+  Spotify, 230 KB): a piano or a strummed guitar then gives every note of its chords. That
+  part is new, and measured on clean recordings only. A notes file beside it (`.notes.json`) keeps
+  every note found with how sure the app is of it. A stem in which no notes are found gets
+  no `.mid`. A `.mid` you saved over the app's or edited is yours: the app leaves it as it
+  is and says so. Measured on clean recordings and, so far, on 5 separated bass
+  excerpts; not yet seen on a Mac outside its tests.
 - **Trim silence and normalize**, per stem. Both are off by default, because trimmed stems no
   longer line up at bar 1 and normalized stems no longer sit at their level in the mix.
 - **Keyboard.** Ctrl+1 to Ctrl+4 switch between Queue, History, Models and Settings; Ctrl+V
@@ -557,6 +565,7 @@ prints one JSON line with both. Everything the CLI does is there, with live prog
 | Jobs | `POST /v1/jobs`, `POST /v1/jobs/batch`, `GET /v1/jobs`, `POST /v1/jobs/{id}/cancel`, `.../retry`, `POST /v1/jobs/reorder`, `DELETE /v1/jobs/{id}`, `POST /v1/jobs/clear-finished`, `POST /v1/jobs/{id}/analysis` (tempo, key and bar 1 by hand), `.../range` (the part of a waiting song to separate alone), `.../name` (the song's name, in place of its file's) |
 | Tracks and recipes | `POST /v1/tracks` (register paths, probe metadata), `GET /v1/recipes` |
 | Links and mixes | `POST /v1/links` (fetch a song from a web address, then queue it), `GET /v1/links`, `POST /v1/links/{id}/retry`, `DELETE /v1/links/{id}`, `POST /v1/mixes` (some stems as one file) |
+| Stem to MIDI | `POST /v1/notes` (find the notes in stems that are already written: a notes file and a MIDI file beside each) |
 | Clips and previews | `POST /v1/clips` (a stretch of a song's own file or of its stems, as WAV files), `POST /v1/sources/preview` (a song's own file to play and draw before it is separated, with its tempo and bar 1) |
 | Models | `GET /v1/models`, `POST /v1/models/{id}/pull`, `.../cancel`, `.../verify`, `DELETE /v1/models/{id}`, `POST /v1/models/import` |
 | Settings and system | `GET` and `PATCH /v1/settings`, `GET /v1/system`, `GET /v1/health`, `POST /v1/diagnostics` |
@@ -620,3 +629,8 @@ The models are not part of this repository and are not covered by that license. 
 downloads them from their authors at run time, and each has its own terms; some authors state
 none. The Models view shows what is known for each one. Check a model's terms before using its
 stems commercially.
+
+Stem to MIDI uses [SwiftF0](https://github.com/lars76/swift-f0) by Lars Nieradzik (MIT) for
+pitch, and a port of its note segmenter. Its model comes inside its Python package, not from
+the Models view. Its author trained it on NSynth, PTDB-TUG, MIR-1K, MDB-stem-synth and
+synthetic speech.

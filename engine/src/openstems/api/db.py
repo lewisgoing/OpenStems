@@ -119,6 +119,7 @@ class Index:
                 "file": s["file"],
                 "peaks": s.get("peaks"),
                 "midi": s.get("midi"),
+                "notes": s.get("notes"),
                 "samples": s.get("samples"),
                 "sample_rate": s.get("sample_rate"),
                 "group": s.get("group") or None,
@@ -243,6 +244,7 @@ def _stem_set_row(row: sqlite3.Row) -> dict[str, Any]:
         stem["path"] = str(Path(directory) / stem["file"])
         stem["peaks"] = str(Path(directory) / stem["peaks"]) if stem.get("peaks") else None
         stem["midi"] = str(Path(directory) / stem["midi"]) if stem.get("midi") else None
+        stem["notes"] = str(Path(directory) / stem["notes"]) if stem.get("notes") else None
         # Where the file begins in the song. A row from before offsets were kept has none.
         stem["start"] = int(stem.get("offset") or 0) / SAMPLE_RATE
         stem.setdefault("empty", False)
