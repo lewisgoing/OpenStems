@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -116,3 +117,68 @@ def test_the_model_hears_a_triad() -> None:
     surest = sorted(found, key=lambda n: -(n.confidence or 0.0))[:3]
     assert sorted(keys(tuple(surest))) == [60, 64, 67]
     assert all(abs(n.start - 0.5) < 0.05 for n in surest)
+
+
+# -- in a run: `pipeline/notes.read_stem` ---------------------------------------------------
+
+
+def _line(clarity: float, profile: str = "line") -> Any:
+    from openstems.audio.transcribe import Transcription
+
+    return Transcription(
+        notes=(C.Note(0.0, 1.0, 60.0, confidence=0.9),), profile=profile, clarity=clarity
+    )
+
+
+def test_a_stem_with_chords_is_read_with_the_chord_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from openstems.pipeline import notes as N
+
+    triad = tuple(C.Note(0.0, 1.0, float(k), confidence=0.4) for k in (60, 64, 67))
+    monkeypatch.setattr(N, "chord_model", lambda: tmp_path / "nmp.onnx")
+    monkeypatch.setattr(C, "transcribe_chords", lambda *_: triad)
+    audio = np.zeros(RATE, np.float32)
+
+    monkeypatch.setattr(N, "transcribe_line", lambda *_: _line(0.5))
+    read = N.read_stem(audio, RATE, "piano")
+    assert read.every and read.texture == "chords"
+    assert keys(tuple(read.shown())) == [60, 64, 67]  # 0.4 is over the chord threshold
+    assert N.job_notes({"piano": read}) == []
+    assert N.sidecar_of(read, stem="piano", tuning=0.0)["method"] == N.CHORDS_METHOD
+
+    # A line stays a line, and so does a bass or a voice that bleed made look like chords.
+    monkeypatch.setattr(N, "transcribe_line", lambda *_: _line(0.95))
+    assert not N.read_stem(audio, RATE, "guitar").every
+    monkeypatch.setattr(N, "transcribe_line", lambda *_: _line(0.5, "bass"))
+    assert not N.read_stem(audio, RATE, "bass").every
+    # The model finding nothing leaves the line that was read.
+    monkeypatch.setattr(N, "transcribe_line", lambda *_: _line(0.5))
+    monkeypatch.setattr(C, "transcribe_chords", lambda *_: ())
+    assert not N.read_stem(audio, RATE, "piano").every
+
+
+def test_without_the_model_chords_are_one_line_and_the_job_says_so(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openstems.pipeline import notes as N
+
+    monkeypatch.setattr(N, "transcribe_line", lambda *_: _line(0.5))
+    read = N.read_stem(np.zeros(RATE, np.float32), RATE, "piano")  # conftest: an empty folder
+    assert not read.every
+    assert N.job_notes({"piano": read}) == [N.chords_note("piano")]
+    assert N.sidecar_of(read, stem="piano", tuning=0.0)["method"] == N.METHOD
+
+
+def test_only_the_very_file_is_the_chord_model(tmp_path: Path) -> None:
+    from openstems.pipeline import notes as N
+
+    assert N.chord_model(tmp_path) is None
+    path = N.chord_model_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"x" * N.CHORD_MODEL.size)  # the right size, another file
+    assert N.chord_model(tmp_path) is None
+    real = os.environ.get("OPENSTEMS_BASIC_PITCH")
+    if real and Path(real).is_file():
+        path.write_bytes(Path(real).read_bytes())
+        assert N.chord_model(tmp_path) == path

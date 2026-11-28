@@ -17,7 +17,7 @@ import os
 import stat
 import sys
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from importlib.metadata import version
 from pathlib import Path
@@ -28,6 +28,7 @@ from openstems.audio.transcribe import PROFILES, Transcription, transcribe_line,
 from openstems.audio.write import read_audio
 from openstems.domain.errors import DomainError
 from openstems.domain.levels import empty_stems
+from openstems.domain.model import ModelFile
 from openstems.domain.notes import (
     MIDI_SUFFIX,
     NOTES_SUFFIX,
@@ -47,6 +48,74 @@ log = logging.getLogger(__name__)
 # notes say otherwise is read again (`stale`), so raise the last number whenever the notes a
 # stem gives change: a new weight, a new rule.
 METHOD = f"swift-f0 {version('swift-f0')}, line segmenter 5"
+# What wrote the notes file of a stem that plays chords (`read_stem`): Basic Pitch's model
+# by its release, and the note maker's own number (`audio/chords.py`), raised as above.
+CHORDS_METHOD = "basic-pitch 0.4.0, chord notes 1"
+# Basic Pitch's model (Spotify, Apache-2.0), as its 0.4.0 release holds it. Not a pickle:
+# an ONNX file, run by onnxruntime on the CPU. It is fetched only when asked for
+# (`openstems models pull-chords`), and a stem that plays chords is read with it only when
+# the file is in the models folder and is this very file.
+CHORD_MODEL = ModelFile(
+    kind="checkpoint",
+    name="nmp.onnx",
+    url="https://raw.githubusercontent.com/spotify/basic-pitch/v0.4.0/basic_pitch/saved_models/icassp_2022/nmp.onnx",
+    sha256="2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec",
+    size=230444,
+)
+CHORD_MODEL_FOLDER = "basic-pitch"
+_checked: dict[tuple[str, int, int], bool] = {}
+
+
+def chord_model_path(models_dir: Path) -> Path:
+    return models_dir / CHORD_MODEL_FOLDER / CHORD_MODEL.name
+
+
+def chord_model(models_dir: Path | None = None) -> Path | None:
+    """The chord model's file when it is installed and whole, else None. Its sha256 is
+    taken once per process and file."""
+    if models_dir is None:
+        from openstems.settings import load_settings
+
+        models_dir = load_settings().models_path
+    path = chord_model_path(models_dir)
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    key = (str(path), stat.st_size, stat.st_mtime_ns)
+    if key not in _checked:
+        from openstems.catalog.store import sha256_file
+
+        try:
+            _checked[key] = (
+                stat.st_size == CHORD_MODEL.size and sha256_file(path) == CHORD_MODEL.sha256
+            )
+        except OSError:
+            return None
+        if not _checked[key]:
+            log.warning("%s is not Basic Pitch's model file: chords are read as one line", path)
+    return path if _checked[key] else None
+
+
+def read_stem(audio: Any, sample_rate: int, stem: str) -> Transcription:
+    """A stem's notes. It is read as a single line; when that reading says the stem plays
+    chords and the chord model is installed, its notes are every note of the chords instead.
+    Only for stems read with the `line` profile: a bass or a voice with the rest of the song
+    loud under it is called chords too (ADR 0030), and neither plays any."""
+    line = transcribe_line(audio, sample_rate, stem)
+    if line.texture != "chords" or line.profile != "line":
+        return line
+    model = chord_model()
+    if model is None:
+        return line
+    from openstems.audio.chords import FRAME_AT, transcribe_chords
+
+    notes = transcribe_chords(audio, sample_rate, model)
+    if not notes:
+        return line
+    return replace(line, notes=notes, threshold=FRAME_AT, every=True, features=())
+
+
 # A song's MIDI is rounded to keys in the song's own tuning only when the notes of a stem
 # with fixed pitches (not a voice) agree on one this tightly. Otherwise keys are at A440.
 TUNING_STRENGTH = 0.7
@@ -235,7 +304,7 @@ def sidecar_of(transcription: Transcription, *, stem: str, tuning: float) -> dic
         transcription.notes,
         stem=stem,
         tuning_cents=tuning,
-        method=METHOD,
+        method=CHORDS_METHOD if transcription.every else METHOD,
         threshold=transcription.threshold,
         texture=transcription.texture,
     )
@@ -259,7 +328,7 @@ def stale(notes_file: Path) -> bool:
         from_sidecar(data)
     except Exception:  # not there, not text, not JSON, nested too deep, not a notes file
         return True
-    return data.get("method") != METHOD
+    return data.get("method") not in (METHOD, CHORDS_METHOD)
 
 
 def chords_note(stem: str) -> str:
@@ -268,7 +337,11 @@ def chords_note(stem: str) -> str:
 
 
 def job_notes(found: Mapping[str, Transcription]) -> list[str]:
-    return [chords_note(name) for name, t in found.items() if t.notes and t.texture == "chords"]
+    return [
+        chords_note(name)
+        for name, t in found.items()
+        if t.notes and t.texture == "chords" and not t.every
+    ]
 
 
 def midi_from_sidecar(data: Any, *, name: str, bpm: float | None, key: str | None) -> bytes | None:
@@ -355,7 +428,7 @@ def read_stems(directory: Path, files: list[str]) -> Reading:
         name = str(stem["name"])
         try:
             audio, rate = read_audio(directory / str(stem["file"]))
-            found[name] = transcribe_line(audio, rate, name)
+            found[name] = read_stem(audio, rate, name)
         except Exception as exc:
             log.exception("stem to MIDI failed for %s in %s", stem["file"], directory)
             raise DomainError(f"cannot read the notes of {stem['file']}: {exc}") from exc

@@ -1423,6 +1423,29 @@ read from 87 evolving low sounds):
 - **A real low bass.** The low set is a slowed one.
 - **Real songs' tuning.** The tuning check used a synthetic detune.
 
+## 15. M4, first step: chords with Basic Pitch (2026-11-27)
+
+Basic Pitch's ONNX file (0.4.0, 230 KB) on onnxruntime, with its own way of making notes
+written anew (`audio/chords.py`, ADR 0031). Clean recordings, onset F1, 12 of each; the
+single-line reader of section 14 beside it:
+
+| Set | Single line | Basic Pitch, as released | Onset threshold 0.6 | With offsets, at 0.6 |
+| --- | --- | --- | --- | --- |
+| GuitarSet chords | 0.332 | 0.725 | 0.737 | 0.486 |
+| GuitarSet solos | 0.870 | 0.828 | 0.853 | 0.722 |
+| Slakh pianos (test songs) | 0.424 | 0.757 | 0.796 | 0.356 |
+
+- Other settings of the note maker did no better over the three sets: an onset threshold of
+  0.4 (0.688, 0.797, 0.697), a frame threshold of 0.4 (0.697, 0.836, 0.778), notes from 6
+  frames (0.740, 0.814, 0.736), no notes without an onset (0.715, 0.827, 0.783).
+- Through `read_stem`, the two chord recordings Melodyne was run on: 0.726 and 0.689, for
+  Melodyne's 0.549 and 0.623 (Polyphonic Decay).
+- A solo is better read as a line, so a stem goes to the chord reader only when the line
+  reading calls it chords.
+- Basic Pitch saw part of GuitarSet in training: those figures are not held out.
+- Not measured: separated stems, Slakh's guitars as a set (9 of 12 read before the PC ran
+  short of memory: 0.31 to 0.81 a stem, the single line 0.05 to 0.81), anything on a Mac.
+
 ## Sources
 
 Primary unless marked. Figures are *reported* unless the source was re-read for this document.

@@ -20,6 +20,11 @@
   - A bass note struck twice is heard as two more often in a separated stem, where the
     separator has taken the highs away. Not every soft one yet, and a held sub that wobbles
     is cut a little more often.
+  - A stem that plays chords, such as a piano or a strummed guitar, can give every note of
+    them, where it gave one line. On test recordings that finds about twice as many of the
+    notes. It needs a small extra model, which for now only the command line can fetch
+    (`openstems models pull-chords`), and it has not been tried on separated stems or on a
+    Mac.
   - Each stem also gets a `.notes.json` file beside its `.mid`, with every note found and how
     sure the app is of it. Nothing shows it yet: it is what a note editor will open.
   - The MIDI file follows the song when you change its tempo or key, or rename it.

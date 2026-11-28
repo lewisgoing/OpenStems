@@ -84,6 +84,9 @@ Engine (run from `engine/`):
 - `uv run openstems serve`: start the local API (prints a JSON line with port and token)
 - `uv run openstems openapi --out openapi.json`: export the schema after any API change, then
   `pnpm gen:api` in `app/` (a test fails if `engine/openapi.json` is stale)
+- `uv run openstems models pull-chords`: fetch the model that reads chords for stem to MIDI
+  (Basic Pitch's `nmp.onnx`, 230 KB, into `<models>/basic-pitch/`). `OPENSTEMS_BASIC_PITCH=<file>`
+  before `uv run pytest tests/test_chords.py` runs the two tests that need the file
 - `uv run python ../scripts/gen_catalog.py --write`: regenerate `catalog/models.toml` (never
   edit that file by hand). A model's `memory_gb` comes from `MEMORY_GB` in that script,
   copied from the Peak VRAM column of `docs/benchmarks.md`
@@ -665,6 +668,17 @@ separated bass has few sounding bands, so soft second strikes were lost); the be
 tables in the research notes are from before it (`docs/research/stem-to-midi.md`, "A second strike in a separated bass"). Its tests ran on a Mac in CI on 2026-11-26 (pull request 48,
 `macos-15`); nothing of it has been seen on a Mac by hand.
 `docs/adr/0030-single-line-transcriber.md`, `docs/research/stem-to-midi.md` section 14.
+
+Chords (stage M4, first step): `pipeline/notes.read_stem` is what a run and "find notes"
+call. It reads a stem as a line, and when that says the stem plays chords, the profile is
+`line` and Basic Pitch's model is installed (`chord_model`: the pinned file, sha256 checked
+once per process), the notes are every note `audio/chords.py` finds, the notes file names
+`CHORDS_METHOD` and the job no longer says "plays chords". Never a bass or a voice. No torch:
+onnxruntime. The model is outside the catalog, and only `models pull-chords` fetches it: the
+app has no button yet, and without the file everything is as before. Raise `CHORDS_METHOD`
+when the notes such a stem gives can change. Measured on clean recordings only (GuitarSet
+chords 0.74 for 0.33, Slakh pianos 0.80 for 0.42); not on separated stems, not on a Mac.
+`docs/adr/0031-chord-notes.md`, research notes section 15.
 
 Dependencies point inward: `domain` imports nothing from the other packages and never imports
 torch. `cli` and `api` are the only entry points.

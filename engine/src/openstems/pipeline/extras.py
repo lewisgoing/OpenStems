@@ -95,7 +95,6 @@ def _read_notes(
 ) -> None:
     """The notes of every stem asked for that has a line to read, as writers for its notes
     file and, when notes were found, its MIDI file."""
-    from openstems.audio.transcribe import transcribe_line
     from openstems.pipeline import notes
 
     found = {}
@@ -104,7 +103,7 @@ def _read_notes(
         trimmed = extras["trim"].get(name)
         audio = outputs[name] if trimmed is None else trimmed
         try:
-            found[name] = transcribe_line(audio, sample_rate, name)
+            found[name] = notes.read_stem(audio, sample_rate, name)
         except Exception:
             # The stems are what the run is for: they are written whatever became of the
             # notes, and the job says which stem has none.

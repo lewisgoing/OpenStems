@@ -151,7 +151,8 @@ class Transcription:
     candidates, kept for an editor to offer. ``tuning_cents`` is the stem's own tuning and
     ``tuning_strength`` how tightly its notes agree on it (0 to 1). ``clarity`` is how sure
     SwiftF0 was of one pitch over the stem's louder frames: under ``LINE_CLARITY`` the stem
-    plays chords, and what was found is one line of them.
+    plays chords, and what was found is one line of them, unless ``every`` says the notes are
+    every note of the chords (``audio/chords.py`` read the stem).
     """
 
     notes: tuple[Note, ...] = ()
@@ -160,6 +161,7 @@ class Transcription:
     tuning_strength: float = 0.0
     profile: str = "line"
     clarity: float = 1.0
+    every: bool = False
     features: tuple[tuple[float, ...], ...] = field(default=(), repr=False, compare=False)
 
     def shown(self) -> list[Note]:
