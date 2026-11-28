@@ -1398,11 +1398,14 @@ read from 87 evolving low sounds):
   guitar solos (0.8553 for 0.8554), where every band sounds.
 - A jump of the phase as a second sign of a strike found the notes too (0.974 at its best)
   and cut real low sounds more (926 to 1,061 notes).
-- Not run: 1.0 with the rest 15 dB under, on basses cut at 700 Hz, on the held-out half,
-  and a lower threshold for guitar. The development PC lost power three times under these
-  runs (2026-11-26 and 2026-11-27), the last time a minute into them. Every other table of
-  this section is the code before this change; a bass's figures move by what the row
-  "Alone" shows.
+- Run after the change went in (2026-11-27, 2.0 beside 1.0). Development half: the rest
+  15 dB under 0.904 and 0.916; cut at 700 Hz 0.924 and 0.928. Held-out half: alone
+  0.927 and 0.932; the rest 25 dB under 0.920 and 0.928; 15 dB under 0.881 and 0.890. Recall
+  rises by 0.01 to 0.02 and precision falls by 0.002 to 0.004 in each.
+- Made signals (`strike_scenarios2.py`): 1.0 and 2.0 read every one of 129 cases alike,
+  the held notes with a wobbling level included.
+- Not run: a lower threshold for guitar. Every other table of this section is the code
+  before this change; a bass's figures move by what the row "Alone" shows.
 
 ### Not measured
 

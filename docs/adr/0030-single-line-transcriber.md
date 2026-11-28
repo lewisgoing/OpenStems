@@ -308,9 +308,10 @@ chords, tuning, velocity) is in `docs/research/stem-to-midi.md`, section 14.
   bands that sound finds 9 of the 12 (0.969) at the same price, but loses that when faint
   residue fills the empty bands (0.952 with the rest of the song 40 dB under the stem) and
   gains less on whole basses (0.950). A threshold of 0.5 finds 9 as well and cuts real held
-  sounds a third more often (933 notes). Not measured, because the development PC lost power
-  under the runs: 1.0 with 15 dB of bleed, on band-limited basses, and on the held-out
-  half. The figures elsewhere in this record are from before the change. Guitar and other
+  sounds a third more often (933 notes). Measured after the change went in (2026-11-27):
+  with the rest 15 dB under the bass 0.916 (0.904), on basses cut at 700 Hz 0.928 (0.924),
+  and on the held-out half 0.932 (0.927) alone, 0.928 (0.920) at 25 dB and 0.890 (0.881) at
+  15 dB. The figures elsewhere in this record are from before the change. Guitar and other
   lines keep 2.5: no separated one has shown the fault.
 - **The pure tone's own pitch is worth little on real sounds.** On clean sines made for the
   tests it finds every note where SwiftF0 lost a third. Real sub-basses and 808s (two free
