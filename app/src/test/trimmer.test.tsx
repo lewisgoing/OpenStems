@@ -128,6 +128,7 @@ vi.mock('@/api/queries', () => ({
     rebuildIndex: { mutate: vi.fn(), isPending: false },
     exportDiagnostics: { mutate: vi.fn(), isPending: false },
     selfTest: { mutate: vi.fn(), isPending: false, data: undefined },
+    chordModel: { mutate: vi.fn(), isPending: false, data: undefined },
   }),
   useModelActions: () => ({ pull: { mutate: vi.fn() } }),
 }))
