@@ -253,6 +253,31 @@ def test_a_note_struck_again_is_two_notes() -> None:
         assert all(abs(n.start - at) < 0.03 for n, at in zip(shown, starts, strict=True)), stem
 
 
+def test_a_bass_with_no_highs_struck_again_is_every_note(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A separator takes a bass stem's highs away, and with them most of what the onset
+    # strength counts: a second strike of the same note then stands out 1.1 to 1.4 where a
+    # whole bass's stands out 2 or more. A bass's onsets are asked to stand out by 1.0.
+    from scipy.signal import butter, sosfiltfilt  # librosa brings scipy
+
+    again = [33, 33, 33, 36, 36, 36]
+    parts = []
+    for note in again:
+        t = np.arange(int(0.4 * RATE)) / RATE
+        tone = sum(np.sin(2 * np.pi * hz(note) * k * t) / k for k in range(1, 9))
+        parts.append(
+            tone / np.abs(tone).max() * np.minimum(1.0, t / 0.003) * 10 ** (-0.6 * t / 0.4)
+        )
+    low = sosfiltfilt(butter(10, 700, btype="low", fs=RATE, output="sos"), np.concatenate(parts))
+    audio = (low / np.abs(low).max() * 0.4).astype(np.float32)
+    assert keys(transcribe_line(audio, RATE, "bass").shown()) == again
+    # At 1.5 the second and third strike of each note are not heard: two long notes.
+    peaks = T.onset_peaks
+    monkeypatch.setattr(T, "onset_peaks", lambda strength, _, wait=3: peaks(strength, 1.5, wait))
+    assert keys(transcribe_line(audio, RATE, "bass").shown()) == [33, 36]
+
+
 def test_a_hit_that_bled_in_does_not_cut_a_held_note(monkeypatch: pytest.MonkeyPatch) -> None:
     # A held bass note with two short bursts of noise 30 dB under it, as a snare leaves in a
     # separated bass stem: an onset in the spectrum each time, and no rise in the stem's own

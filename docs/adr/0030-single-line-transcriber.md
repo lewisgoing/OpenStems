@@ -294,11 +294,24 @@ chords, tuning, velocity) is in `docs/research/stem-to-midi.md`, section 14.
 - **The lock on a folder goes by its path as it is spelled.** Two spellings of one folder
   (another case on a Mac, a link) would be two locks. The app has one spelling, the one the
   API gave it.
-- **A note struck again can be lost in a separated stem.** In one of the five separated
-  excerpts 12 of 43 notes ran into the note before them, each a second strike of the same
-  pitch: the stem's level rose as in the clean stem, but the onset in the spectrum, which a
-  strike also needs, was gone (section 14). The rule waits for more separated stems before
-  it is changed.
+- **A note struck again can still be lost in a separated stem.** In one of the five
+  separated excerpts 12 of 43 notes ran into the note before them, each a second strike of
+  the same pitch. The cause: a separator takes a bass stem's highs away (23 of 96 mel bands
+  still sounded there, 41 in the clean stem), and the onset strength is a mean over all 96,
+  so a soft strike stood out 0.2 to 1.5 where 2.0 was asked. Cutting the clean stem at
+  2000 Hz loses the same 12 notes. On 2026-11-27 a bass's threshold went from 2.0 to 1.0:
+  6 of the 12 are found, the five excerpts read 0.962 (0.945 before; over all their notes
+  476 right of 485 shown, 470 of 478 before), clean basses 0.954 (0.947) and basses with the
+  rest of the song 25 dB under them 0.951 (0.941), both on the development half. Its price:
+  of 157 real held sub-bass notes 112 read as one note (119 before), and 87 evolving low
+  sounds give 786 notes (700). Two other ways were measured. Dividing the strength by the
+  bands that sound finds 9 of the 12 (0.969) at the same price, but loses that when faint
+  residue fills the empty bands (0.952 with the rest of the song 40 dB under the stem) and
+  gains less on whole basses (0.950). A threshold of 0.5 finds 9 as well and cuts real held
+  sounds a third more often (933 notes). Not measured, because the development PC lost power
+  under the runs: 1.0 with 15 dB of bleed, on band-limited basses, and on the held-out
+  half. The figures elsewhere in this record are from before the change. Guitar and other
+  lines keep 2.5: no separated one has shown the fault.
 - **The pure tone's own pitch is worth little on real sounds.** On clean sines made for the
   tests it finds every note where SwiftF0 lost a third. Real sub-basses and 808s (two free
   sample packs, section 14) carry enough above their fundamental for SwiftF0, which reads

@@ -17,6 +17,9 @@
     most of all short ones, low ones and ones that die away. That is on sines made for the
     test; real sub-basses and 808s were read well already. An 808 whose pitch dives still
     comes out as several notes.
+  - A bass note struck twice is heard as two more often in a separated stem, where the
+    separator has taken the highs away. Not every soft one yet, and a held sub that wobbles
+    is cut a little more often.
   - Each stem also gets a `.notes.json` file beside its `.mid`, with every note found and how
     sure the app is of it. Nothing shows it yet: it is what a note editor will open.
   - The MIDI file follows the song when you change its tempo or key, or rename it.

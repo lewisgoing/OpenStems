@@ -1370,6 +1370,40 @@ Onset F1:
 - Phase 7's acceptance asks for more: every stem class, Melodyne and NeuralNote on the same
   stems, and the whole set. That waits for the GPU, or for many more quarter-hours of this.
 
+### A second strike in a separated bass (2026-11-27)
+
+Why the fifth excerpt lost its notes, and what was changed. The onset strength is the rise
+in dB averaged over 96 mel bands. A separator leaves a bass stem few of them: 23, 59, 54, 16
+and 50 sound more than half the time in the five separated stems, 41, 83, 84, 27 and 71 in
+the clean ones. Real songs separated on the GPU are alike (13 to 31 in four of six bass
+stems on disk). So a soft strike stands out less, and under 2.0 it is not a strike. The
+clean stem cut at 2000 Hz loses the same 12 notes of Track01889, note for note.
+
+Shown notes, onset F1. The five excerpts; the same with the rest of the song put back 40 dB
+under the stem; Slakh's basses (development half, 71 songs) alone and with the rest 25 dB
+under; and two packs of real sounds (157 held notes of known pitch read as one note; notes
+read from 87 evolving low sounds):
+
+| | Excerpts | Rest at 40 dB | Alone | Rest at 25 dB | Held notes right | Low sounds |
+| --- | --- | --- | --- | --- | --- | --- |
+| Threshold 2.0, as it was | 0.945 | 0.950 | 0.947 | 0.941 | 119 | 700 |
+| Threshold 1.0, as it is now | 0.962 | 0.954 | 0.954 | 0.951 | 112 | 786 |
+| Threshold 0.5 | 0.970 | 0.970 | 0.954 | not run | 109 | 933 |
+| Divided by the bands that sound | 0.969 | 0.952 | 0.950 | 0.941 | 114 | 780 |
+| A rise of 6 dB in the level alone | 0.957 | not run | 0.953 | 0.950 | 106 | 1,319 |
+
+- With offsets the excerpts go from 0.825 to 0.859 at 1.0: notes are not cut short.
+- On six real songs separated on the GPU, 1.0 changes one note in about 470.
+- Dividing by the sounding bands also gains 0.014 on basses cut at 700 Hz and nothing on
+  guitar solos (0.8553 for 0.8554), where every band sounds.
+- A jump of the phase as a second sign of a strike found the notes too (0.974 at its best)
+  and cut real low sounds more (926 to 1,061 notes).
+- Not run: 1.0 with the rest 15 dB under, on basses cut at 700 Hz, on the held-out half,
+  and a lower threshold for guitar. The development PC lost power three times under these
+  runs (2026-11-26 and 2026-11-27), the last time a minute into them. Every other table of
+  this section is the code before this change; a bass's figures move by what the row
+  "Alone" shows.
+
 ### Not measured
 
 - **Separated stems, beyond the 5 bass excerpts above.** Phase 7's acceptance is on

@@ -119,8 +119,15 @@ PROFILES = {
                  -1.1449, -0.4468, -1.8233, 0.4748, 0.5008),
         threshold=0.27,
     ),
+    # A bass's onsets were 2.0 until 2026-11-27. A separator takes a bass stem's highs
+    # away, and the onset strength is a mean over all 96 mel bands: at a soft second strike a
+    # separated bass then showed 0.2 to 1.5 where its clean recording showed 2.0 to 4.5, and
+    # 12 of one excerpt's 43 notes ran into the note before. At 1.0, 6 of those 12 are found
+    # (five separated excerpts 0.945 to 0.962), clean basses read 0.954 for 0.947 and under
+    # 25 dB of bleed 0.951 for 0.941 (development half). At 0.5, 9 of the 12, but real held
+    # subs were cut a third more often. The rise of 3 dB in the level is still asked.
     "bass": Profile(
-        "bass", onsets=2.0, superflux=False, snap=True, low=True, program=33,
+        "bass", onsets=1.0, superflux=False, snap=True, low=True, program=33,
         highest=800.0,  # every Slakh bass note lies under 784 Hz
         weights=(-8.9177, 0.0474, 1.0425, -0.0413, 0.0701, -2.3077,
                  0.7649, -0.4573, -1.0507, 0.4982, 13.7831),

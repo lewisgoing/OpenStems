@@ -660,7 +660,10 @@ recordings, with the rest of a song under the stem as a stand-in for bleed, and 
 excerpts the app separated on the CPU on 2026-11-26 (0.945 against 0.970 on the clean stems);
 every stem class on separated stems waits for the GPU. On real sub-basses and 808s (two sample
 packs on D:, not in the repository) the pure tone's own pitch changes little, and an 808 whose
-pitch dives reads as several notes. Its tests ran on a Mac in CI on 2026-11-26 (pull request 48,
+pitch dives reads as several notes. A bass's onset threshold is 1.0 since 2026-11-27 (2.0 before: a
+separated bass has few sounding bands, so soft second strikes were lost); the benchmark
+tables in the research notes are from before it, and three readings of it wait for a PC
+that stays up (`docs/research/stem-to-midi.md`, "A second strike in a separated bass"). Its tests ran on a Mac in CI on 2026-11-26 (pull request 48,
 `macos-15`); nothing of it has been seen on a Mac by hand.
 `docs/adr/0030-single-line-transcriber.md`, `docs/research/stem-to-midi.md` section 14.
 
